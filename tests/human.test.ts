@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Board, HumanSwiftEngine, humanErrorProfile, selectHumanMove } from "../src";
+import { Board, CandidateScore, HumanSwiftEngine, humanErrorProfile, selectHumanMove } from "../src";
 
 describe("Swift human move selection", () => {
   it("returns a legal move", () => {
@@ -54,8 +54,8 @@ describe("Swift human move selection", () => {
   it("changes practical preferences without changing tactical candidates", () => {
     const board = Board.start();
     const legal = board.legalMoves();
-    const simplify = { move: legal[0], score: 100, ideaKinds: ["simplify"], reasons: ["exchange"] };
-    const attack = { move: legal[1], score: 100, ideaKinds: ["attack"], reasons: ["initiative"] };
+    const simplify: CandidateScore = { move: legal[0], score: 100, ideaKinds: ["simplify"], reasons: ["exchange"] };
+    const attack: CandidateScore = { move: legal[1], score: 100, ideaKinds: ["attack"], reasons: ["initiative"] };
 
     const exchangeFocused = selectHumanMove(board, {
       candidates: [simplify, attack],
