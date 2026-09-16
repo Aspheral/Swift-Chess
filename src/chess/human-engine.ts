@@ -32,13 +32,19 @@ export class HumanSwiftEngine {
     const safetyMargin = Math.max(0, options.safetyMargin ?? 60);
     const safetyDepth = Math.max(1, Math.min(3, Math.floor(options.safetyDepth ?? 2)));
     const generated = scoreCandidates(board);
+    const profile = humanErrorProfile(board, options.errorBudget ?? 0.35);
     const baseline = this.childSearchScore(board, result.move, safetyDepth);
+    const tacticalMargin = this.positionSafetyMargin(safetyMargin, profile);
     const safe = generated.scores.filter((candidate) =>
-      this.isSafeCandidate(board, candidate.move, baseline, safetyMargin, safetyDepth),
+      this.isSafeCandidate(board, candidate.move, baseline, tacticalMargin, safetyDepth),
     );
 
     if (!safe.length) {
-      return { ...result, humanCandidates: generated.scores.slice(0, options.candidateLimit ?? 6) };
+      return {
+        ...result,
+        humanCandidates: generated.scores.slice(0, options.candidateLimit ?? 6),
+        humanProfile: profile,
+      };
     }
 
     const selected = selectHumanMove(board, {
@@ -56,7 +62,7 @@ export class HumanSwiftEngine {
     const selectedMove = selected.move;
     const safeKeys = new Set(safe.map((candidate) => candidate.move.uci()));
     if (!selectedMove || !safeKeys.has(selectedMove.uci())) {
-      return { ...result, humanCandidates: safe, humanProfile: selected.profile };
+      return { ...result, humanCandidates: safe, humanProfile: selected.profile ?? profile };
     }
 
     const pv = result.pv ?? [];
@@ -65,7 +71,7 @@ export class HumanSwiftEngine {
       move: selectedMove,
       pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove],
       humanCandidates: safe,
-      humanProfile: selected.profile,
+      humanProfile: selected.profile ?? profile,
     };
   }
 
@@ -78,7 +84,21 @@ export class HumanSwiftEngine {
     return -this.safetyEngine.search(child, { depth }).score;
   }
 
+  private positionSafetyMargin(baseMargin: number, profile: HumanErrorProfile): number {
+    // Humans may choose a slightly inferior move in calm positions, but tactical
+    // pressure should progressively narrow the acceptable loss.
+    const pressure = profile.tacticalPressure * 0.65 + profile.practicalPressure * 0.35;
+    return Math.max(0, baseMargin * (1 - pressure));
+  }
+
   private isSafeCandidate(board: Board, move: Move, baseline: number, margin: number, depth: number): boolean {
-    return this.childSearchScore(board, move, depth) >= baseline - margin;
+    const child = board.makeMove(move);
+    // A human mistake can be inaccurate, but should not hang mate in one.
+    if (!child.isCheckmate()) {
+      const opponent = child.toFEN().split(/\s+/)[1] as "w" | "b";
+      if (child.legalMoves().some((reply) => child.makeMove(reply).isCheckmate())) return false;
+      if (child.isInCheck(opponent) && child.legalMoves().length === 0) return false;
+    }
+    return -this.safetyEngine.search(child, { depth }).score >= baseline - margin;
   }
 }
