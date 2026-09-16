@@ -1,7 +1,7 @@
 import { Board, Move } from "./board";
 import { SearchOptions, SearchResult, SwiftEngine } from "./engine";
 import { CandidateScore, scoreCandidates } from "./scoring";
-import { selectHumanMove, HumanSelectionOptions } from "./human";
+import { HumanErrorProfile, selectHumanMove, HumanSelectionOptions } from "./human";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   /** Maximum search score loss, in centipawns, allowed from the engine move. */
@@ -12,6 +12,7 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
 
 export interface HumanSearchResult extends SearchResult {
   humanCandidates: CandidateScore[];
+  humanProfile?: HumanErrorProfile;
 }
 
 /** Adds bounded human-style choice without allowing shallow tactical blunders. */
@@ -46,12 +47,16 @@ export class HumanSwiftEngine {
       riskTolerance: options.riskTolerance,
       errorBudget: options.errorBudget,
       seed: options.seed,
+      initiative: options.initiative,
+      simplification: options.simplification,
+      development: options.development,
+      pawnBreaks: options.pawnBreaks,
       candidates: safe,
     });
     const selectedMove = selected.move;
     const safeKeys = new Set(safe.map((candidate) => candidate.move.uci()));
     if (!selectedMove || !safeKeys.has(selectedMove.uci())) {
-      return { ...result, humanCandidates: safe };
+      return { ...result, humanCandidates: safe, humanProfile: selected.profile };
     }
 
     const pv = result.pv ?? [];
@@ -60,6 +65,7 @@ export class HumanSwiftEngine {
       move: selectedMove,
       pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove],
       humanCandidates: safe,
+      humanProfile: selected.profile,
     };
   }
 
