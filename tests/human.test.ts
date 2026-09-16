@@ -56,9 +56,9 @@ describe("Swift human move selection", () => {
 
   it("gives middlegame pawn breaks a practical preference", () => {
     const board = Board.fromFEN("4k3/pppp4/8/8/8/8/PPPP4/4K3 w - - 0 1");
-    const legal = board.legalMoves();
-    const pawnBreak: CandidateScore = { move: legal[0], score: 100, ideaKinds: ["pawn-break"], reasons: ["challenge the structure"] };
-    const quiet: CandidateScore = { move: legal[1], score: 100, ideaKinds: ["improve-piece"], reasons: ["improve"] };
+    const pawnMoves = board.legalMoves().filter((move) => board.pieceAt(move.from)?.[1] === "p");
+    const pawnBreak: CandidateScore = { move: pawnMoves[0], score: 100, ideaKinds: ["pawn-break"], reasons: ["challenge the structure"] };
+    const quiet: CandidateScore = { move: pawnMoves[1], score: 100, ideaKinds: ["improve-piece"], reasons: ["improve"] };
 
     const result = selectHumanMove(board, {
       candidates: [quiet, pawnBreak],
