@@ -16,9 +16,19 @@ const pieceType = (board: Board, move: Move): PieceType | null => {
 
 function fromSquares(moves: Move[], squares: Set<string>) { return moves.filter((m) => squares.has(squareName(m.from))); }
 
+function boardWithTurn(board: Board, color: Color): Board {
+  return Board.fromFEN(board.toFEN().replace(/ [wb] /, ` ${color} `));
+}
+
 function attacksSquare(board: Board, color: Color, square: string): boolean {
-  const side = Board.fromFEN(board.toFEN().replace(/ [wb] /, ` ${color} `));
+  const side = boardWithTurn(board, color);
   return side.legalMoves().some((move) => squareName(move.to) === square);
+}
+
+function movedPieceMobility(board: Board, move: Move): number {
+  const next = board.makeMove(move);
+  const side = boardWithTurn(next, board.toFEN().split(/\s+/)[1] as Color);
+  return side.legalMoves().filter((candidate) => candidate.from === move.to).length;
 }
 
 function tacticalIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): ChessIdea[] {
@@ -75,8 +85,7 @@ function strategicIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): 
     const type = pieceType(board, move);
     if (!type || type === "p" || type === "k") return false;
     const beforeMobility = legal.filter((candidate) => candidate.from === move.from).length;
-    const next = board.makeMove(move);
-    const afterMobility = next.legalMoves().filter((candidate) => candidate.from === move.to).length;
+    const afterMobility = movedPieceMobility(board, move);
     const centralBefore = [27, 28, 35, 36].includes(move.from);
     const centralAfter = [27, 28, 35, 36].includes(move.to);
     return afterMobility > beforeMobility || (!centralBefore && centralAfter);
