@@ -207,8 +207,17 @@ export class Board {
     const pawnRank = rank + (by === "w" ? -1 : 1);
     for (const df of [-1,1]) { const f=file+df; if (f>=0&&f<8&&pawnRank>=0&&pawnRank<8&&this.state.board[pawnRank*8+f]===`${by}p`) return true; }
     for (const [df,dr] of [[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]]) { const f=file+df,r=rank+dr; if(f>=0&&f<8&&r>=0&&r<8&&this.state.board[r*8+f]===`${by}n`) return true; }
-    for (const [df,dr,types] of [[1,0,["r","q"]],[-1,0,["r","q"]],[0,1,["r","q"]],[0,-1,["r","q"]],[1,1,["b","q"]],[-1,1,["b","q"]],[1,-1,["b","q"]],[-1,-1,["b","q"]]] as const) {
-      let f=file+df,r=rank+dr; while(f>=0&&f<8&&r>=0&&r<8){ const p=this.state.board[r*8+f]; if(p){if(colorOf(p)===by&&types.includes(typeOf(p))) return true; break;} f+=df;r+=dr; }
+    const sliderAttacks: Array<[number, number, PieceType[]]> = [
+      [1,0,["r","q"]], [-1,0,["r","q"]], [0,1,["r","q"]], [0,-1,["r","q"]],
+      [1,1,["b","q"]], [-1,1,["b","q"]], [1,-1,["b","q"]], [-1,-1,["b","q"]],
+    ];
+    for (const [df,dr,types] of sliderAttacks) {
+      let f=file+df,r=rank+dr;
+      while(f>=0&&f<8&&r>=0&&r<8){
+        const p=this.state.board[r*8+f];
+        if(p){if(colorOf(p)===by&&types.includes(typeOf(p))) return true; break;}
+        f+=df;r+=dr;
+      }
     }
     for (const df of [-1,0,1]) for (const dr of [-1,0,1]) if(df||dr){const f=file+df,r=rank+dr;if(f>=0&&f<8&&r>=0&&r<8&&this.state.board[r*8+f]===`${by}k`)return true;}
     return false;
