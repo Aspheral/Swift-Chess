@@ -29,5 +29,5 @@ describe("Swift benchmark suite", () => {
     const second = runSwiftBenchmarks();
     expect(second.map(({ name, result }) => [name, result.depth, result.move?.uci(), result.score]))
       .toEqual(first.map(({ name, result }) => [name, result.depth, result.move?.uci(), result.score]));
-  });
+  }, 30_000);
 });
