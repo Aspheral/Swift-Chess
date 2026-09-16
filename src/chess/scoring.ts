@@ -13,7 +13,6 @@ export interface CandidateGeneration {
   candidates: Move[];
 }
 
-const PIECE_VALUES: Record<string, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
 const center = new Set([27, 28, 35, 36]);
 
 function boardWithTurn(board: Board, color: Color): Board {
@@ -43,16 +42,14 @@ function moveScore(
   beforeOpponentMobility: number,
 ): number {
   const moving = board.pieceAt(move.from);
-  const captured = board.pieceAt(move.to);
   const beforeMaterial = materialForSide(board, side);
   const next = board.makeMove(move);
   const afterMaterial = materialForSide(next, side);
   const materialGain = afterMaterial - beforeMaterial;
   let score = materialGain * 0.35;
 
-  if (captured) score += (PIECE_VALUES[captured[1]] ?? 0) / 12;
-  if (move.enPassant) score += PIECE_VALUES.p / 12;
-  if (move.promotion) score += (PIECE_VALUES[move.promotion] ?? 0) / 12;
+  // Material change already accounts for captures, en passant, and promotions.
+  // Keep the material signal single-counted so exchanges do not get inflated.
   if (next.isCheckmate()) score += 500;
   else if (next.isInCheck(side === "w" ? "b" : "w")) score += 28;
 
@@ -66,22 +63,31 @@ function moveScore(
     const afterOwnMobility = mobilityForSide(next, side);
     score += Math.max(-6, Math.min(8, (afterOwnMobility - beforeOwnMobility) * 0.15));
 
-    if (!captured && !move.promotion && moving[1] !== "p") {
+    if (!move.promotion && moving[1] !== "p" && !board.pieceAt(move.to)) {
       const beforePieceMobility = board.legalMoves().filter((candidate) => candidate.from === move.from).length;
       const afterPieceMobility = movedPieceMobility(board, move, side);
       score += Math.max(-5, Math.min(7, (afterPieceMobility - beforePieceMobility) * 0.5));
     }
   }
 
-  if (ideaKinds.includes("tactical")) score += 18;
-  if (ideaKinds.includes("defend")) score += moving?.[0] === side ? 8 : 0;
-  if (ideaKinds.includes("develop") && ["n", "b"].includes(moving?.[1] ?? "")) score += 7;
-  if (ideaKinds.includes("create-threat")) score += 6;
-  if (ideaKinds.includes("attack")) score += 5;
-  if (ideaKinds.includes("simplify")) score += captured ? 5 : 0;
-  if (ideaKinds.includes("complicate") && !captured) score += 4;
-  if (ideaKinds.includes("create-weakness") && moving?.[1] === "p") score += 3;
+  // Idea labels are supporting evidence, not the main evaluation. Each kind is
+  // applied once after move consequences have been measured.
+  if (ideaKinds.includes("tactical")) score += 10;
+  if (ideaKinds.includes("defend")) score += moving?.[0] === side ? 4 : 0;
+  if (ideaKinds.includes("develop") && ["n", "b"].includes(moving?.[1] ?? "")) score += 4;
+  if (ideaKinds.includes("create-threat")) score += 3;
+  if (ideaKinds.includes("attack")) score += 2.5;
+  if (ideaKinds.includes("simplify") && move.to !== move.from) score += 1.5;
+  if (ideaKinds.includes("complicate") && !board.pieceAt(move.to)) score += 1.5;
+  if (ideaKinds.includes("create-weakness") && moving?.[1] === "p") score += 1.5;
   return score;
+}
+
+interface MoveEvidence {
+  move: Move;
+  ideaKinds: ChessIdea["kind"][];
+  reasons: string[];
+  priority: number;
 }
 
 export function scoreCandidates(board: Board): CandidateGeneration {
@@ -89,23 +95,41 @@ export function scoreCandidates(board: Board): CandidateGeneration {
   const side = generated.understanding.sideToMove;
   const beforeOwnMobility = mobilityForSide(board, side);
   const beforeOpponentMobility = mobilityForSide(board, side === "w" ? "b" : "w");
-  const byMove = new Map<string, CandidateScore>();
+  const byMove = new Map<string, MoveEvidence>();
 
+  // First aggregate the strategic evidence for each move. This prevents a move
+  // that happens to satisfy several ideas from repeatedly paying the concrete
+  // move-evaluation cost or stacking the same label bonus over and over.
   for (const idea of generated.ideas) {
     for (const move of idea.candidates) {
       const key = move.uci();
       const existing = byMove.get(key);
-      const local = moveScore(board, move, [idea.kind], side, beforeOwnMobility, beforeOpponentMobility);
       if (existing) {
-        existing.score += local + idea.priority / 10;
+        existing.priority += idea.priority;
         if (!existing.ideaKinds.includes(idea.kind)) existing.ideaKinds.push(idea.kind);
         if (!existing.reasons.includes(idea.reason)) existing.reasons.push(idea.reason);
       } else {
-        byMove.set(key, { move, score: idea.priority + local, ideaKinds: [idea.kind], reasons: [idea.reason] });
+        byMove.set(key, {
+          move,
+          priority: idea.priority,
+          ideaKinds: [idea.kind],
+          reasons: [idea.reason],
+        });
       }
     }
   }
 
-  const scores = [...byMove.values()].sort((a, b) => b.score - a.score);
+  const scores = [...byMove.values()]
+    .map((entry) => ({
+      move: entry.move,
+      // Priority provides a small strategic prior. Concrete consequences remain
+      // the dominant signal, while multiple independent ideas add modest evidence.
+      score: moveScore(board, entry.move, entry.ideaKinds, side, beforeOwnMobility, beforeOpponentMobility)
+        + Math.min(12, entry.priority * 0.15),
+      ideaKinds: entry.ideaKinds,
+      reasons: entry.reasons,
+    }))
+    .sort((a, b) => b.score - a.score);
+
   return { scores, candidates: scores.map((entry) => entry.move) };
 }
