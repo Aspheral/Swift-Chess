@@ -5,6 +5,7 @@ export interface HumanSelectionOptions {
   candidateLimit?: number;
   randomness?: number;
   riskTolerance?: number;
+  candidates?: CandidateScore[];
 }
 
 export interface HumanSelection {
@@ -23,8 +24,8 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
   const candidateLimit = Math.max(1, options.candidateLimit ?? 6);
   const randomness = Math.max(0, Math.min(1, options.randomness ?? 0.12));
   const riskTolerance = Math.max(0, Math.min(1, options.riskTolerance ?? 0.5));
-  const generated = scoreCandidates(board);
-  const candidates = generated.scores.slice(0, candidateLimit);
+  const generated = options.candidates ?? scoreCandidates(board).scores;
+  const candidates = generated.slice(0, candidateLimit);
   if (!candidates.length) return { move: null, candidates: [], selectedScore: -Infinity };
 
   const adjusted = candidates.map((candidate, index) => {
