@@ -78,10 +78,13 @@ describe("Swift human move selection", () => {
     expect(initiativeFocused.move?.uci()).toBe(attack.move.uci());
   });
 
-  it("returns a legal move through the integrated human engine", () => {
+  it("returns a legal move and profile through the integrated human engine", () => {
     const board = Board.start();
     const result = new HumanSwiftEngine().search(board, { depth: 2, randomness: 0, seed: 7 });
     expect(result.move).not.toBeNull();
     expect(board.legalMoves().some((move) => move.uci() === result.move?.uci())).toBe(true);
+    expect(result.humanProfile).toBeDefined();
+    expect(result.humanProfile?.effectiveBudget).toBeGreaterThanOrEqual(0);
+    expect(result.humanProfile?.effectiveBudget).toBeLessThanOrEqual(1);
   });
 });
