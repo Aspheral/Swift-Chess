@@ -60,6 +60,7 @@ describe("Swift human move selection", () => {
     const exchangeFocused = selectHumanMove(board, {
       candidates: [simplify, attack],
       candidateLimit: 2,
+      randomness: 0,
       errorBudget: 0,
       initiative: 0,
       simplification: 1,
@@ -67,6 +68,7 @@ describe("Swift human move selection", () => {
     const initiativeFocused = selectHumanMove(board, {
       candidates: [simplify, attack],
       candidateLimit: 2,
+      randomness: 0,
       errorBudget: 0,
       initiative: 1,
       simplification: 0,
