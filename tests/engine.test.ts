@@ -27,7 +27,7 @@ describe("Swift search", () => {
   it("keeps material advantage visible to evaluation", () => {
     const engine = new SwiftEngine();
     const equal = Board.start();
-    const extraQueen = Board.fromFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNQ w KQkq - 0 1");
+    const extraQueen = Board.fromFEN("rnbqkbnr/pppppppp/8/8/8/Q7/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     expect(engine.evaluate(extraQueen)).toBeGreaterThan(engine.evaluate(equal) + 800);
   });
 });
