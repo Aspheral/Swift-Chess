@@ -13,8 +13,8 @@ const PST: Record<Exclude<PieceType, "k">, number[]> = {
   p: [0,0,0,0,0,0,0,0,50,50,50,50,50,50,50,50,10,10,20,30,30,20,10,10,5,5,10,25,25,10,5,5,0,0,0,20,20,0,0,0,5,-5,-10,0,0,-10,-5,5,5,10,10,-20,-20,10,10,5,0,0,0,0,0,0,0,0],
   n: [-50,-40,-30,-30,-30,-30,-40,-50,-40,-20,0,0,0,0,-20,-40,-30,0,10,15,15,10,0,-30,-30,5,15,20,20,15,5,-30,-30,0,15,20,20,15,0,-30,-30,5,10,15,15,10,5,-30,-40,-20,0,5,5,0,-20,-40,-50,-40,-30,-30,-40,-50],
   b: [-20,-10,-10,-10,-10,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,10,10,5,0,-10,-10,5,5,10,10,5,5,-10,-10,0,10,10,10,10,0,-10,-10,10,10,10,10,10,10,-10,-10,5,0,0,0,0,5,-10,-20,-10,-10,-10,-10,-10,-10,-20],
-  r: [0,0,0,5,5,0,0,0,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,5,10,10,10,10,10,10,5,0,0,0,0,0,0,0,0],
-  q: [-20,-10,-10,-5,-5,-10,-10,-20,-10,0,0,0,0,0,-0,-10,-10,0,5,5,5,5,0,-10,-5,0,5,5,5,5,0,-5,0,0,5,5,5,5,0,-5,-10,5,5,5,5,5,0,-10,-10,0,5,0,0,0,0,-10,-20,-10,-5,-5,-10,-10,-20],
+  r: [0,0,0,5,5,0,0,0,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,5,10,10,10,10,10,5,0,0,0,0,0,0,0,0,0],
+  q: [-20,-10,-10,-5,-5,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,5,5,5,0,-10,-5,0,5,5,5,5,0,-5,0,0,5,5,5,5,0,-5,-10,5,5,5,5,5,0,-10,-10,0,5,0,0,0,0,-10,-20,-10,-5,-5,-10,-10,-20],
 };
 
 export class SwiftEngine {
@@ -69,8 +69,7 @@ export class SwiftEngine {
     let bestScore = -INF, bestMove: Move | null = null, bestPv: Move[] = [];
     for (const move of moves) {
       this.checkTime();
-      const child = board.makeMove(move);
-      const childResult = this.negamax(child, depth - 1, -beta, -alpha, 1);
+      const childResult = this.negamax(board.makeMove(move), depth - 1, -beta, -alpha, 1);
       const score = -childResult.score;
       if (score > bestScore) {
         bestScore = score;
@@ -86,11 +85,12 @@ export class SwiftEngine {
   private negamax(board: Board, depth: number, alpha: number, beta: number, ply: number): { score: number; pv: Move[] } {
     this.checkTime();
     this.nodes++;
+    const inCheck = board.isInCheck(this.sideToMove(board));
     const legal = board.legalMoves();
-    if (legal.length === 0) return { score: board.isInCheck(this.sideToMove(board)) ? -MATE + ply : 0, pv: [] };
-    if (depth <= 0 && !board.isInCheck(this.sideToMove(board))) return { score: this.quiescence(board, alpha, beta), pv: [] };
+    if (legal.length === 0) return { score: inCheck ? -MATE + ply : 0, pv: [] };
+    if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta), pv: [] };
 
-    const extension = board.isInCheck(this.sideToMove(board)) && depth > 0 ? 1 : 0;
+    const extension = inCheck && depth > 0 ? 1 : 0;
     const effectiveDepth = depth + extension;
     if (effectiveDepth <= 0) return { score: this.quiescence(board, alpha, beta), pv: [] };
 
@@ -103,9 +103,28 @@ export class SwiftEngine {
     }
 
     let best = -INF, bestMove: Move | undefined, bestPv: Move[] = [];
+    let moveIndex = 0;
     for (const move of this.orderMoves(board, legal, cached?.move, ply)) {
-      const childResult = this.negamax(board.makeMove(move), effectiveDepth - 1, -beta, -alpha, ply + 1);
-      const score = -childResult.score;
+      this.checkTime();
+      const child = board.makeMove(move);
+      const quiet = !this.isCapture(board, move) && !move.promotion;
+      const canReduce = effectiveDepth >= 3 && moveIndex >= 3 && quiet && !inCheck;
+      let score: number;
+      let childResult: { score: number; pv: Move[] };
+
+      if (canReduce) {
+        const reduction = effectiveDepth >= 6 && moveIndex >= 6 ? 2 : 1;
+        childResult = this.negamax(child, Math.max(1, effectiveDepth - 1 - reduction), -alpha - 1, -alpha, ply + 1);
+        score = -childResult.score;
+        if (score > alpha) {
+          childResult = this.negamax(child, effectiveDepth - 1, -beta, -alpha, ply + 1);
+          score = -childResult.score;
+        }
+      } else {
+        childResult = this.negamax(child, effectiveDepth - 1, -beta, -alpha, ply + 1);
+        score = -childResult.score;
+      }
+
       if (score > best) {
         best = score;
         bestMove = move;
@@ -113,9 +132,10 @@ export class SwiftEngine {
       }
       if (score > alpha) alpha = score;
       if (alpha >= beta) {
-        if (!this.isCapture(board, move)) this.recordKiller(move, ply, effectiveDepth);
+        if (quiet) this.recordKiller(move, ply, effectiveDepth);
         break;
       }
+      moveIndex++;
     }
     const bound: Bound = best <= alphaOriginal ? "upper" : best >= beta ? "lower" : "exact";
     this.table.set(key, { depth: effectiveDepth, score: best, bound, move: bestMove });
