@@ -48,7 +48,7 @@ function isCapture(board: Board, move: Move): boolean {
 function movingType(board: Board, move: Move): PieceType {
   const piece = board.pieceAt(move.from);
   if (!piece) throw new Error(`No piece on ${move.from} for move ${move.uci()}`);
-  return piece[1];
+  return piece[1] as PieceType;
 }
 
 function movingValue(board: Board, move: Move): number {
@@ -58,5 +58,5 @@ function movingValue(board: Board, move: Move): number {
 function capturedPieceValue(board: Board, move: Move): number {
   if (move.enPassant) return PIECE_VALUES.p;
   const piece = board.pieceAt(move.to);
-  return piece ? PIECE_VALUES[piece[1]] : 0;
+  return piece ? PIECE_VALUES[piece[1] as PieceType] : 0;
 }
