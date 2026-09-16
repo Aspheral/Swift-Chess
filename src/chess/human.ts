@@ -2,7 +2,18 @@ import { Board, Move } from "./board";
 import { CandidateScore, scoreCandidates } from "./scoring";
 import { understandPosition } from "./understanding";
 
-export interface HumanSelectionOptions {
+export interface HumanStyleOptions {
+  /** Preference for active, forcing play over quiet choices. */
+  initiative?: number;
+  /** Preference for reducing complexity through exchanges. */
+  simplification?: number;
+  /** Preference for natural piece development in the opening. */
+  development?: number;
+  /** Preference for pawn breaks and structural changes in the middlegame. */
+  pawnBreaks?: number;
+}
+
+export interface HumanSelectionOptions extends HumanStyleOptions {
   candidateLimit?: number;
   randomness?: number;
   riskTolerance?: number;
@@ -73,6 +84,33 @@ export function humanErrorProfile(board: Board, baseBudget = 0.35): HumanErrorPr
   return { complexity, tacticalPressure, phase, practicalPressure, effectiveBudget };
 }
 
+function styleValue(
+  candidate: CandidateScore,
+  profile: HumanErrorProfile,
+  options: HumanStyleOptions,
+): number {
+  const initiative = clamp(options.initiative ?? 0.5);
+  const simplification = clamp(options.simplification ?? 0.5);
+  const development = clamp(options.development ?? 0.65);
+  const pawnBreaks = clamp(options.pawnBreaks ?? 0.5);
+  const has = (kind: CandidateScore["ideaKinds"][number]) => candidate.ideaKinds.includes(kind);
+
+  let value = 0;
+  if (has("attack") || has("create-threat") || has("complicate")) {
+    value += initiative * (4 + profile.complexity * 2) * (1 - profile.tacticalPressure * 0.35);
+  }
+  if (has("simplify")) {
+    value += simplification * (3 + profile.phase * 2);
+  }
+  if (has("develop") && profile.phase < 0.45) {
+    value += development * (4 + (0.45 - profile.phase) * 4);
+  }
+  if (has("create-weakness") && profile.phase >= 0.25 && profile.phase < 0.9) {
+    value += pawnBreaks * (2 + profile.complexity * 2);
+  }
+  return value;
+}
+
 export function selectHumanMove(board: Board, options: HumanSelectionOptions = {}): HumanSelection {
   const candidateLimit = Math.max(1, options.candidateLimit ?? 6);
   const randomness = clamp(options.randomness ?? 0.12);
@@ -95,7 +133,7 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
       (kind) => kind === "complicate" || kind === "attack" || kind === "create-threat",
     ).length;
     const practicalRisk = riskKinds * 3 * riskTolerance * (1 - profile.tacticalPressure * 0.5);
-    const value = candidate.score - rankPenalty + practicalRisk;
+    const value = candidate.score - rankPenalty + practicalRisk + styleValue(candidate, profile, options);
     return { candidate, value };
   });
 
