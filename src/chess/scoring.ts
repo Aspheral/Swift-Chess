@@ -16,22 +16,32 @@ export interface CandidateGeneration {
 const PIECE_VALUES: Record<string, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
 const center = new Set([27, 28, 35, 36]);
 
+function boardWithTurn(board: Board, color: Color): Board {
+  return Board.fromFEN(board.toFEN().replace(/ [wb] /, ` ${color} `));
+}
+
 function materialForSide(board: Board, side: Color): number {
   const material = board.material();
   return side === "w" ? material : -material;
 }
 
-function opponentMobility(board: Board): number {
-  return board.legalMoves().length;
+function mobilityForSide(board: Board, side: Color): number {
+  return boardWithTurn(board, side).legalMoves().length;
 }
 
-function ownMobilityAfter(board: Board, move: Move, side: Color): number {
+function movedPieceMobility(board: Board, move: Move, side: Color): number {
   const next = board.makeMove(move);
-  const fen = next.toFEN().replace(/ [wb] /, ` ${side} `);
-  return Board.fromFEN(fen).legalMoves().length;
+  return boardWithTurn(next, side).legalMoves().filter((candidate) => candidate.from === move.to).length;
 }
 
-function moveScore(board: Board, move: Move, ideaKinds: ChessIdea["kind"][], side: Color): number {
+function moveScore(
+  board: Board,
+  move: Move,
+  ideaKinds: ChessIdea["kind"][],
+  side: Color,
+  beforeOwnMobility: number,
+  beforeOpponentMobility: number,
+): number {
   const moving = board.pieceAt(move.from);
   const captured = board.pieceAt(move.to);
   const beforeMaterial = materialForSide(board, side);
@@ -49,13 +59,18 @@ function moveScore(board: Board, move: Move, ideaKinds: ChessIdea["kind"][], sid
   if (center.has(move.to)) score += 4;
   if (moving?.[1] === "p" && Math.abs(move.to - move.from) === 16) score += 1;
 
-  const beforeMobility = opponentMobility(board);
-  const afterOpponentMobility = opponentMobility(next);
-  score += Math.max(-12, Math.min(12, (beforeMobility - afterOpponentMobility) * 0.5));
+  const afterOpponentMobility = mobilityForSide(next, side === "w" ? "b" : "w");
+  score += Math.max(-12, Math.min(12, (beforeOpponentMobility - afterOpponentMobility) * 0.5));
 
-  if (moving && !captured && !move.promotion && moving[0] === side) {
-    const ownAfter = ownMobilityAfter(board, move, side);
-    score += Math.max(-6, Math.min(8, (ownAfter - beforeMobility) * 0.15));
+  if (moving && moving[0] === side) {
+    const afterOwnMobility = mobilityForSide(next, side);
+    score += Math.max(-6, Math.min(8, (afterOwnMobility - beforeOwnMobility) * 0.15));
+
+    if (!captured && !move.promotion && moving[1] !== "p") {
+      const beforePieceMobility = board.legalMoves().filter((candidate) => candidate.from === move.from).length;
+      const afterPieceMobility = movedPieceMobility(board, move, side);
+      score += Math.max(-5, Math.min(7, (afterPieceMobility - beforePieceMobility) * 0.5));
+    }
   }
 
   if (ideaKinds.includes("tactical")) score += 18;
@@ -71,12 +86,16 @@ function moveScore(board: Board, move: Move, ideaKinds: ChessIdea["kind"][], sid
 
 export function scoreCandidates(board: Board): CandidateGeneration {
   const generated = generateIdeas(board);
+  const side = generated.understanding.sideToMove;
+  const beforeOwnMobility = mobilityForSide(board, side);
+  const beforeOpponentMobility = mobilityForSide(board, side === "w" ? "b" : "w");
   const byMove = new Map<string, CandidateScore>();
+
   for (const idea of generated.ideas) {
     for (const move of idea.candidates) {
       const key = move.uci();
       const existing = byMove.get(key);
-      const local = moveScore(board, move, [idea.kind], generated.understanding.sideToMove);
+      const local = moveScore(board, move, [idea.kind], side, beforeOwnMobility, beforeOpponentMobility);
       if (existing) {
         existing.score += local + idea.priority / 10;
         if (!existing.ideaKinds.includes(idea.kind)) existing.ideaKinds.push(idea.kind);
@@ -86,6 +105,7 @@ export function scoreCandidates(board: Board): CandidateGeneration {
       }
     }
   }
+
   const scores = [...byMove.values()].sort((a, b) => b.score - a.score);
   return { scores, candidates: scores.map((entry) => entry.move) };
 }
