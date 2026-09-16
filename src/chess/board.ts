@@ -16,7 +16,7 @@ export class Move {
   uci(): string {
     const files = "abcdefgh";
     const square = (s: number) => `${files[s & 7]}${Math.floor(s / 8) + 1}`;
-    return `${square(this.from)}${square(this.to)}${this.promotion ? this.promotion.toUpperCase() : ""}`;
+    return `${square(this.from)}${square(this.to)}${this.promotion ?? ""}`;
   }
 }
 
