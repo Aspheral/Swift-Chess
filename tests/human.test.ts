@@ -14,6 +14,27 @@ describe("Swift human move selection", () => {
     expect(result.candidates.length).toBeLessThanOrEqual(3);
   });
 
+  it("preserves different strategic ideas in a small candidate menu", () => {
+    const board = Board.start();
+    const legal = board.legalMoves();
+    const candidates: CandidateScore[] = legal.slice(0, 4).map((move, index) => ({
+      move,
+      score: 100 - index,
+      ideaKinds: index === 0 ? ["develop"] : index === 1 ? ["attack"] : index === 2 ? ["simplify"] : ["pawn-break"],
+      reasons: ["test"],
+    }));
+
+    const result = selectHumanMove(board, {
+      candidates,
+      candidateLimit: 3,
+      randomness: 0,
+      errorBudget: 1,
+    });
+
+    expect(result.candidates).toHaveLength(3);
+    expect(new Set(result.candidates.map((candidate) => candidate.ideaKinds[0])).size).toBeGreaterThan(1);
+  });
+
   it("returns no move for a checkmated position", () => {
     const board = Board.fromFEN("7k/5Q2/7K/8/8/8/8/8 b - - 0 1");
     const result = selectHumanMove(board);
