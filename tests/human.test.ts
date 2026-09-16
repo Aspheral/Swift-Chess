@@ -51,6 +51,31 @@ describe("Swift human move selection", () => {
     expect(result.profile?.effectiveBudget).toBeLessThanOrEqual(1);
   });
 
+  it("changes practical preferences without changing tactical candidates", () => {
+    const board = Board.start();
+    const legal = board.legalMoves();
+    const simplify = { move: legal[0], score: 100, ideaKinds: ["simplify"] as const, reasons: ["exchange"] };
+    const attack = { move: legal[1], score: 100, ideaKinds: ["attack"] as const, reasons: ["initiative"] };
+
+    const exchangeFocused = selectHumanMove(board, {
+      candidates: [simplify, attack],
+      candidateLimit: 2,
+      errorBudget: 0,
+      initiative: 0,
+      simplification: 1,
+    });
+    const initiativeFocused = selectHumanMove(board, {
+      candidates: [simplify, attack],
+      candidateLimit: 2,
+      errorBudget: 0,
+      initiative: 1,
+      simplification: 0,
+    });
+
+    expect(exchangeFocused.move?.uci()).toBe(simplify.move.uci());
+    expect(initiativeFocused.move?.uci()).toBe(attack.move.uci());
+  });
+
   it("returns a legal move through the integrated human engine", () => {
     const board = Board.start();
     const result = new HumanSwiftEngine().search(board, { depth: 2, randomness: 0, seed: 7 });
