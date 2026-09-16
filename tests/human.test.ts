@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Board, HumanSwiftEngine, selectHumanMove } from "../src";
+import { Board, HumanSwiftEngine, humanErrorProfile, selectHumanMove } from "../src";
 
 describe("Swift human move selection", () => {
   it("returns a legal move", () => {
@@ -33,6 +33,22 @@ describe("Swift human move selection", () => {
     const first = selectHumanMove(board, { candidateLimit: 6, randomness: 1, errorBudget: 0.5, seed: 42 });
     const second = selectHumanMove(board, { candidateLimit: 6, randomness: 1, errorBudget: 0.5, seed: 42 });
     expect(first.move?.uci()).toBe(second.move?.uci());
+  });
+
+  it("reports more decision latitude in a quiet complex position than under tactical pressure", () => {
+    const quiet = Board.fromFEN("8/8/3k4/8/2K5/8/8/8 w - - 0 1");
+    const tactical = Board.fromFEN("6k1/6Q1/5K2/8/8/8/8/8 w - - 0 1");
+    const quietProfile = humanErrorProfile(quiet, 0.5);
+    const tacticalProfile = humanErrorProfile(tactical, 0.5);
+    expect(quietProfile.effectiveBudget).toBeGreaterThan(tacticalProfile.effectiveBudget);
+    expect(tacticalProfile.tacticalPressure).toBeGreaterThan(quietProfile.tacticalPressure);
+  });
+
+  it("exposes position factors with every human selection", () => {
+    const result = selectHumanMove(Board.start(), { randomness: 0, seed: 7 });
+    expect(result.profile).toBeDefined();
+    expect(result.profile?.effectiveBudget).toBeGreaterThanOrEqual(0);
+    expect(result.profile?.effectiveBudget).toBeLessThanOrEqual(1);
   });
 
   it("returns a legal move through the integrated human engine", () => {
