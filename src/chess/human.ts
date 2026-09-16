@@ -112,7 +112,7 @@ function gameFlowValue(board: Board, candidate: CandidateScore, profile: HumanEr
 
   if (profile.gameStage === "middlegame") {
     let value = 0;
-    if (candidate.ideaKinds.includes("pawn-break")) value += 3.5;
+    if (candidate.ideaKinds.includes("pawn-break")) value += 4.5;
     if (candidate.ideaKinds.includes("attack") || candidate.ideaKinds.includes("create-threat")) value += 1.5;
     return value;
   }
