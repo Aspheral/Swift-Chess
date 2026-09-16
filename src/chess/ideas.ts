@@ -19,11 +19,14 @@ function attacksSquare(board: Board, color: Color, square: string): boolean {
 }
 
 function tacticalIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): ChessIdea[] {
-  const checks = legal.filter((m) => board.makeMove(m).isInCheck(u.sideToMove === "w" ? "b" : "w"));
+  const enemyColor = u.sideToMove === "w" ? "b" : "w";
+  const mates = legal.filter((m) => board.makeMove(m).isCheckmate());
+  const checks = legal.filter((m) => board.makeMove(m).isInCheck(enemyColor));
   const caps = captures(board, legal);
   const promotions = legal.filter((m) => !!m.promotion);
   const ideas: ChessIdea[] = [];
-  if (promotions.length) ideas.push({ kind: "tactical", priority: 110, reason: "A promotion is immediately available.", candidates: promotions.slice(0, 8) });
+  if (mates.length) ideas.push({ kind: "tactical", priority: 120, reason: "Checkmate is immediately available.", candidates: uniqueMoves(mates).slice(0, 8) });
+  if (promotions.length) ideas.push({ kind: "tactical", priority: 110, reason: "A promotion is immediately available.", candidates: uniqueMoves(promotions).slice(0, 8) });
   if (checks.length) ideas.push({ kind: "tactical", priority: 100, reason: "Immediate checks are available.", candidates: uniqueMoves(checks).slice(0, 8) });
   if (caps.length) ideas.push({ kind: "tactical", priority: 90, reason: "Captures are available and should be examined before quiet plans.", candidates: uniqueMoves(caps).slice(0, 8) });
   return ideas;
