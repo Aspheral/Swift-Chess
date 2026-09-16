@@ -62,11 +62,6 @@ function clamp(value: number, min = 0, max = 1): number {
   return Math.max(min, Math.min(max, value));
 }
 
-/**
- * Turns a static human error setting into a position-aware decision budget.
- * Complex quiet positions allow more imperfect choices; tactical danger sharply
- * reduces the budget so Swift still behaves like a careful human under fire.
- */
 export function humanErrorProfile(board: Board, baseBudget = 0.35): HumanErrorProfile {
   const understanding = understandPosition(board);
   const legalMoves = Math.max(1, understanding.space[understanding.sideToMove]);
@@ -152,13 +147,6 @@ function styleValue(
   return value;
 }
 
-/**
- * Keep a small human-sized menu while preserving different plans when they
- * exist. A machine tends to over-cluster on near-identical top moves; people
- * usually compare a forcing move, an improvement, an exchange, or a pawn move
- * before choosing. Diversity is deliberately bounded so score quality remains
- * the primary signal.
- */
 function diversifyCandidates(candidates: CandidateScore[], limit: number): CandidateScore[] {
   if (candidates.length <= limit) return candidates;
 
@@ -204,15 +192,18 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
   const allowedLoss = profile.effectiveBudget * 80;
   const eligible = ranked.filter((candidate) => candidate.score >= topScore - allowedLoss);
   const rng = options.seed === undefined ? Math.random : seededRandom(options.seed);
-  const temperature = 1 + randomness * 5 + profile.effectiveBudget * 7;
+  const temperature = 1 + randomness * 4 + profile.effectiveBudget * 4;
 
   const adjusted = eligible.map((candidate, index) => {
-    const rankPenalty = index * (1.5 + (1 - profile.effectiveBudget) * 2.5);
+    const scoreGap = Math.max(0, topScore - candidate.score);
+    const errorSeverity = (scoreGap / Math.max(12, allowedLoss + 8)) ** 2;
+    const qualityPenalty = errorSeverity * (8 + (1 - profile.effectiveBudget) * 12);
+    const rankPenalty = index * (1 + (1 - profile.effectiveBudget) * 2);
     const riskKinds = candidate.ideaKinds.filter(
       (kind) => kind === "complicate" || kind === "attack" || kind === "create-threat",
     ).length;
-    const practicalRisk = riskKinds * 3 * riskTolerance * (1 - profile.tacticalPressure * 0.5);
-    const value = candidate.score - rankPenalty + practicalRisk + styleValue(board, candidate, profile, options);
+    const practicalRisk = riskKinds * 2.5 * riskTolerance * (1 - profile.tacticalPressure * 0.6) * (1 - errorSeverity);
+    const value = candidate.score - qualityPenalty - rankPenalty + practicalRisk + styleValue(board, candidate, profile, options);
     return { candidate, value };
   });
 
