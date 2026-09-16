@@ -1,5 +1,6 @@
 import { Board } from "./board";
-import { PvsSwiftEngine, SearchResult } from "./pvs";
+import { PvsSwiftEngine } from "./pvs";
+import type { SearchResult } from "./engine";
 
 export interface BenchmarkPosition {
   name: string;
