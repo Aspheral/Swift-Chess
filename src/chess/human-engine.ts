@@ -17,9 +17,11 @@ export interface HumanSearchResult extends SearchResult {
 /** Adds bounded human-style choice without allowing shallow tactical blunders. */
 export class HumanSwiftEngine {
   private readonly engine: SwiftEngine;
+  private readonly safetyEngine: SwiftEngine;
 
   constructor(engine = new SwiftEngine()) {
     this.engine = engine;
+    this.safetyEngine = new SwiftEngine();
   }
 
   search(board: Board, options: HumanEngineOptions = {}): HumanSearchResult {
@@ -67,7 +69,7 @@ export class HumanSwiftEngine {
 
   private childSearchScore(board: Board, move: Move, depth: number): number {
     const child = board.makeMove(move);
-    return -new SwiftEngine().search(child, { depth }).score;
+    return -this.safetyEngine.search(child, { depth }).score;
   }
 
   private isSafeCandidate(board: Board, move: Move, baseline: number, margin: number, depth: number): boolean {
