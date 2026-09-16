@@ -28,9 +28,16 @@ describe("Swift human move selection", () => {
     expect(result.candidates.some((candidate) => board.makeMove(candidate.move).isCheckmate())).toBe(true);
   });
 
+  it("reproduces the same choice from the same seed", () => {
+    const board = Board.start();
+    const first = selectHumanMove(board, { candidateLimit: 6, randomness: 1, errorBudget: 0.5, seed: 42 });
+    const second = selectHumanMove(board, { candidateLimit: 6, randomness: 1, errorBudget: 0.5, seed: 42 });
+    expect(first.move?.uci()).toBe(second.move?.uci());
+  });
+
   it("returns a legal move through the integrated human engine", () => {
     const board = Board.start();
-    const result = new HumanSwiftEngine().search(board, { depth: 2, randomness: 0 });
+    const result = new HumanSwiftEngine().search(board, { depth: 2, randomness: 0, seed: 7 });
     expect(result.move).not.toBeNull();
     expect(board.legalMoves().some((move) => move.uci() === result.move?.uci())).toBe(true);
   });
