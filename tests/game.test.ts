@@ -17,7 +17,7 @@ describe("Swift game state and draw rules", () => {
   });
 
   it("does not call a bishop-versus-bishop position dead when bishops occupy opposite colors", () => {
-    expect(Game.fromFEN("8/8/8/8/8/8/3bk3/2B1K3 w - - 0 1").isInsufficientMaterial()).toBe(false);
+    expect(Game.fromFEN("8/8/3b4/8/8/8/4k3/2B1K3 w - - 0 1").isInsufficientMaterial()).toBe(false);
   });
 
   it("tracks a repeated position using side, castling and en-passant state", () => {
