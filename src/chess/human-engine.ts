@@ -14,7 +14,7 @@ export interface HumanSearchResult extends SearchResult {
   humanCandidates: CandidateScore[];
 }
 
-/** Adds human-style choice without allowing shallow tactical blunders. */
+/** Adds bounded human-style choice without allowing shallow tactical blunders. */
 export class HumanSwiftEngine {
   private readonly engine: SwiftEngine;
 
@@ -42,6 +42,8 @@ export class HumanSwiftEngine {
       candidateLimit: Math.min(options.candidateLimit ?? 6, safe.length),
       randomness: options.randomness,
       riskTolerance: options.riskTolerance,
+      errorBudget: options.errorBudget,
+      seed: options.seed,
       candidates: safe,
     });
     const selectedMove = selected.move;
