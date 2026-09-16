@@ -25,7 +25,7 @@ describe("Swift human move selection", () => {
     const board = Board.fromFEN("6k1/5ppp/8/8/8/8/5PPP/6KQ w - - 0 1");
     const result = selectHumanMove(board, { randomness: 0, candidateLimit: 8 });
     expect(result.move).not.toBeNull();
-    expect(result.candidates.some((candidate) => board.makeMove(candidate.move).isCheckmate("b"))).toBe(true);
+    expect(result.candidates.some((candidate) => board.makeMove(candidate.move).isCheckmate())).toBe(true);
   });
 
   it("returns a legal move through the integrated human engine", () => {
