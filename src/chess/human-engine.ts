@@ -36,21 +36,29 @@ export class HumanSwiftEngine {
       this.isSafeCandidate(board, candidate.move, baseline, safetyMargin),
     );
 
-    if (!safe.length) return { ...result, humanCandidates: generated.scores.slice(0, options.candidateLimit ?? 6) };
+    if (!safe.length) {
+      return {
+        ...result,
+        humanCandidates: generated.scores.slice(0, options.candidateLimit ?? 6),
+      };
+    }
 
     const selected = selectHumanMove(board, {
       candidateLimit: Math.min(options.candidateLimit ?? 6, safe.length),
       randomness: options.randomness,
       riskTolerance: options.riskTolerance,
     });
-    const selectedKey = selected.move?.uci();
+    const selectedMove = selected.move;
     const safeKeys = new Set(safe.map((candidate) => candidate.move.uci()));
-    if (!selectedKey || !safeKeys.has(selectedKey)) return { ...result, humanCandidates: safe };
+    if (!selectedMove || !safeKeys.has(selectedMove.uci())) {
+      return { ...result, humanCandidates: safe };
+    }
 
+    const pv = result.pv ?? [];
     return {
       ...result,
-      move: selected.move,
-      pv: result.pv.length ? [selected.move, ...result.pv.slice(1)] : [selected.move],
+      move: selectedMove,
+      pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove],
       humanCandidates: safe,
     };
   }
