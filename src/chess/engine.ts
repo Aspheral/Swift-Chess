@@ -12,10 +12,10 @@ const pieceValues: Record<PieceType, number> = { p: 100, n: 320, b: 330, r: 500,
 
 const PST: Record<Exclude<PieceType, "k">, number[]> = {
   p: [0,0,0,0,0,0,0,0,50,50,50,50,50,50,50,50,10,10,20,30,30,20,10,10,5,5,10,25,25,10,5,5,0,0,0,20,20,0,0,0,5,-5,-10,0,0,-10,-5,5,5,10,10,-20,-20,10,10,5,0,0,0,0,0,0,0,0],
-  n: [-50,-40,-30,-30,-30,-30,-40,-50,-40,-20,0,0,0,0,-20,-40,-30,-30,15,15,10,0,-30,-30,5,15,20,20,15,5,-30,-30,0,15,20,20,15,0,-30,-30,5,10,15,15,10,5,-30,-40,-20,0,5,5,0,-20,-40,-50,-40,-30,-30,-40,-50],
+  n: [-50,-40,-30,-30,-30,-30,-40,-50,-40,-20,0,0,0,0,-20,-40,-30,-30,0,10,15,15,10,0,-30,-30,5,15,20,20,15,5,-30,-30,0,15,20,20,15,0,-30,-30,5,10,15,15,10,5,-30,-40,-20,0,5,5,0,-20,-40,-50,-40,-50,-40,-30,-30,-40,-50],
   b: [-20,-10,-10,-10,-10,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,10,10,5,0,-10,-10,5,5,10,10,5,5,-10,-10,0,10,10,10,10,0,-10,-10,10,10,10,10,10,10,-10,-10,5,0,0,0,0,5,-10,-20,-10,-10,-10,-10,-10,-10,-20],
-  r: [0,0,0,5,5,0,0,0,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,5,10,10,10,10,10,5,0,0,0,0,0,0,0,0],
-  q: [-20,-10,-10,-5,-5,-10,-10,-20,-10,0,0,0,0,0,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,5,5,5,0,-10,-5,0,5,5,5,0,-5,0,0,5,5,5,5,0,-5,-10,5,5,5,5,5,0,-10,-20,-10,-5,-5,-10,-10,-20],
+  r: [0,0,0,5,5,0,0,0,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,5,10,10,10,10,10,5,0,0,0,0,0,0,0,0,0],
+  q: [-20,-10,-10,-5,-5,-10,-10,-20,-10,0,0,0,0,0,-10,-20,-10,0,0,0,0,0,-10,-10,0,5,5,5,5,0,-10,-5,0,5,5,5,0,-5,0,0,5,5,5,5,0,-5,-10,5,5,5,5,5,0,-10,-20,-10,-5,-5,-10,-10,-20],
 };
 
 export class SwiftEngine {
@@ -90,9 +90,6 @@ export class SwiftEngine {
       if (alpha >= beta) return { score: cached.score, pv: cached.move ? [cached.move] : [] };
     }
 
-    // Null-move pruning assumes that giving the opponent a free move should not
-    // make a strong position collapse. Disable it in check and in sparse
-    // endgames where zugzwang is a realistic tactical resource.
     if (allowNullMove && effectiveDepth >= 3 && !inCheck && beta < MATE - 1_000 && this.canNullMove(board)) {
       const reduction = effectiveDepth >= 7 ? 3 : 2;
       const nullDepth = Math.max(0, effectiveDepth - 1 - reduction);
@@ -100,8 +97,6 @@ export class SwiftEngine {
       const nullResult = this.negamax(nullBoard, nullDepth, -beta, -beta + 1, ply + 1, false);
       const nullScore = -nullResult.score;
       if (nullScore >= beta) {
-        // Verification prevents the null assumption from turning zugzwang-like
-        // positions into false beta cutoffs at deeper searches.
         if (effectiveDepth >= 6) {
           const verification = this.negamax(board, effectiveDepth - 1, alpha, beta, ply, false);
           if (verification.score >= beta) return verification;
@@ -210,10 +205,7 @@ export class SwiftEngine {
       nonPawnPieces++;
       if (char.toLowerCase() === "r" || char.toLowerCase() === "q") rooksQueens++;
     }
-    // With only two or fewer non-pawn pieces, zugzwang risk is high enough that
-    // the null-move assumption is not worth the pruning opportunity.
     if (nonPawnPieces <= 2) return false;
-    // Also avoid rookless minor-piece endings with very little material.
     if (rooksQueens === 0 && nonPawnPieces <= 4) return false;
     return true;
   }
