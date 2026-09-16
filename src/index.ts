@@ -6,3 +6,4 @@ export * from "./chess/benchmark";
 export * from "./chess/see";
 export * from "./chess/tactics";
 export * from "./chess/understanding";
+export * from "./chess/ideas";
