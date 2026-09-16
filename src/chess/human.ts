@@ -24,6 +24,8 @@ export interface HumanSelectionOptions extends HumanStyleOptions {
   candidates?: CandidateScore[];
 }
 
+export type HumanGameStage = "opening" | "middlegame" | "endgame";
+
 export interface HumanErrorProfile {
   /** Position complexity from legal-choice breadth. */
   complexity: number;
@@ -33,6 +35,8 @@ export interface HumanErrorProfile {
   phase: number;
   /** Practical pressure from king exposure and material imbalance. */
   practicalPressure: number;
+  /** Coarse game-flow stage used for practical style decisions. */
+  gameStage: HumanGameStage;
   /** Final normalized error budget used for candidate selection. */
   effectiveBudget: number;
 }
@@ -49,7 +53,6 @@ function seededRandom(seed: number): () => number {
   return () => {
     state ^= state << 13;
     state ^= state >>> 17;
-    state ^= state << 5;
     state >>>= 0;
     return state / 0x100000000;
   };
@@ -76,15 +79,52 @@ export function humanErrorProfile(board: Board, baseBudget = 0.35): HumanErrorPr
   const materialSwing = clamp(Math.abs(understanding.material) / 500);
   const kingPressure = clamp((ownKing.attackers * 0.35) + (ownKing.exposed ? 0.3 : 0) + (enemyKing.exposed ? 0.15 : 0));
   const practicalPressure = clamp(kingPressure + materialSwing * 0.35);
+  const gameStage: HumanGameStage = phase < 0.25 ? "opening" : phase < 0.7 ? "middlegame" : "endgame";
 
   const calmComplexityBonus = complexity * 0.55 + phase * 0.12;
   const pressurePenalty = tacticalPressure * 0.7 + practicalPressure * 0.55;
   const effectiveBudget = clamp(baseBudget * (1 + calmComplexityBonus - pressurePenalty));
 
-  return { complexity, tacticalPressure, phase, practicalPressure, effectiveBudget };
+  return { complexity, tacticalPressure, phase, practicalPressure, gameStage, effectiveBudget };
+}
+
+function isCentralPawnMove(board: Board, move: Move): boolean {
+  const piece = board.pieceAt(move.from);
+  if (piece?.[1] !== "p") return false;
+  const file = move.to & 7;
+  const rank = Math.floor(move.to / 8);
+  return (file === 3 || file === 4) && (rank === 3 || rank === 4);
+}
+
+function gameFlowValue(board: Board, candidate: CandidateScore, profile: HumanErrorProfile): number {
+  const moving = board.pieceAt(candidate.move.from);
+  if (!moving) return 0;
+
+  if (profile.gameStage === "opening") {
+    let value = 0;
+    if (candidate.ideaKinds.includes("develop")) value += 3.5;
+    if (candidate.move.castle) value += 5;
+    if (isCentralPawnMove(board, candidate.move)) value += 2;
+    if (moving[1] === "q" && !candidate.move.castle) value -= 1.5;
+    return value;
+  }
+
+  if (profile.gameStage === "middlegame") {
+    let value = 0;
+    if (candidate.ideaKinds.includes("pawn-break")) value += 3.5;
+    if (candidate.ideaKinds.includes("attack") || candidate.ideaKinds.includes("create-threat")) value += 1.5;
+    return value;
+  }
+
+  let value = 0;
+  if (candidate.ideaKinds.includes("simplify")) value += 3;
+  if (candidate.ideaKinds.includes("create-threat")) value += 2;
+  if (moving[1] === "k") value += 2;
+  return value;
 }
 
 function styleValue(
+  board: Board,
   candidate: CandidateScore,
   profile: HumanErrorProfile,
   options: HumanStyleOptions,
@@ -95,7 +135,7 @@ function styleValue(
   const pawnBreaks = clamp(options.pawnBreaks ?? 0.5);
   const has = (kind: CandidateScore["ideaKinds"][number]) => candidate.ideaKinds.includes(kind);
 
-  let value = 0;
+  let value = gameFlowValue(board, candidate, profile);
   if (has("attack") || has("create-threat") || has("complicate")) {
     value += initiative * (4 + profile.complexity * 2) * (1 - profile.tacticalPressure * 0.35);
   }
@@ -133,7 +173,7 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
       (kind) => kind === "complicate" || kind === "attack" || kind === "create-threat",
     ).length;
     const practicalRisk = riskKinds * 3 * riskTolerance * (1 - profile.tacticalPressure * 0.5);
-    const value = candidate.score - rankPenalty + practicalRisk + styleValue(candidate, profile, options);
+    const value = candidate.score - rankPenalty + practicalRisk + styleValue(board, candidate, profile, options);
     return { candidate, value };
   });
 
