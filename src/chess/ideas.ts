@@ -9,7 +9,10 @@ const squareName = (s: number) => `${"abcdefgh"[s & 7]}${Math.floor(s / 8) + 1}`
 const uniqueMoves = (moves: Move[]) => { const seen = new Set<string>(); return moves.filter((m) => !seen.has(m.uci()) && seen.add(m.uci())); };
 const captures = (board: Board, moves: Move[]) => moves.filter((m) => m.enPassant || board.pieceAt(m.to) !== null);
 const quiet = (board: Board, moves: Move[]) => moves.filter((m) => !m.enPassant && !board.pieceAt(m.to) && !m.promotion);
-const pieceType = (board: Board, move: Move): PieceType | null => board.pieceAt(move.from)?.[1] ?? null;
+const pieceType = (board: Board, move: Move): PieceType | null => {
+  const piece = board.pieceAt(move.from);
+  return piece ? (piece[1] as PieceType) : null;
+};
 
 function fromSquares(moves: Move[], squares: Set<string>) { return moves.filter((m) => squares.has(squareName(m.from))); }
 
