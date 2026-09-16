@@ -54,8 +54,8 @@ describe("Swift human move selection", () => {
   it("changes practical preferences without changing tactical candidates", () => {
     const board = Board.start();
     const legal = board.legalMoves();
-    const simplify = { move: legal[0], score: 100, ideaKinds: ["simplify"] as const, reasons: ["exchange"] };
-    const attack = { move: legal[1], score: 100, ideaKinds: ["attack"] as const, reasons: ["initiative"] };
+    const simplify = { move: legal[0], score: 100, ideaKinds: ["simplify"], reasons: ["exchange"] };
+    const attack = { move: legal[1], score: 100, ideaKinds: ["attack"], reasons: ["initiative"] };
 
     const exchangeFocused = selectHumanMove(board, {
       candidates: [simplify, attack],
