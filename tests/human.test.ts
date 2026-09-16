@@ -22,7 +22,7 @@ describe("Swift human move selection", () => {
   });
 
   it("keeps an immediate mate in the human candidate set", () => {
-    const board = Board.fromFEN("6k1/5ppp/8/8/8/8/5PPP/6KQ w - - 0 1");
+    const board = Board.fromFEN("6k1/5ppp/7Q/8/8/5K2/8/8 w - - 0 1");
     const result = selectHumanMove(board, { randomness: 0, candidateLimit: 8 });
     expect(result.move).not.toBeNull();
     expect(result.candidates.some((candidate) => board.makeMove(candidate.move).isCheckmate())).toBe(true);
