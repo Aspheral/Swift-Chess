@@ -1,7 +1,7 @@
 import { Board, Move } from "./board";
 import { SearchOptions, SearchResult, SwiftEngine } from "./engine";
 import { CandidateScore, scoreCandidates } from "./scoring";
-import { HumanErrorProfile, selectHumanMove, HumanSelectionOptions } from "./human";
+import { HumanErrorProfile, humanErrorProfile, selectHumanMove, HumanSelectionOptions } from "./human";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   /** Maximum search score loss, in centipawns, allowed from the engine move. */
