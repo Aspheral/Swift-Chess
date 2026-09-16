@@ -44,6 +44,34 @@ describe("Swift human move selection", () => {
     expect(tacticalProfile.tacticalPressure).toBeGreaterThan(quietProfile.tacticalPressure);
   });
 
+  it("classifies positions into opening, middlegame, and endgame flow stages", () => {
+    const opening = humanErrorProfile(Board.start());
+    const middlegame = humanErrorProfile(Board.fromFEN("4k3/pppp4/8/8/8/8/PPPP4/4K3 w - - 0 1"));
+    const endgame = humanErrorProfile(Board.fromFEN("4k3/8/8/8/8/8/8/4K3 w - - 0 1"));
+
+    expect(opening.gameStage).toBe("opening");
+    expect(middlegame.gameStage).toBe("middlegame");
+    expect(endgame.gameStage).toBe("endgame");
+  });
+
+  it("gives middlegame pawn breaks a practical preference", () => {
+    const board = Board.fromFEN("4k3/pppp4/8/8/8/8/PPPP4/4K3 w - - 0 1");
+    const legal = board.legalMoves();
+    const pawnBreak: CandidateScore = { move: legal[0], score: 100, ideaKinds: ["pawn-break"], reasons: ["challenge the structure"] };
+    const quiet: CandidateScore = { move: legal[1], score: 100, ideaKinds: ["improve-piece"], reasons: ["improve"] };
+
+    const result = selectHumanMove(board, {
+      candidates: [quiet, pawnBreak],
+      candidateLimit: 2,
+      randomness: 0,
+      errorBudget: 0,
+      pawnBreaks: 1,
+    });
+
+    expect(result.profile?.gameStage).toBe("middlegame");
+    expect(result.move?.uci()).toBe(pawnBreak.move.uci());
+  });
+
   it("exposes position factors with every human selection", () => {
     const result = selectHumanMove(Board.start(), { randomness: 0, seed: 7 });
     expect(result.profile).toBeDefined();
