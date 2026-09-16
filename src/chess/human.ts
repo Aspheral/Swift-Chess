@@ -72,7 +72,8 @@ export function humanErrorProfile(board: Board, baseBudget = 0.35): HumanErrorPr
   const legalMoves = Math.max(1, understanding.space[understanding.sideToMove]);
   const complexity = clamp((legalMoves - 8) / 28);
   const tacticalPressure = clamp(understanding.tactics.forcingMoves / legalMoves);
-  const totalPieces = understanding.pieces.w.length + understanding.pieces.b.length + 2;
+  const boardField = board.toFEN().split(/\s+/)[0];
+  const totalPieces = boardField.replace(/[1-8/]/g, "").length;
   const phase = clamp((16 - totalPieces) / 10);
   const ownKing = understanding.king[understanding.sideToMove];
   const enemyKing = understanding.king[understanding.sideToMove === "w" ? "b" : "w"];
