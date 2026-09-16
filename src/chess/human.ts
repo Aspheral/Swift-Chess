@@ -152,13 +152,51 @@ function styleValue(
   return value;
 }
 
+/**
+ * Keep a small human-sized menu while preserving different plans when they
+ * exist. A machine tends to over-cluster on near-identical top moves; people
+ * usually compare a forcing move, an improvement, an exchange, or a pawn move
+ * before choosing. Diversity is deliberately bounded so score quality remains
+ * the primary signal.
+ */
+function diversifyCandidates(candidates: CandidateScore[], limit: number): CandidateScore[] {
+  if (candidates.length <= limit) return candidates;
+
+  const selected: CandidateScore[] = [candidates[0]];
+  const seenKinds = new Set(candidates[0].ideaKinds);
+  const remaining = candidates.slice(1);
+
+  while (selected.length < limit && remaining.length) {
+    let bestIndex = 0;
+    let bestUtility = -Infinity;
+
+    for (let index = 0; index < remaining.length; index += 1) {
+      const candidate = remaining[index];
+      const novelKinds = candidate.ideaKinds.filter((kind) => !seenKinds.has(kind)).length;
+      const scoreGap = Math.max(0, candidates[0].score - candidate.score);
+      const diversityBonus = novelKinds > 0 ? Math.min(7, 2.5 + novelKinds * 1.5) : 0;
+      const utility = candidate.score + diversityBonus - Math.min(6, scoreGap * 0.08);
+      if (utility > bestUtility) {
+        bestUtility = utility;
+        bestIndex = index;
+      }
+    }
+
+    const [chosen] = remaining.splice(bestIndex, 1);
+    selected.push(chosen);
+    for (const kind of chosen.ideaKinds) seenKinds.add(kind);
+  }
+
+  return selected;
+}
+
 export function selectHumanMove(board: Board, options: HumanSelectionOptions = {}): HumanSelection {
   const candidateLimit = Math.max(1, options.candidateLimit ?? 6);
   const randomness = clamp(options.randomness ?? 0.12);
   const riskTolerance = clamp(options.riskTolerance ?? 0.5);
   const baseBudget = clamp(options.errorBudget ?? 0.35);
   const generated = options.candidates ?? scoreCandidates(board).scores;
-  const ranked = generated.slice(0, candidateLimit);
+  const ranked = diversifyCandidates(generated, candidateLimit);
   if (!ranked.length) return { move: null, candidates: [], selectedScore: -Infinity };
 
   const profile = humanErrorProfile(board, baseBudget);
