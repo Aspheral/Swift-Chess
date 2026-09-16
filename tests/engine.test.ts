@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Board, SwiftEngine, staticExchange } from "../src";
+import { Board, SwiftEngine, SwiftEnginePVS, staticExchange } from "../src";
 
 describe("Swift search", () => {
   it("finds a mate in one", () => {
@@ -43,5 +43,22 @@ describe("Swift search", () => {
     const move = board.legalMoves().find((candidate) => candidate.uci() === "e4e5");
     expect(move).toBeDefined();
     expect(staticExchange(board, move!)).toBe(-800);
+  });
+
+  it("PVS preserves mate selection", () => {
+    const board = Board.fromFEN("6k1/5ppp/8/8/8/6Q1/5PPP/6K1 w - - 0 1");
+    const result = new SwiftEnginePVS().search(board, { depth: 3 });
+    expect(result.move?.uci()).toBe("g3b8");
+    expect(result.score).toBeGreaterThan(90000);
+    expect(result.pv?.[0].uci()).toBe("g3b8");
+  });
+
+  it("PVS returns a legal principal variation", () => {
+    const board = Board.start();
+    const result = new SwiftEnginePVS().search(board, { depth: 4 });
+    expect(result.move).not.toBeNull();
+    expect(result.pv?.length).toBeGreaterThan(0);
+    expect(result.pv?.length).toBeLessThanOrEqual(32);
+    expect(board.legalMoves().some((move) => move.uci() === result.move?.uci())).toBe(true);
   });
 });
