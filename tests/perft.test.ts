@@ -19,9 +19,9 @@ describe("Swift perft", () => {
     expect(perft(board, 4)).toBe(197281);
   });
 
-  it("matches a tactical position with castling and en passant rights", () => {
+  it("matches the canonical Kiwipete position", () => {
     const board = Board.fromFEN(
-      "r3k2r/p1ppqpb1/bn2pnp1/2pP4/1p2P3/2N2N2/PPQBBPPP/R3K2R w KQkq - 0 1",
+      "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
     );
     expect(perft(board, 1)).toBe(48);
     expect(perft(board, 2)).toBe(2039);
