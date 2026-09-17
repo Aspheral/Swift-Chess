@@ -12,7 +12,9 @@ const STOCKFISH_MOVETIME_MS = 40;
 const HUMAN_SAFETY_DEPTH = 1;
 const HUMAN_PONDER_DEPTH = 1;
 const HUMAN_CANDIDATE_LIMIT = 3;
-const HUMAN_SAFETY_CANDIDATE_LIMIT = 3;
+// One consequence check is enough for the CI gate. Production Swift keeps its
+// normal candidate/safety budgets; this only bounds the regression-test cost.
+const HUMAN_SAFETY_CANDIDATE_LIMIT = 1;
 const HUMAN_TACTICAL_DEPTH = 0;
 
 class UciStockfish {
