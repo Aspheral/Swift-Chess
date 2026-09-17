@@ -9,18 +9,21 @@ interface OpeningLine {
 }
 
 /**
- * A small human repertoire rather than a giant opening table.
- *
- * Swift only follows a line while the actual game history still matches it.
- * Once the opponent deviates, the book gets out of the way and the normal
- * position-understanding layer takes over. This prevents "opening memory"
- * from turning into mechanical play.
+ * Swift's small human repertoire. These are deliberately short, normal
+ * developing lines rather than a giant opening database. Several branches
+ * cover the same opening so an opponent's harmless deviation does not throw
+ * Swift into a completely unrelated move such as ...Na6.
  */
 const LINES: OpeningLine[] = [
   {
     name: "Reti",
     moves: ["g1f3", "d7d5", "c2c4", "e7e6", "g2g3", "g8f6", "f1g2", "f8e7", "e1g1", "e8g8", "d2d4"],
     weight: 3,
+  },
+  {
+    name: "Reti",
+    moves: ["g1f3", "d7d5", "b1c3", "g8f6", "d2d4", "e7e6", "e2e4", "f8c4", "e1g1", "e8g8"],
+    weight: 2,
   },
   {
     name: "Queen's Gambit",
@@ -33,14 +36,29 @@ const LINES: OpeningLine[] = [
     weight: 4,
   },
   {
+    name: "Queen's Gambit Declined",
+    moves: ["d2d4", "d7d5", "c2c4", "e7e6", "b1c3", "g8f6", "c1g5", "f8e7", "e2e3", "e8g8"],
+    weight: 2,
+  },
+  {
     name: "Four Knights",
     moves: ["e2e4", "e7e5", "g1f3", "b8c6", "b1c3", "g8f6", "f1b5", "f8b4", "e1g1", "e8g8"],
     weight: 4,
   },
   {
+    name: "Four Knights",
+    moves: ["e2e4", "e7e5", "g1f3", "b8c6", "b1c3", "g8f6", "d2d4", "e5d4", "f3d4", "f8b4"],
+    weight: 2,
+  },
+  {
     name: "Bishop's Opening",
     moves: ["e2e4", "e7e5", "f1c4", "g8f6", "d2d3", "f8c5", "g1f3", "e8g8", "e1g1"],
     weight: 3,
+  },
+  {
+    name: "Bishop's Opening",
+    moves: ["e2e4", "e7e5", "f1c4", "g8f6", "d2d3", "f8b4", "c1d2", "b4c5", "g1f3", "e8g8"],
+    weight: 1,
   },
 ];
 
@@ -75,9 +93,35 @@ function seededRandom(seed: number): number {
 }
 
 /**
- * Return a repertoire move only when the supplied game history is an exact
- * prefix of the repertoire line. The history parameter is deliberately UCI
- * based so the opening layer stays independent from Game's mutable state.
+ * Small natural-development fallback for harmless opening deviations. It is
+ * intentionally conservative: center pawns and undeveloped knights are much
+ * more human than inventing a flank knight excursion just because the exact
+ * book line stopped matching.
+ */
+function naturalOpeningMove(board: Board, history: string[]): Move | null {
+  if (history.length >= 8) return null;
+
+  const legal = new Map(board.legalMoves().map((move) => [move.uci(), move]));
+  const first = history[0];
+  const preferred = first === "e2e4"
+    ? ["e7e5", "g8f6", "b8c6", "f8c5", "f8e7", "e8g8"]
+    : first === "d2d4"
+      ? ["d7d5", "g8f6", "e7e6", "c7c5", "f8e7", "e8g8"]
+      : first === "g1f3"
+        ? ["d7d5", "g8f6", "e7e6", "c7c5", "f8e7", "e8g8"]
+        : [];
+
+  for (const uci of preferred) {
+    const move = legal.get(uci);
+    if (move) return move;
+  }
+  return null;
+}
+
+/**
+ * Return a repertoire move only while the actual game history matches a
+ * repertoire line. If the opponent makes a harmless deviation, Swift keeps
+ * making normal developing moves instead of falling into engine-only play.
  */
 export function openingBookMove(
   board: Board,
@@ -92,20 +136,33 @@ export function openingBookMove(
     .map((line) => ({ line, next: line.moves[history.length] }))
     .filter(({ next }) => Boolean(next && legal.has(next)));
 
-  if (!matches.length) return null;
-
-  const totalWeight = matches.reduce((sum, choice) => sum + choice.line.weight, 0);
-  let roll = seededRandom(seed) * totalWeight;
-  for (const choice of matches) {
-    roll -= choice.line.weight;
-    if (roll <= 0) return { move: legal.get(choice.next)!, opening: choice.line.name };
+  if (matches.length) {
+    const totalWeight = matches.reduce((sum, choice) => sum + choice.line.weight, 0);
+    let roll = seededRandom(seed) * totalWeight;
+    for (const choice of matches) {
+      roll -= choice.line.weight;
+      if (roll <= 0) return { move: legal.get(choice.next)!, opening: choice.line.name };
+    }
+    return { move: legal.get(matches[0].next)!, opening: matches[0].line.name };
   }
-  return { move: legal.get(matches[0].next)!, opening: matches[0].line.name };
+
+  const natural = naturalOpeningMove(board, history);
+  if (natural) {
+    const first = history[0];
+    const opening: SwiftOpening = first === "e2e4"
+      ? (history[2] === "f1c4" ? "Bishop's Opening" : "Four Knights")
+      : first === "d2d4"
+        ? "Queen's Gambit Declined"
+        : "Reti";
+    return { move: natural, opening };
+  }
+
+  return null;
 }
 
 /** Return the repertoire families Swift can use from its current side. */
 export function openingNames(): SwiftOpening[] {
-  return LINES.map((line) => line.name);
+  return ["Reti", "Queen's Gambit", "Queen's Gambit Declined", "Four Knights", "Bishop's Opening"];
 }
 
 /** Useful for tests and diagnostics without exposing the internal table. */
