@@ -1,4 +1,5 @@
 import { Board, Move } from "./board";
+import { Game } from "./game";
 import { SearchOptions, SearchResult, SwiftEngine } from "./engine";
 import { CandidateScore, scoreCandidates } from "./scoring";
 import { HumanErrorProfile, humanErrorProfile, selectHumanMove, HumanSelectionOptions } from "./human";
@@ -9,6 +10,10 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
   safetyMargin?: number;
   /** Shallow reply-search depth used to reject tactical blunders. */
   safetyDepth?: number;
+  /** UCI moves already played in the current game. */
+  moveHistory?: string[];
+  /** Repetition identities already encountered, including the initial position. */
+  positionHistoryKeys?: string[];
 }
 
 export interface HumanSearchResult extends SearchResult {
@@ -31,8 +36,9 @@ export class HumanSwiftEngine {
     const result = this.engine.search(board, options);
     if (!result.move) return { ...result, humanCandidates: [] };
 
-    const book = openingBookMove(board, options.seed ?? Date.now());
-    if (book) {
+    const history = options.moveHistory ?? options.history ?? [];
+    const book = openingBookMove(board, options.seed ?? Date.now(), history);
+    if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
       return {
         ...result,
         move: book.move,
@@ -60,8 +66,14 @@ export class HumanSwiftEngine {
       };
     }
 
+    const nonRepeating = safe.filter((candidate) => !this.wouldRepeatPosition(board, candidate.move, options.positionHistoryKeys ?? []));
+    const repetitionSafe = nonRepeating.length ? nonRepeating : safe;
+
+    const nonBacktracking = repetitionSafe.filter((candidate) => !this.isMechanicalBacktrack(candidate.move, history));
+    const movementSafe = nonBacktracking.length ? nonBacktracking : repetitionSafe;
+
     const selected = selectHumanMove(board, {
-      candidateLimit: Math.min(options.candidateLimit ?? 6, safe.length),
+      candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length),
       randomness: options.randomness,
       riskTolerance: options.riskTolerance,
       errorBudget: options.errorBudget,
@@ -70,12 +82,13 @@ export class HumanSwiftEngine {
       simplification: options.simplification,
       development: options.development,
       pawnBreaks: options.pawnBreaks,
-      candidates: safe,
+      history,
+      candidates: movementSafe,
     });
     const selectedMove = selected.move;
-    const safeKeys = new Set(safe.map((candidate) => candidate.move.uci()));
+    const safeKeys = new Set(movementSafe.map((candidate) => candidate.move.uci()));
     if (!selectedMove || !safeKeys.has(selectedMove.uci())) {
-      return { ...result, humanCandidates: safe, humanProfile: selected.profile ?? profile };
+      return { ...result, humanCandidates: movementSafe, humanProfile: selected.profile ?? profile };
     }
 
     const pv = result.pv ?? [];
@@ -83,7 +96,7 @@ export class HumanSwiftEngine {
       ...result,
       move: selectedMove,
       pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove],
-      humanCandidates: safe,
+      humanCandidates: movementSafe,
       humanProfile: selected.profile ?? profile,
     };
   }
@@ -110,5 +123,23 @@ export class HumanSwiftEngine {
       if (child.isInCheck(opponent) && child.legalMoves().length === 0) return false;
     }
     return -this.safetyEngine.search(child, { depth }).score >= baseline - margin;
+  }
+
+  private wouldRepeatPosition(board: Board, move: Move, positionHistoryKeys: string[]): boolean {
+    if (!positionHistoryKeys.length) return false;
+    const child = board.makeMove(move);
+    const key = Game.positionKey(child);
+    return positionHistoryKeys.filter((entry) => entry === key).length >= 2;
+  }
+
+  private isMechanicalBacktrack(move: Move, history: string[]): boolean {
+    const from = move.uci().slice(0, 2);
+    const to = move.uci().slice(2, 4);
+    for (let index = history.length - 2; index >= Math.max(0, history.length - 10); index -= 2) {
+      const previous = history[index];
+      if (!previous) continue;
+      if (previous.slice(0, 2) === to && previous.slice(2, 4) === from) return true;
+    }
+    return false;
   }
 }
