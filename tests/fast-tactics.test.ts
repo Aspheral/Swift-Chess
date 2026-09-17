@@ -19,11 +19,11 @@ describe("Swift tactical priorities", () => {
   });
 
   it("recognizes a queen grab as a forcing material priority", () => {
-    const board = Board.fromFEN("3q2k1/8/8/8/8/8/8/Q3R1K1 w - - 0 1");
+    const board = Board.fromFEN("4q1k1/8/8/8/8/8/8/Q3R1K1 w - - 0 1");
     const result = findTacticalPriority(board, new SwiftEngine());
 
     expect(result?.kind).toBe("queen");
-    expect(result?.move.uci()).toBe("e1d1");
+    expect(result?.move.uci()).toBe("e1e8");
   });
 
   it("does not auto-grab the enemy queen when our queen is attacked", () => {
