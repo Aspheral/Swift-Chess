@@ -48,8 +48,6 @@ function moveScore(
   const materialGain = afterMaterial - beforeMaterial;
   let score = materialGain * 0.35;
 
-  // Material change already accounts for captures, en passant, and promotions.
-  // Keep the material signal single-counted so exchanges do not get inflated.
   if (next.isCheckmate()) score += 500;
   else if (next.isInCheck(side === "w" ? "b" : "w")) score += 28;
 
@@ -70,8 +68,6 @@ function moveScore(
     }
   }
 
-  // Idea labels are supporting evidence, not the main evaluation. Each kind is
-  // applied once after move consequences have been measured.
   if (ideaKinds.includes("tactical")) score += 10;
   if (ideaKinds.includes("defend")) score += moving?.[0] === side ? 4 : 0;
   if (ideaKinds.includes("develop") && ["n", "b"].includes(moving?.[1] ?? "")) score += 4;
@@ -90,16 +86,14 @@ interface MoveEvidence {
   priority: number;
 }
 
-export function scoreCandidates(board: Board): CandidateGeneration {
+export function scoreCandidates(board: Board, concreteLimit?: number): CandidateGeneration {
   const generated = generateIdeas(board);
   const side = generated.understanding.sideToMove;
   const beforeOwnMobility = mobilityForSide(board, side);
   const beforeOpponentMobility = mobilityForSide(board, side === "w" ? "b" : "w");
   const byMove = new Map<string, MoveEvidence>();
 
-  // First aggregate the strategic evidence for each move. This prevents a move
-  // that happens to satisfy several ideas from repeatedly paying the concrete
-  // move-evaluation cost or stacking the same label bonus over and over.
+  // Aggregate strategic evidence before paying the expensive concrete scoring cost.
   for (const idea of generated.ideas) {
     for (const move of idea.candidates) {
       const key = move.uci();
@@ -119,11 +113,15 @@ export function scoreCandidates(board: Board): CandidateGeneration {
     }
   }
 
-  const scores = [...byMove.values()]
+  const evidence = [...byMove.values()].sort((a, b) => b.priority - a.priority);
+  const limit = concreteLimit === undefined
+    ? evidence.length
+    : Math.max(1, Math.min(evidence.length, Math.floor(concreteLimit)));
+  const concreteEvidence = evidence.slice(0, limit);
+
+  const scores = concreteEvidence
     .map((entry) => ({
       move: entry.move,
-      // Priority provides a small strategic prior. Concrete consequences remain
-      // the dominant signal, while multiple independent ideas add modest evidence.
       score: moveScore(board, entry.move, entry.ideaKinds, side, beforeOwnMobility, beforeOpponentMobility)
         + Math.min(12, entry.priority * 0.15),
       ideaKinds: entry.ideaKinds,
