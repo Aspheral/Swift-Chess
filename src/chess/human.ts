@@ -11,6 +11,8 @@ export interface HumanStyleOptions {
   development?: number;
   /** Preference for pawn breaks and structural changes in the middlegame. */
   pawnBreaks?: number;
+  /** Recent game moves used to recognize mechanical backtracking. */
+  history?: string[];
 }
 
 export interface HumanSelectionOptions extends HumanStyleOptions {
@@ -62,6 +64,11 @@ function clamp(value: number, min = 0, max = 1): number {
   return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * Turns a static human error setting into a position-aware decision budget.
+ * Complex quiet positions allow more imperfect choices; tactical danger sharply
+ * reduces the budget so Swift still behaves like a careful human under fire.
+ */
 export function humanErrorProfile(board: Board, baseBudget = 0.35): HumanErrorProfile {
   const understanding = understandPosition(board);
   const legalMoves = Math.max(1, understanding.space[understanding.sideToMove]);
@@ -90,6 +97,64 @@ function isCentralPawnMove(board: Board, move: Move): boolean {
   const file = move.to & 7;
   const rank = Math.floor(move.to / 8);
   return (file === 3 || file === 4) && (rank === 3 || rank === 4);
+}
+
+function uciSquare(uci: string, offset: number): number | null {
+  const file = uci.charCodeAt(offset) - 97;
+  const rank = Number(uci[offset + 1]) - 1;
+  if (file < 0 || file > 7 || rank < 0 || rank > 7 || !Number.isFinite(rank)) return null;
+  return rank * 8 + file;
+}
+
+/**
+ * Detect the mechanical move reversal that made earlier Swift games look like
+ * a machine testing the same corridor over and over. Only recent moves by the
+ * side to move are considered, and this is a preference penalty, not a chess
+ * rule: tactical necessities can still win the comparison.
+ */
+function backtrackPenalty(move: Move, history: string[]): number {
+  const current = move.uci();
+  const from = uciSquare(current, 0);
+  const to = uciSquare(current, 2);
+  if (from === null || to === null) return 0;
+
+  let penalty = 0;
+  for (let index = history.length - 2; index >= Math.max(0, history.length - 10); index -= 2) {
+    const previous = history[index];
+    if (!previous) continue;
+    const previousFrom = uciSquare(previous, 0);
+    const previousTo = uciSquare(previous, 2);
+    if (previousFrom === to && previousTo === from) {
+      penalty = Math.max(penalty, index === history.length - 2 ? 10 : 5);
+    }
+  }
+  return penalty;
+}
+
+function openingNaturalness(board: Board, candidate: CandidateScore, history: string[]): number {
+  if (history.length > 10) return 0;
+  const moving = board.pieceAt(candidate.move.from);
+  if (!moving) return 0;
+
+  let value = 0;
+  const destinationFile = candidate.move.to & 7;
+  const destinationRank = Math.floor(candidate.move.to / 8);
+
+  if (candidate.ideaKinds.includes("develop")) value += 2;
+  if (moving[1] === "p" && isCentralPawnMove(board, candidate.move)) value += 1.5;
+
+  // Early Na6/Nh6/Na3/Nh3 is legal but usually a special decision, not a
+  // default development habit. Swift should reach for the natural central
+  // squares unless the position gives it a concrete reason not to.
+  if (moving[1] === "n" && (destinationFile === 0 || destinationFile === 7)) value -= 6;
+
+  // Rooks moving before a useful castling decision are especially suspicious
+  // in a normal opening. This directly addresses the rook shuffling pattern.
+  if (moving[1] === "r" && history.length < 10) value -= 8;
+  if (moving[1] === "q" && history.length < 8) value -= 3;
+
+  value -= backtrackPenalty(candidate.move, history);
+  return value;
 }
 
 function gameFlowValue(board: Board, candidate: CandidateScore, profile: HumanErrorProfile): number {
@@ -127,11 +192,12 @@ function styleValue(
 ): number {
   const initiative = clamp(options.initiative ?? 0.5);
   const simplification = clamp(options.simplification ?? 0.5);
-  const development = clamp(options.development ?? 0.65);
+  const development = clamp(options.development ?? 0.7);
   const pawnBreaks = clamp(options.pawnBreaks ?? 0.5);
   const has = (kind: CandidateScore["ideaKinds"][number]) => candidate.ideaKinds.includes(kind);
 
   let value = gameFlowValue(board, candidate, profile);
+  value += openingNaturalness(board, candidate, options.history ?? []);
   if (has("attack") || has("create-threat") || has("complicate")) {
     value += initiative * (4 + profile.complexity * 2) * (1 - profile.tacticalPressure * 0.35);
   }
@@ -147,6 +213,13 @@ function styleValue(
   return value;
 }
 
+/**
+ * Keep a small human-sized menu while preserving different plans when they
+ * exist. A machine tends to over-cluster on near-identical top moves; people
+ * usually compare a forcing move, an improvement, an exchange, or a pawn move
+ * before choosing. Diversity is deliberately bounded so score quality remains
+ * the primary signal.
+ */
 function diversifyCandidates(candidates: CandidateScore[], limit: number): CandidateScore[] {
   if (candidates.length <= limit) return candidates;
 
@@ -180,7 +253,7 @@ function diversifyCandidates(candidates: CandidateScore[], limit: number): Candi
 
 export function selectHumanMove(board: Board, options: HumanSelectionOptions = {}): HumanSelection {
   const candidateLimit = Math.max(1, options.candidateLimit ?? 6);
-  const randomness = clamp(options.randomness ?? 0.12);
+  const randomness = clamp(options.randomness ?? 0.08);
   const riskTolerance = clamp(options.riskTolerance ?? 0.5);
   const baseBudget = clamp(options.errorBudget ?? 0.35);
   const generated = options.candidates ?? scoreCandidates(board).scores;
@@ -192,18 +265,15 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
   const allowedLoss = profile.effectiveBudget * 80;
   const eligible = ranked.filter((candidate) => candidate.score >= topScore - allowedLoss);
   const rng = options.seed === undefined ? Math.random : seededRandom(options.seed);
-  const temperature = 1 + randomness * 4 + profile.effectiveBudget * 4;
+  const temperature = 1 + randomness * 5 + profile.effectiveBudget * 7;
 
   const adjusted = eligible.map((candidate, index) => {
-    const scoreGap = Math.max(0, topScore - candidate.score);
-    const errorSeverity = (scoreGap / Math.max(12, allowedLoss + 8)) ** 2;
-    const qualityPenalty = errorSeverity * (8 + (1 - profile.effectiveBudget) * 12);
-    const rankPenalty = index * (1 + (1 - profile.effectiveBudget) * 2);
+    const rankPenalty = index * (1.5 + (1 - profile.effectiveBudget) * 2.5);
     const riskKinds = candidate.ideaKinds.filter(
       (kind) => kind === "complicate" || kind === "attack" || kind === "create-threat",
     ).length;
-    const practicalRisk = riskKinds * 2.5 * riskTolerance * (1 - profile.tacticalPressure * 0.6) * (1 - errorSeverity);
-    const value = candidate.score - qualityPenalty - rankPenalty + practicalRisk + styleValue(board, candidate, profile, options);
+    const practicalRisk = riskKinds * 3 * riskTolerance * (1 - profile.tacticalPressure * 0.5);
+    const value = candidate.score - rankPenalty + practicalRisk + styleValue(board, candidate, profile, options);
     return { candidate, value };
   });
 
