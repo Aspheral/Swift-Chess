@@ -2,6 +2,7 @@ import { Board, Move } from "./board";
 import { SearchOptions, SearchResult, SwiftEngine } from "./engine";
 import { CandidateScore, scoreCandidates } from "./scoring";
 import { HumanErrorProfile, humanErrorProfile, selectHumanMove, HumanSelectionOptions } from "./human";
+import { SwiftOpening, openingBookMove } from "./openings";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   /** Maximum search score loss, in centipawns, allowed from the engine move. */
@@ -13,6 +14,7 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
 export interface HumanSearchResult extends SearchResult {
   humanCandidates: CandidateScore[];
   humanProfile?: HumanErrorProfile;
+  opening?: SwiftOpening;
 }
 
 /** Adds bounded human-style choice without allowing shallow tactical blunders. */
@@ -28,6 +30,17 @@ export class HumanSwiftEngine {
   search(board: Board, options: HumanEngineOptions = {}): HumanSearchResult {
     const result = this.engine.search(board, options);
     if (!result.move) return { ...result, humanCandidates: [] };
+
+    const book = openingBookMove(board, options.seed ?? Date.now());
+    if (book) {
+      return {
+        ...result,
+        move: book.move,
+        pv: result.pv?.length ? [book.move, ...result.pv.slice(1)] : [book.move],
+        humanCandidates: [],
+        opening: book.opening,
+      };
+    }
 
     const safetyMargin = Math.max(0, options.safetyMargin ?? 60);
     const safetyDepth = Math.max(1, Math.min(3, Math.floor(options.safetyDepth ?? 2)));
@@ -85,15 +98,12 @@ export class HumanSwiftEngine {
   }
 
   private positionSafetyMargin(baseMargin: number, profile: HumanErrorProfile): number {
-    // Humans may choose a slightly inferior move in calm positions, but tactical
-    // pressure should progressively narrow the acceptable loss.
     const pressure = profile.tacticalPressure * 0.65 + profile.practicalPressure * 0.35;
     return Math.max(0, baseMargin * (1 - pressure));
   }
 
   private isSafeCandidate(board: Board, move: Move, baseline: number, margin: number, depth: number): boolean {
     const child = board.makeMove(move);
-    // A human mistake can be inaccurate, but should not hang mate in one.
     if (!child.isCheckmate()) {
       const opponent = child.toFEN().split(/\s+/)[1] as "w" | "b";
       if (child.legalMoves().some((reply) => child.makeMove(reply).isCheckmate())) return false;
