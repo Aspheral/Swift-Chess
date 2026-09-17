@@ -13,6 +13,8 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
   ponderDepth?: number;
   /** Maximum number of generated candidates to consequence-check. */
   safetyCandidateLimit?: number;
+  /** Maximum number of strategically-prioritized candidates to concretely score. */
+  concreteCandidateLimit?: number;
   /** Cap the tactical mate search; 0 keeps immediate/SEE priorities only. */
   tacticalSearchDepth?: number;
   moveHistory?: string[];
@@ -59,7 +61,7 @@ export class HumanSwiftEngine {
     const history = options.moveHistory ?? options.history ?? [];
     const safetyMargin = Math.max(0, options.safetyMargin ?? (technicalEndgame ? 25 : 60));
     const safetyDepth = Math.max(1, Math.min(4, Math.floor(options.safetyDepth ?? (technicalEndgame ? 4 : 3))));
-    const generated = scoreCandidates(board);
+    const generated = scoreCandidates(board, options.concreteCandidateLimit);
     const baseErrorBudget = technicalEndgame ? Math.min(options.errorBudget ?? 0.35, 0.08) : (options.errorBudget ?? 0.35);
     const profile = humanErrorProfile(board, baseErrorBudget);
 
