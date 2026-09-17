@@ -9,12 +9,12 @@ interface OpeningLine {
 }
 
 /**
- * A compact human repertoire. Swift does not invent a bizarre move simply to
- * satisfy the book. It follows a familiar family only while the opponent's
- * moves keep matching it, then returns to the normal human selector.
+ * A small human repertoire rather than a giant opening table.
  *
- * The weights matter only where two repertoire families share the same
- * position, most notably the Queen's Gambit / QGD choice after 1.d4 d5 2.c4.
+ * Swift only follows a line while the actual game history still matches it.
+ * Once the opponent deviates, the book gets out of the way and the normal
+ * position-understanding layer takes over. This prevents "opening memory"
+ * from turning into mechanical play.
  */
 const LINES: OpeningLine[] = [
   {
@@ -24,8 +24,8 @@ const LINES: OpeningLine[] = [
   },
   {
     name: "Queen's Gambit",
-    moves: ["d2d4", "d7d5", "c2c4", "d5c4", "e2e4", "e7e5", "g1f3", "b8c6"],
-    weight: 2,
+    moves: ["d2d4", "d7d5", "c2c4", "d5c4", "g1f3", "g8f6", "e2e3", "e7e6", "f1c4", "f8e7", "e1g1"],
+    weight: 3,
   },
   {
     name: "Queen's Gambit Declined",
@@ -40,7 +40,7 @@ const LINES: OpeningLine[] = [
   {
     name: "Bishop's Opening",
     moves: ["e2e4", "e7e5", "f1c4", "g8f6", "d2d3", "f8c5", "g1f3", "e8g8", "e1g1"],
-    weight: 2,
+    weight: 3,
   },
 ];
 
@@ -74,26 +74,41 @@ function seededRandom(seed: number): number {
   return (state >>> 0) / 0x100000000;
 }
 
-/** Return the repertoire move for the current opening position, if one exists. */
-export function openingBookMove(board: Board, seed = Date.now()): { move: Move; opening: SwiftOpening } | null {
-  const matches = POSITIONS.filter((position) => position.key === key(board));
-  if (!matches.length) return null;
+/**
+ * Return a repertoire move only when the supplied game history is an exact
+ * prefix of the repertoire line. The history parameter is deliberately UCI
+ * based so the opening layer stays independent from Game's mutable state.
+ */
+export function openingBookMove(
+  board: Board,
+  seed = Date.now(),
+  history: string[] = [],
+): { move: Move; opening: SwiftOpening } | null {
+  if (history.length >= 12) return null;
 
   const legal = new Map(board.legalMoves().map((move) => [move.uci(), move]));
-  const choices = matches
-    .map((position) => ({ position, move: legal.get(position.line.moves[position.index]) }))
-    .filter((choice): choice is { position: (typeof matches)[number]; move: Move } => Boolean(choice.move));
-  if (!choices.length) return null;
+  const matches = LINES
+    .filter((line) => history.every((move, index) => line.moves[index] === move))
+    .map((line) => ({ line, next: line.moves[history.length] }))
+    .filter(({ next }) => Boolean(next && legal.has(next)));
 
-  const totalWeight = choices.reduce((sum, choice) => sum + choice.position.line.weight, 0);
+  if (!matches.length) return null;
+
+  const totalWeight = matches.reduce((sum, choice) => sum + choice.line.weight, 0);
   let roll = seededRandom(seed) * totalWeight;
-  for (const choice of choices) {
-    roll -= choice.position.line.weight;
-    if (roll <= 0) return { move: choice.move, opening: choice.position.line.name };
+  for (const choice of matches) {
+    roll -= choice.line.weight;
+    if (roll <= 0) return { move: legal.get(choice.next)!, opening: choice.line.name };
   }
-  return { move: choices[0].move, opening: choices[0].position.line.name };
+  return { move: legal.get(matches[0].next)!, opening: matches[0].line.name };
 }
 
+/** Return the repertoire families Swift can use from its current side. */
 export function openingNames(): SwiftOpening[] {
   return LINES.map((line) => line.name);
+}
+
+/** Useful for tests and diagnostics without exposing the internal table. */
+export function openingLineMoves(name: SwiftOpening): string[] {
+  return [...LINES.find((line) => line.name === name)!.moves];
 }
