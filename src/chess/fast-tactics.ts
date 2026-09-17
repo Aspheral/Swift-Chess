@@ -46,35 +46,35 @@ function immediateMate(board: Board): Move | null {
 }
 
 function hasTacticalSignal(board: Board): boolean {
-  const side = sideToMove(board);
-  const opponent = opposite(side);
+  const opponent = opposite(sideToMove(board));
   return board.legalMoves().some((move) => {
     const child = board.makeMove(move);
     return child.isInCheck(opponent) || board.pieceAt(move.to) !== null || move.enPassant || !!move.promotion;
   });
 }
 
-function forcedMate(board: Board, engine: SwiftEngine, existing?: SearchResult): Move | null {
+function forcedMate(
+  board: Board,
+  engine: SwiftEngine,
+  existing?: SearchResult,
+  tacticalSearchDepth = 5,
+): Move | null {
   const immediate = immediateMate(board);
   if (immediate) return immediate;
   if (existing?.move && existing.score >= MATE_SCORE) return existing.move;
+  if (tacticalSearchDepth <= 0) return null;
 
   const pieces = board.toFEN().split(/\s+/)[0].replace(/[1-8/]/g, "").length;
   const tactical = hasTacticalSignal(board);
   if (!tactical && pieces > 12) return null;
 
-  const depths = existing?.depth && existing.depth >= 5 ? [] : [5];
-  for (const depth of depths) {
-    const result = engine.search(board, { depth });
-    if (result.move && result.score >= MATE_SCORE) return result.move;
-  }
-  return null;
+  const depth = Math.max(1, Math.floor(tacticalSearchDepth));
+  if (existing?.depth && existing.depth >= depth) return null;
+  const result = engine.search(board, { depth });
+  return result.move && result.score >= MATE_SCORE ? result.move : null;
 }
 
 function bestMaterialCapture(board: Board, queenUnderAttack: boolean): TacticalPriority | null {
-  // If our queen is under attack, do not auto-grab the opponent's queen.
-  // This is exactly where a human pauses to decide whether to trade queens,
-  // save the queen, or exploit a deeper tactical resource.
   if (queenUnderAttack) return null;
 
   let best: TacticalPriority | null = null;
@@ -88,8 +88,6 @@ function bestMaterialCapture(board: Board, queenUnderAttack: boolean): TacticalP
     if (!best || gain > best.score) best = { move, kind: "queen", score: gain };
   }
 
-  // A capture sequence worth a queen or more is also a forcing human priority.
-  // SEE keeps this grounded in the actual exchange rather than raw victim value.
   for (const move of board.legalMoves()) {
     if (!board.pieceAt(move.to) && !move.enPassant) continue;
     if (allowsImmediateMate(board, move)) continue;
@@ -105,8 +103,9 @@ export function findTacticalPriority(
   board: Board,
   engine: SwiftEngine,
   existing?: SearchResult,
+  tacticalSearchDepth = 5,
 ): TacticalPriority | null {
-  const mate = forcedMate(board, engine, existing);
+  const mate = forcedMate(board, engine, existing, tacticalSearchDepth);
   if (mate) return { move: mate, kind: "mate", score: MATE_SCORE };
   return bestMaterialCapture(board, isOwnQueenUnderAttack(board));
 }
