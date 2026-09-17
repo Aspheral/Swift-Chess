@@ -11,6 +11,10 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
   safetyDepth?: number;
   /** Extra consequence search after a candidate move, before Swift commits. */
   ponderDepth?: number;
+  /** Maximum number of generated candidates to consequence-check. */
+  safetyCandidateLimit?: number;
+  /** Cap the tactical mate search; 0 keeps immediate/SEE priorities only. */
+  tacticalSearchDepth?: number;
   moveHistory?: string[];
   positionHistoryKeys?: string[];
 }
@@ -37,10 +41,12 @@ export class HumanSwiftEngine {
     const result = this.engine.search(board, { ...options, depth: searchDepth });
     if (!result.move) return { ...result, humanCandidates: [] };
 
-    // Tactical necessities are resolved before the human preference layer. A
-    // human may choose between several good plans, but not while mate is on the
-    // board or a queen is simply hanging for free.
-    const tacticalPriority = findTacticalPriority(board, this.engine, result);
+    const tacticalPriority = findTacticalPriority(
+      board,
+      this.engine,
+      result,
+      options.tacticalSearchDepth ?? 5,
+    );
     if (tacticalPriority) {
       return {
         ...result,
@@ -57,9 +63,6 @@ export class HumanSwiftEngine {
     const baseErrorBudget = technicalEndgame ? Math.min(options.errorBudget ?? 0.35, 0.08) : (options.errorBudget ?? 0.35);
     const profile = humanErrorProfile(board, baseErrorBudget);
 
-    // Pondering is not a fake delay. Swift actually evaluates the position
-    // after its candidate move, including the opponent's best continuation.
-    // Sharp positions receive one extra ply of consequence search.
     const ponderDepth = Math.max(
       safetyDepth,
       Math.min(5, Math.floor(options.ponderDepth ?? (profile.tacticalPressure > 0.2 ? safetyDepth + 1 : safetyDepth))),
@@ -82,7 +85,9 @@ export class HumanSwiftEngine {
       }
     }
 
-    const safe = generated.scores.filter((candidate) =>
+    const safetyLimit = Math.max(1, Math.floor(options.safetyCandidateLimit ?? generated.scores.length));
+    const safetyCandidates = generated.scores.slice(0, safetyLimit);
+    const safe = safetyCandidates.filter((candidate) =>
       this.isSafeCandidate(board, candidate.move, baseline, tacticalMargin, ponderDepth),
     );
 
