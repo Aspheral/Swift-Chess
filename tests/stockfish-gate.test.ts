@@ -5,19 +5,12 @@ import { Board, HumanSwiftEngine, Move, START_FEN } from "../src";
 const GAMES = 20;
 const STOCKFISH_ELO = 1650;
 const MAX_PLIES = 100;
-// The CI gate is a strength regression test, so keep the human layer enabled
-// while using a bounded search budget that can complete 20 games reliably.
 const SWIFT_DEPTH = 3;
 const STOCKFISH_MOVETIME_MS = 25;
 const HUMAN_SAFETY_DEPTH = 1;
 const HUMAN_PONDER_DEPTH = 1;
 const HUMAN_CANDIDATE_LIMIT = 3;
-// One consequence check is enough for the CI gate. Production Swift keeps its
-// normal candidate/safety budgets; this only bounds the regression-test cost.
 const HUMAN_SAFETY_CANDIDATE_LIMIT = 1;
-// Score only the strongest strategically prioritized candidate in the gate.
-// The human-selection layer remains active, but CI avoids evaluating every
-// generated idea move with repeated mobility calculations.
 const HUMAN_CONCRETE_CANDIDATE_LIMIT = 1;
 const HUMAN_TACTICAL_DEPTH = 0;
 
@@ -142,9 +135,9 @@ describe("Swift 1650 Elo Stockfish gate", () => {
     let wins = 0;
     let draws = 0;
     let losses = 0;
-    const engine = new HumanSwiftEngine();
 
     for (let game = 0; game < GAMES; game += 1) {
+      const engine = new HumanSwiftEngine();
       let board = Board.fromFEN(START_FEN);
       const swiftIsWhite = game % 2 === 0;
       const history: string[] = [];
