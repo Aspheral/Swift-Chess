@@ -9,16 +9,39 @@ interface OpeningLine {
 }
 
 /**
- * A deliberately small human repertoire. These are not a forced engine book:
- * Swift only follows a line while the game still matches its natural opening
- * family, then hands the position back to the normal human selector.
+ * A compact human repertoire. Swift does not invent a bizarre move simply to
+ * satisfy the book. It follows a familiar family only while the opponent's
+ * moves keep matching it, then returns to the normal human selector.
+ *
+ * The weights matter only where two repertoire families share the same
+ * position, most notably the Queen's Gambit / QGD choice after 1.d4 d5 2.c4.
  */
 const LINES: OpeningLine[] = [
-  { name: "Reti", moves: ["g1f3", "d7d5", "c2c4", "e7e6", "g2g3", "g8f6", "f1g2", "f8e7"], weight: 3 },
-  { name: "Queen's Gambit", moves: ["d2d4", "d7d5", "c2c4", "d5c4", "e2e4"], weight: 2 },
-  { name: "Queen's Gambit Declined", moves: ["d2d4", "d7d5", "c2c4", "e7e6", "g1f3", "g8f6"], weight: 4 },
-  { name: "Four Knights", moves: ["e2e4", "e7e5", "g1f3", "b8c6", "b1c3", "g8f6"], weight: 4 },
-  { name: "Bishop's Opening", moves: ["e2e4", "e7e5", "f1c4", "g8f6", "g1f3"], weight: 2 },
+  {
+    name: "Reti",
+    moves: ["g1f3", "d7d5", "c2c4", "e7e6", "g2g3", "g8f6", "f1g2", "f8e7", "e1g1", "e8g8", "d2d4"],
+    weight: 3,
+  },
+  {
+    name: "Queen's Gambit",
+    moves: ["d2d4", "d7d5", "c2c4", "d5c4", "e2e4", "e7e5", "g1f3", "b8c6"],
+    weight: 2,
+  },
+  {
+    name: "Queen's Gambit Declined",
+    moves: ["d2d4", "d7d5", "c2c4", "e7e6", "g1f3", "g8f6", "e2e3", "f8e7", "f1d3", "e8g8"],
+    weight: 4,
+  },
+  {
+    name: "Four Knights",
+    moves: ["e2e4", "e7e5", "g1f3", "b8c6", "b1c3", "g8f6", "f1b5", "f8b4", "e1g1", "e8g8"],
+    weight: 4,
+  },
+  {
+    name: "Bishop's Opening",
+    moves: ["e2e4", "e7e5", "f1c4", "g8f6", "d2d3", "f8c5", "g1f3", "e8g8", "e1g1"],
+    weight: 2,
+  },
 ];
 
 function key(board: Board): string {
