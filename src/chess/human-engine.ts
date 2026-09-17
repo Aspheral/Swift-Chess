@@ -37,23 +37,28 @@ export class HumanSwiftEngine {
     if (!result.move) return { ...result, humanCandidates: [] };
 
     const history = options.moveHistory ?? options.history ?? [];
-    const book = openingBookMove(board, options.seed ?? Date.now(), history);
-    if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
-      return {
-        ...result,
-        move: book.move,
-        pv: result.pv?.length ? [book.move, ...result.pv.slice(1)] : [book.move],
-        humanCandidates: [],
-        opening: book.opening,
-      };
-    }
-
     const safetyMargin = Math.max(0, options.safetyMargin ?? 60);
     const safetyDepth = Math.max(1, Math.min(3, Math.floor(options.safetyDepth ?? 2)));
     const generated = scoreCandidates(board);
     const profile = humanErrorProfile(board, options.errorBudget ?? 0.35);
     const baseline = this.childSearchScore(board, result.move, safetyDepth);
     const tacticalMargin = this.positionSafetyMargin(safetyMargin, profile);
+
+    const book = openingBookMove(board, options.seed ?? Date.now(), history);
+    if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
+      const bookSafe = this.isSafeCandidate(board, book.move, baseline, tacticalMargin, safetyDepth);
+      if (bookSafe) {
+        return {
+          ...result,
+          move: book.move,
+          pv: result.pv?.length ? [book.move, ...result.pv.slice(1)] : [book.move],
+          humanCandidates: generated.scores.filter((candidate) => candidate.move.uci() === book.move.uci()),
+          humanProfile: profile,
+          opening: book.opening,
+        };
+      }
+    }
+
     const safe = generated.scores.filter((candidate) =>
       this.isSafeCandidate(board, candidate.move, baseline, tacticalMargin, safetyDepth),
     );
@@ -66,11 +71,21 @@ export class HumanSwiftEngine {
       };
     }
 
-    const nonRepeating = safe.filter((candidate) => !this.wouldRepeatPosition(board, candidate.move, options.positionHistoryKeys ?? []));
-    const repetitionSafe = nonRepeating.length ? nonRepeating : safe;
+    // Never deliberately choose a move that creates the third occurrence of
+    // a known position. If every shallow-safe move repeats, fall back to the
+    // best non-repeating legal candidate rather than letting the safety filter
+    // trap Swift in a shuffle.
+    const historyKeys = options.positionHistoryKeys ?? [];
+    const nonRepeatingSafe = safe.filter((candidate) => !this.wouldRepeatPosition(board, candidate.move, historyKeys));
+    const allNonRepeating = generated.scores.filter((candidate) => !this.wouldRepeatPosition(board, candidate.move, historyKeys));
+    const repetitionSafe = nonRepeatingSafe.length ? nonRepeatingSafe : allNonRepeating;
+    const movementPool = repetitionSafe.length ? repetitionSafe : safe;
 
-    const nonBacktracking = repetitionSafe.filter((candidate) => !this.isMechanicalBacktrack(candidate.move, history));
-    const movementSafe = nonBacktracking.length ? nonBacktracking : repetitionSafe;
+    // Humans rarely move the same undeveloped piece back to the square it just
+    // occupied unless there is a concrete reason. This specifically prevents
+    // Nf6-g8-g8-f6 style shuffles and rook side-to-side oscillation.
+    const nonBacktracking = movementPool.filter((candidate) => !this.isMechanicalBacktrack(board, candidate.move, history));
+    const movementSafe = nonBacktracking.length ? nonBacktracking : movementPool;
 
     const selected = selectHumanMove(board, {
       candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length),
@@ -132,13 +147,19 @@ export class HumanSwiftEngine {
     return positionHistoryKeys.filter((entry) => entry === key).length >= 2;
   }
 
-  private isMechanicalBacktrack(move: Move, history: string[]): boolean {
+  private isMechanicalBacktrack(board: Board, move: Move, history: string[]): boolean {
+    if (move.castle || move.enPassant || board.pieceAt(move.to)) return false;
+    const piece = board.pieceAt(move.from);
+    if (!piece || piece[1] === "p") return false;
+
     const from = move.uci().slice(0, 2);
-    const to = move.uci().slice(2, 4);
-    for (let index = history.length - 2; index >= Math.max(0, history.length - 10); index -= 2) {
+    // History is indexed by ply. For a move at index i, the same side's prior
+    // moves are i-2, i-4, ... . The old implementation started at i-1,
+    // accidentally checking the opponent's moves and missing Nf6-g8-g8-f6.
+    for (let index = history.length - 3; index >= Math.max(0, history.length - 12); index -= 2) {
       const previous = history[index];
       if (!previous) continue;
-      if (previous.slice(0, 2) === to && previous.slice(2, 4) === from) return true;
+      if (previous.slice(2, 4) === from) return true;
     }
     return false;
   }
