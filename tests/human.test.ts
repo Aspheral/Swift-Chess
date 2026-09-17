@@ -102,9 +102,12 @@ describe("Swift human move selection", () => {
 
   it("changes practical preferences without changing tactical candidates", () => {
     const board = Board.start();
-    const legal = board.legalMoves();
-    const simplify: CandidateScore = { move: legal[0], score: 100, ideaKinds: ["simplify"], reasons: ["exchange"] };
-    const attack: CandidateScore = { move: legal[1], score: 100, ideaKinds: ["attack"], reasons: ["initiative"] };
+    const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
+    const d4 = board.legalMoves().find((move) => move.uci() === "d2d4");
+    if (!e4 || !d4) throw new Error("Expected central pawn moves in the starting position");
+
+    const simplify: CandidateScore = { move: d4, score: 100, ideaKinds: ["simplify"], reasons: ["exchange"] };
+    const attack: CandidateScore = { move: e4, score: 100, ideaKinds: ["attack"], reasons: ["initiative"] };
 
     const exchangeFocused = selectHumanMove(board, {
       candidates: [simplify, attack],
