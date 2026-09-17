@@ -99,6 +99,12 @@ export class Board {
     return king >= 0 && this.isSquareAttacked(king, opposite(color));
   }
 
+  /** Public attack-map query used by tactical and human decision layers. */
+  isSquareAttacked(square: string | number, by: Color): boolean {
+    const index = typeof square === "number" ? square : Board.squareIndex(square);
+    return this.isSquareAttackedIndex(index, by);
+  }
+
   makeMove(move: Move): Board {
     const board = [...this.state.board];
     const moving = board[move.from];
@@ -184,8 +190,8 @@ export class Board {
     const rank = this.state.turn === "w" ? 0 : 7;
     if (from === rank * 8 + 4 && !this.isInCheck(this.state.turn)) {
       const rights = this.state.turn === "w" ? ["K","Q"] : ["k","q"];
-      if (this.state.castling.includes(rights[0]) && !this.state.board[from+1] && !this.state.board[from+2] && !this.isSquareAttacked(from+1, opposite(this.state.turn)) && !this.isSquareAttacked(from+2, opposite(this.state.turn))) moves.push(new Move(from, from+2, undefined, false, true));
-      if (this.state.castling.includes(rights[1]) && !this.state.board[from-1] && !this.state.board[from-2] && !this.state.board[from-3] && !this.isSquareAttacked(from-1, opposite(this.state.turn)) && !this.isSquareAttacked(from-2, opposite(this.state.turn))) moves.push(new Move(from, from-2, undefined, false, true));
+      if (this.state.castling.includes(rights[0]) && !this.state.board[from+1] && !this.state.board[from+2] && !this.isSquareAttackedIndex(from+1, opposite(this.state.turn)) && !this.isSquareAttackedIndex(from+2, opposite(this.state.turn))) moves.push(new Move(from, from+2, undefined, false, true));
+      if (this.state.castling.includes(rights[1]) && !this.state.board[from-1] && !this.state.board[from-2] && !this.state.board[from-3] && !this.isSquareAttackedIndex(from-1, opposite(this.state.turn)) && !this.isSquareAttackedIndex(from-2, opposite(this.state.turn))) moves.push(new Move(from, from-2, undefined, false, true));
     }
   }
   private sliderMoves(from: number, moves: Move[], directions: number[][]) {
@@ -202,7 +208,7 @@ export class Board {
     const to = r*8+f, target = this.state.board[to]; if (!target || colorOf(target) !== this.state.turn) moves.push(new Move(from, to));
   }
 
-  private isSquareAttacked(square: number, by: Color): boolean {
+  private isSquareAttackedIndex(square: number, by: Color): boolean {
     const file = square & 7, rank = Math.floor(square / 8);
     const pawnRank = rank + (by === "w" ? -1 : 1);
     for (const df of [-1,1]) { const f=file+df; if (f>=0&&f<8&&pawnRank>=0&&pawnRank<8&&this.state.board[pawnRank*8+f]===`${by}p`) return true; }
