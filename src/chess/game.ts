@@ -10,10 +10,15 @@ export type GameResult = "ongoing" | "checkmate" | "stalemate" | "threefold" | "
 export class Game {
   private boardState: Board;
   private readonly positionHistory: Map<string, number>;
+  private readonly positionKeysState: string[];
+  private readonly movesState: string[];
 
   constructor(board: Board = Board.start()) {
+    const initialKey = Game.positionKey(board);
     this.boardState = board;
-    this.positionHistory = new Map([[Game.positionKey(board), 1]]);
+    this.positionHistory = new Map([[initialKey, 1]]);
+    this.positionKeysState = [initialKey];
+    this.movesState = [];
   }
 
   static start(): Game {
@@ -43,6 +48,8 @@ export class Game {
     this.boardState = this.boardState.makeMove(legal);
     const key = Game.positionKey(this.boardState);
     this.positionHistory.set(key, (this.positionHistory.get(key) ?? 0) + 1);
+    this.positionKeysState.push(key);
+    this.movesState.push(legal.uci());
     return this.boardState;
   }
 
@@ -53,8 +60,26 @@ export class Game {
     return this.play(legal);
   }
 
+  /** UCI move history in chronological order. */
+  moveHistory(): string[] {
+    return [...this.movesState];
+  }
+
+  /** Repetition identities in chronological order, including the initial position. */
+  positionHistoryKeys(): string[] {
+    return [...this.positionKeysState];
+  }
+
   repetitionCount(): number {
     return this.positionHistory.get(Game.positionKey(this.boardState)) ?? 0;
+  }
+
+  /** Would this move make the resulting position the third occurrence? */
+  wouldCreateThreefold(move: Move): boolean {
+    const legal = this.boardState.legalMoves().find((candidate) => candidate.uci() === move.uci());
+    if (!legal) return false;
+    const next = this.boardState.makeMove(legal);
+    return (this.positionHistory.get(Game.positionKey(next)) ?? 0) + 1 >= 3;
   }
 
   isThreefoldRepetition(): boolean {
@@ -112,8 +137,7 @@ export class Game {
    * Repetition identity is the actual chess position, not every detail of the
    * FEN serialization. An en-passant target only changes the position when an
    * en-passant capture is actually legal. This prevents harmless pawn-double
-   * moves from creating false non-repetitions and lets Swift stop repeating
-   * before it wanders into the 100-move wilderness.
+   * moves from creating false non-repetitions.
    */
   static positionKey(board: Board): string {
     const fields = board.toFEN().split(/\s+/);
