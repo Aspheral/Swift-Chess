@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Game, HumanSwiftEngine, Move, Piece, SwiftOpening } from "../src";
 
 const files = "abcdefgh";
@@ -10,6 +10,8 @@ const pieceNames: Record<Piece, string> = {
 };
 
 type PromotionPiece = "q" | "r" | "b" | "n";
+type Side = "w" | "b";
+type Arrow = { from: number; to: number };
 
 function squareName(index: number) {
   return `${files[index & 7]}${Math.floor(index / 8) + 1}`;
@@ -43,6 +45,28 @@ const resultLabels: Record<string, string> = {
   stalemate: "Stalemate",
 };
 
+function ThoughtArrows({ arrows, flipped }: { arrows: Arrow[]; flipped: boolean }) {
+  const point = (square: number) => {
+    const file = square & 7;
+    const rank = Math.floor(square / 8);
+    const visualFile = flipped ? 7 - file : file;
+    const visualRank = flipped ? rank : 7 - rank;
+    return { x: visualFile * 12.5 + 6.25, y: visualRank * 12.5 + 6.25 };
+  };
+
+  return (
+    <svg className="thought-arrows" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <defs><marker id="swift-arrowhead" markerWidth="5" markerHeight="5" refX="4.2" refY="2.5" orient="auto"><path d="M0 0L5 2.5L0 5Z" /></marker></defs>
+      {arrows.map((arrow, index) => {
+        const from = point(arrow.from); const to = point(arrow.to);
+        const dx = to.x - from.x; const dy = to.y - from.y; const length = Math.max(1, Math.hypot(dx, dy));
+        const inset = 2.1;
+        return <line key={`${arrow.from}-${arrow.to}-${index}`} x1={from.x + (dx / length) * inset} y1={from.y + (dy / length) * inset} x2={to.x - (dx / length) * inset} y2={to.y - (dy / length) * inset} className="thought-arrow" markerEnd="url(#swift-arrowhead)" />;
+      })}
+    </svg>
+  );
+}
+
 export default function Playground() {
   const engine = useMemo(() => new HumanSwiftEngine(), []);
   const gameRef = useRef<Game>(Game.start());
@@ -52,8 +76,11 @@ export default function Playground() {
   const [history, setHistory] = useState<string[]>([]);
   const [lastMove, setLastMove] = useState<{ from: number; to: number } | null>(null);
   const [thinking, setThinking] = useState(false);
-  const [promotion, setPromotion] = useState<{ moves: Move[]; target: number } | null>(null);
+  const [promotion, setPromotion] = useState<{ moves: Move[] } | null>(null);
   const [opening, setOpening] = useState<SwiftOpening | null>(null);
+  const [playerSide, setPlayerSide] = useState<Side>("w");
+  const [flipped, setFlipped] = useState(false);
+  const [thoughtArrows, setThoughtArrows] = useState<Arrow[]>([]);
   const gameVersion = useRef(0);
 
   const legalMoves = board.legalMoves();
@@ -61,14 +88,33 @@ export default function Playground() {
   const selectedTargets = new Set(selectedMoves.map((move) => move.to));
   const result = gameRef.current.result();
   const terminal = result !== "ongoing";
-  const turn = board.toFEN().split(/\s+/)[1] as "w" | "b";
+  const turn = board.toFEN().split(/\s+/)[1] as Side;
   const inCheck = board.isInCheck(turn);
 
-  function reset() {
+  function runSwift(version: number, game: Game) {
+    setThinking(true);
+    setTimeout(() => {
+      if (version !== gameVersion.current || gameRef.current !== game) return;
+      const current = game.board();
+      const engineResult = engine.search(current, { depth: 3, randomness: 0.035, errorBudget: 0.18, safetyDepth: 3, safetyMargin: 45, seed: openingSeed.current, moveHistory: game.moveHistory(), positionHistoryKeys: game.positionHistoryKeys() });
+      if (version !== gameVersion.current || gameRef.current !== game) return;
+      setThoughtArrows((engineResult.pv ?? []).slice(0, 4).map((move) => ({ from: move.from, to: move.to })));
+      if (engineResult.opening) setOpening(engineResult.opening);
+      if (game.turn() === "b" || playerSide === "b") {
+        if (engineResult.move) {
+          game.play(engineResult.move); setBoard(game.board()); setLastMove({ from: engineResult.move.from, to: engineResult.move.to }); setHistory(game.moveHistory());
+        }
+      }
+      setThinking(false);
+    }, 70);
+  }
+
+  function reset(side: Side = playerSide) {
     gameVersion.current += 1;
     gameRef.current = Game.start();
     openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
-    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setPromotion(null); setOpening(null);
+    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setPromotion(null); setOpening(null); setThoughtArrows([]); setPlayerSide(side); setFlipped(side === "b");
+    if (side === "b") runSwift(gameVersion.current, gameRef.current);
   }
 
   function applyHumanMove(move: Move) {
@@ -76,37 +122,25 @@ export default function Playground() {
     game.play(move);
     const next = game.board();
     setBoard(next); setSelected(null); setPromotion(null); setLastMove({ from: move.from, to: move.to }); setHistory(game.moveHistory());
-    if (game.result() !== "ongoing" || game.turn() !== "b") return;
-    const version = gameVersion.current;
-    setThinking(true);
-    setTimeout(() => {
-      if (version !== gameVersion.current || gameRef.current !== game) return;
-      const current = game.board();
-      const engineResult = engine.search(current, { depth: 3, randomness: 0.035, errorBudget: 0.18, safetyDepth: 3, safetyMargin: 45, seed: openingSeed.current, moveHistory: game.moveHistory(), positionHistoryKeys: game.positionHistoryKeys() });
-      if (version !== gameVersion.current || gameRef.current !== game) return;
-      if (engineResult.move) {
-        game.play(engineResult.move); setBoard(game.board()); setLastMove({ from: engineResult.move.from, to: engineResult.move.to }); setHistory(game.moveHistory());
-        if (engineResult.opening) setOpening(engineResult.opening);
-      }
-      setThinking(false);
-    }, 90);
+    if (game.result() !== "ongoing") { setThoughtArrows([]); return; }
+    runSwift(gameVersion.current, game);
   }
 
   function chooseMove(moves: Move[]) {
     if (moves.length === 1) { applyHumanMove(moves[0]); return; }
-    setPromotion({ moves, target: moves[0].to });
+    setPromotion({ moves });
   }
 
   function clickSquare(index: number) {
-    if (thinking || terminal || turn !== "w" || promotion) return;
+    if (thinking || terminal || turn !== playerSide || promotion) return;
     const piece = board.pieceAt(index);
     if (selectedTargets.has(index)) { chooseMove(selectedMoves.filter((move) => move.to === index)); return; }
-    if (piece?.startsWith("w")) { setSelected(index); return; }
+    if (piece?.startsWith(playerSide)) { setSelected(index); return; }
     setSelected(null);
   }
 
   function dragStart(event: React.DragEvent, index: number) {
-    if (thinking || terminal || turn !== "w" || !board.pieceAt(index)?.startsWith("w")) { event.preventDefault(); return; }
+    if (thinking || terminal || turn !== playerSide || !board.pieceAt(index)?.startsWith(playerSide)) { event.preventDefault(); return; }
     setSelected(index); event.dataTransfer.setData("text/plain", String(index)); event.dataTransfer.effectAllowed = "move";
   }
 
@@ -118,34 +152,50 @@ export default function Playground() {
     if (moves.length) chooseMove(moves);
   }
 
-  const status = thinking ? "Swift is considering the position…" : terminal ? (result === "checkmate" ? `Checkmate · ${turn === "w" ? "Swift" : "You"} wins` : resultLabels[result] ?? "Game over") : turn === "w" ? (inCheck ? "Your king is in check" : "Your move") : "Swift to move";
+  const status = thinking ? "Swift is considering the position…" : terminal ? (result === "checkmate" ? `Checkmate · ${turn === playerSide ? "Swift" : "You"} wins` : resultLabels[result] ?? "Game over") : turn === playerSide ? (inCheck ? "Your king is in check" : "Your move") : "Swift to move";
   const promotionOptions: Array<{ piece: PromotionPiece; label: string }> = [{ piece: "q", label: "Queen" }, { piece: "r", label: "Rook" }, { piece: "b", label: "Bishop" }, { piece: "n", label: "Knight" }];
+
+  useEffect(() => {
+    if (turn === playerSide || terminal || thinking) return;
+    runSwift(gameVersion.current, gameRef.current);
+  }, [turn, playerSide, terminal]);
 
   return (
     <section className="playground" id="play">
       <div className="play-head">
-        <div><p className="eyebrow">YOUR GAME</p><h2>Set up the board. See what happens.</h2><p>Take the white pieces and play at your own pace. Swift follows the opening, remembers the game, and settles into the position as the board opens up.</p></div>
-        <button className="reset" onClick={reset}>New game</button>
+        <div><p className="eyebrow">YOUR GAME</p><h2>Set up the board. See what happens.</h2><p>Play as White or Black, turn the board around, and follow the lines Swift is considering as the position changes.</p></div>
+        <div className="game-controls">
+          <div className="side-picker" aria-label="Choose your side">
+            <button className={playerSide === "w" ? "active" : ""} onClick={() => reset("w")}>White</button>
+            <button className={playerSide === "b" ? "active" : ""} onClick={() => reset("b")}>Black</button>
+          </div>
+          <button className="flip" onClick={() => setFlipped((value) => !value)} aria-label="Flip board">↻ Flip board</button>
+          <button className="reset" onClick={() => reset()}>New game</button>
+        </div>
       </div>
       <div className="game-shell">
         <div className="chess-wrap">
           <div className="chessboard-frame">
-            <div className="rank-labels" aria-hidden="true">{[8,7,6,5,4,3,2,1].map((rank) => <span key={rank}>{rank}</span>)}</div>
+            <div className="rank-labels" aria-hidden="true">{(flipped ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1]).map((rank) => <span key={rank}>{rank}</span>)}</div>
             <div className="chessboard" aria-label="Interactive chessboard">
               {Array.from({ length: 64 }, (_, visualIndex) => {
-                const rank = 7 - Math.floor(visualIndex / 8); const file = visualIndex % 8; const index = rank * 8 + file; const piece = board.pieceAt(index); const isSelected = selected === index; const isTarget = selectedTargets.has(index); const isLast = lastMove?.from === index || lastMove?.to === index; const isKingInCheck = piece?.[1] === "k" && piece[0] === turn && inCheck; const dark = (rank + file) % 2 === 1;
+                const visualRank = Math.floor(visualIndex / 8); const visualFile = visualIndex % 8;
+                const rank = flipped ? visualRank : 7 - visualRank; const file = flipped ? 7 - visualFile : visualFile; const index = rank * 8 + file;
+                const piece = board.pieceAt(index); const isSelected = selected === index; const isTarget = selectedTargets.has(index); const isLast = lastMove?.from === index || lastMove?.to === index; const isKingInCheck = piece?.[1] === "k" && piece[0] === turn && inCheck; const dark = (rank + file) % 2 === 1;
                 return <button key={index} className={`square ${dark ? "dark" : "light"} ${isSelected ? "selected" : ""} ${isTarget ? "target" : ""} ${isLast ? "last" : ""} ${isKingInCheck ? "in-check" : ""}`} onClick={() => clickSquare(index)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropSquare(event, index)} aria-label={piece ? `${pieceNames[piece]} on ${squareName(index)}` : squareName(index)}>
-                  {piece && <span className={`piece ${piece[0]}`} draggable={piece[0] === "w"} onDragStart={(event) => dragStart(event, index)}><PieceArt piece={piece} /></span>}
+                  {piece && <span className={`piece ${piece[0]}`} draggable={piece[0] === playerSide} onDragStart={(event) => dragStart(event, index)}><PieceArt piece={piece} /></span>}
                   {isTarget && <span className={`move-dot ${piece ? "capture" : ""}`} />}
                 </button>;
               })}
+              <ThoughtArrows arrows={thoughtArrows} flipped={flipped} />
             </div>
-            <div className="file-labels" aria-hidden="true">{files.split("").map((file) => <span key={file}>{file}</span>)}</div>
+            <div className="file-labels" aria-hidden="true">{(flipped ? files.split("").reverse() : files.split("")).map((file) => <span key={file}>{file}</span>)}</div>
           </div>
-          {promotion && <div className="promotion" role="dialog" aria-label="Choose promotion piece"><span>Promote to</span>{promotionOptions.map(({ piece, label }) => <button key={piece} onClick={() => { const move = promotion.moves.find((candidate) => candidate.promotion === piece); if (move) applyHumanMove(move); }}><PieceArt piece={`w${piece}` as Piece} /><small>{label}</small></button>)}</div>}
+          {promotion && <div className="promotion" role="dialog" aria-label="Choose promotion piece"><span>Promote to</span>{promotionOptions.map(({ piece, label }) => <button key={piece} onClick={() => { const move = promotion.moves.find((candidate) => candidate.promotion === piece); if (move) applyHumanMove(move); }}><PieceArt piece={`${playerSide}${piece}` as Piece} /><small>{label}</small></button>)}</div>}
         </div>
         <aside className="game-info">
           <div className="game-status"><span className={thinking ? "pulse" : "dot"} />{status}</div>
+          <div className="thought-card"><span>Swift's board</span><strong>{thoughtArrows.length ? `${thoughtArrows.length} moves in view` : "Thinking from here"}</strong><p>Arrows stay on the board to show the line Swift is considering.</p></div>
           {opening && <div className="opening-card"><span>Opening</span><strong>{opening}</strong></div>}
           <div className="history-head"><span>Moves</span><span>{history.length}</span></div>
           <div className="history">{history.length === 0 ? <span className="muted">The first move is yours.</span> : history.map((move, index) => <div className="move" key={`${move}-${index}`}><span>{Math.floor(index / 2) + 1}{index % 2 === 0 ? "." : "…"}</span><code>{move}</code></div>)}</div>
