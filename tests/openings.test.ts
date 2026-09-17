@@ -11,38 +11,44 @@ function play(board: Board, moves: string[]): Board {
 
 describe("Swift human opening repertoire", () => {
   it("recognizes the Reti path", () => {
-    const board = play(Board.start(), ["g1f3"]);
-    expect(openingBookMove(board, 1)?.move.uci()).toBe("d7d5");
-    expect(openingBookMove(board, 1)?.opening).toBe("Reti");
+    const history = ["g1f3"];
+    const board = play(Board.start(), history);
+    expect(openingBookMove(board, 1, history)?.move.uci()).toBe("d7d5");
+    expect(openingBookMove(board, 1, history)?.opening).toBe("Reti");
   });
 
   it("keeps a natural Reti development after a harmless knight-first deviation", () => {
-    const board = play(Board.start(), ["g1f3", "d7d5", "b1c3"]);
-    expect(openingBookMove(board, 1)?.move.uci()).toBe("g8f6");
-    expect(openingBookMove(board, 1)?.opening).toBe("Reti");
+    const history = ["g1f3", "d7d5", "b1c3"];
+    const board = play(Board.start(), history);
+    expect(openingBookMove(board, 1, history)?.move.uci()).toBe("g8f6");
+    expect(openingBookMove(board, 1, history)?.opening).toBe("Reti");
   });
 
   it("chooses between the Queen's Gambit branches like a repertoire", () => {
-    const board = play(Board.start(), ["d2d4", "d7d5", "c2c4"]);
-    const choice = openingBookMove(board, 7);
+    const history = ["d2d4", "d7d5", "c2c4"];
+    const board = play(Board.start(), history);
+    const choice = openingBookMove(board, 7, history);
     expect(["d5c4", "e7e6"]).toContain(choice?.move.uci());
   });
 
   it("recognizes the Queen's Gambit Declined continuation", () => {
-    const board = play(Board.start(), ["d2d4", "d7d5", "c2c4", "e7e6"]);
-    expect(openingBookMove(board, 1)?.move.uci()).toBe("g1f3");
-    expect(openingBookMove(board, 1)?.opening).toBe("Queen's Gambit Declined");
+    const history = ["d2d4", "d7d5", "c2c4", "e7e6"];
+    const board = play(Board.start(), history);
+    expect(openingBookMove(board, 1, history)?.move.uci()).toBe("g1f3");
+    expect(openingBookMove(board, 1, history)?.opening).toBe("Queen's Gambit Declined");
   });
 
   it("follows Four Knights after 1.e4 e5 2.Nf3 Nc6", () => {
-    const board = play(Board.start(), ["e2e4", "e7e5", "g1f3", "b8c6"]);
-    expect(openingBookMove(board, 1)?.move.uci()).toBe("b1c3");
-    expect(openingBookMove(board, 1)?.opening).toBe("Four Knights");
+    const history = ["e2e4", "e7e5", "g1f3", "b8c6"];
+    const board = play(Board.start(), history);
+    expect(openingBookMove(board, 1, history)?.move.uci()).toBe("b1c3");
+    expect(openingBookMove(board, 1, history)?.opening).toBe("Four Knights");
   });
 
   it("follows the Bishop's Opening after 1.e4 e5 2.Bc4", () => {
-    const board = play(Board.start(), ["e2e4", "e7e5", "f1c4"]);
-    expect(openingBookMove(board, 1)?.move.uci()).toBe("g8f6");
-    expect(openingBookMove(board, 1)?.opening).toBe("Bishop's Opening");
+    const history = ["e2e4", "e7e5", "f1c4"];
+    const board = play(Board.start(), history);
+    expect(openingBookMove(board, 1, history)?.move.uci()).toBe("g8f6");
+    expect(openingBookMove(board, 1, history)?.opening).toBe("Bishop's Opening");
   });
 });
