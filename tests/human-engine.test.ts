@@ -38,4 +38,44 @@ describe("Integrated Swift human engine", () => {
     expect(result.move).not.toBeNull();
     expect(result.humanCandidates.some((candidate) => candidate.move.uci() === result.move?.uci())).toBe(true);
   });
+
+  it("refuses to create a third occurrence when a non-repeating move exists", () => {
+    const gameMoves = ["g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1"];
+    let board = Board.start();
+    for (const uci of gameMoves) {
+      const move = board.legalMoves().find((candidate) => candidate.uci() === uci);
+      if (!move) throw new Error(`Illegal fixture move: ${uci}`);
+      board = board.makeMove(move);
+    }
+
+    const repeatedKey = Board.start().toFEN().split(/\s+/).slice(0, 4).join(" ");
+    const result = new HumanSwiftEngine().search(board, {
+      depth: 2,
+      safetyDepth: 2,
+      randomness: 0,
+      errorBudget: 0.35,
+      seed: 7,
+      moveHistory: gameMoves,
+      positionHistoryKeys: [repeatedKey, repeatedKey],
+    });
+
+    expect(result.move).not.toBeNull();
+    const nextKey = board.makeMove(result.move!).toFEN().split(/\s+/).slice(0, 4).join(" ");
+    expect(nextKey).not.toBe(repeatedKey);
+  });
+
+  it("does not send a knight back to the square it just vacated when alternatives exist", () => {
+    const board = Board.fromFEN("rnbqkb1r/pppppppp/8/7n/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 2 2");
+    const result = new HumanSwiftEngine().search(board, {
+      depth: 2,
+      safetyDepth: 2,
+      randomness: 0,
+      errorBudget: 0.35,
+      seed: 11,
+      moveHistory: ["g1f3", "g8h6"],
+    });
+
+    expect(result.move).not.toBeNull();
+    expect(result.move?.uci()).not.toBe("h6g8");
+  });
 });
