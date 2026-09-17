@@ -20,7 +20,7 @@ describe("Swift game state and draw rules", () => {
     expect(Game.fromFEN("8/8/8/3b4/8/8/4k3/2B1K3 w - - 0 1").isInsufficientMaterial()).toBe(false);
   });
 
-  it("tracks a repeated position using side, castling and en-passant state", () => {
+  it("tracks a repeated position using side, castling and legal en-passant state", () => {
     const game = Game.start();
     for (const uci of ["g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8"]) {
       game.playUci(uci);
@@ -28,6 +28,18 @@ describe("Swift game state and draw rules", () => {
     expect(game.repetitionCount()).toBe(3);
     expect(game.isThreefoldRepetition()).toBe(true);
     expect(game.result()).toBe("threefold");
+  });
+
+  it("does not treat an unusable en-passant target as a different position", () => {
+    const withoutEp = Board.fromFEN("8/8/8/8/4P3/8/8/4K2k b - - 0 1");
+    const withEp = Board.fromFEN("8/8/8/8/4P3/8/8/4K2k b - e3 0 1");
+    expect(Game.positionKey(withEp)).toBe(Game.positionKey(withoutEp));
+  });
+
+  it("keeps a legal en-passant opportunity in the repetition identity", () => {
+    const withoutEp = Board.fromFEN("8/8/8/3pP3/8/8/8/4K2k w - - 0 2");
+    const withEp = Board.fromFEN("8/8/8/3pP3/8/8/8/4K2k w - d6 0 2");
+    expect(Game.positionKey(withEp)).not.toBe(Game.positionKey(withoutEp));
   });
 
   it("rejects an illegal UCI move", () => {
