@@ -5,12 +5,18 @@ import { Board, HumanSwiftEngine, Move, START_FEN } from "../src";
 const GAMES = 20;
 const STOCKFISH_ELO = 1650;
 const MAX_PLIES = 120;
-const SWIFT_DEPTH = 4;
+// The CI gate is a strength regression test, so keep the human layer enabled
+// while using a bounded search budget that can complete 20 games reliably.
+const SWIFT_DEPTH = 3;
 const STOCKFISH_MOVETIME_MS = 40;
+const HUMAN_SAFETY_DEPTH = 1;
+const HUMAN_PONDER_DEPTH = 1;
+const HUMAN_CANDIDATE_LIMIT = 3;
 
 class UciStockfish {
   private process: ChildProcessWithoutNullStreams;
   private buffer = "";
+  private closed = false;
   private pending: Array<{ resolve: (value: string) => void; reject: (error: Error) => void; marker: string }> = [];
 
   constructor() {
@@ -22,34 +28,42 @@ class UciStockfish {
     });
     this.process.on("error", (error) => this.rejectPending(error));
     this.process.on("exit", (code, signal) => {
+      this.closed = true;
       this.rejectPending(new Error(`Stockfish exited before completing a command (code=${code}, signal=${signal})`));
     });
   }
 
   async init() {
     await this.command("uci", "uciok");
-    this.process.stdin.write("setoption name UCI_LimitStrength value true\n");
-    this.process.stdin.write(`setoption name UCI_Elo value ${STOCKFISH_ELO}\n`);
+    this.write("setoption name UCI_LimitStrength value true\n");
+    this.write(`setoption name UCI_Elo value ${STOCKFISH_ELO}\n`);
     await this.command("isready", "readyok");
   }
 
   async bestMove(fen: string): Promise<string> {
     this.buffer = "";
-    this.process.stdin.write(`position fen ${fen}\ngo movetime ${STOCKFISH_MOVETIME_MS}\n`);
+    this.write(`position fen ${fen}\ngo movetime ${STOCKFISH_MOVETIME_MS}\n`);
     const output = await this.waitFor("bestmove ");
     return output.match(/bestmove\s+(\S+)/)?.[1] ?? "0000";
   }
 
   close() {
-    if (this.process.stdin.destroyed || this.process.killed) return;
-    this.process.stdin.write("quit\n");
-    this.process.kill();
+    if (this.closed || this.process.stdin.destroyed || this.process.killed) return;
+    this.closed = true;
+    this.process.stdin.end("quit\n");
   }
 
   private command(command: string, marker: string): Promise<string> {
     this.buffer = "";
-    this.process.stdin.write(`${command}\n`);
+    this.write(`${command}\n`);
     return this.waitFor(marker);
+  }
+
+  private write(data: string) {
+    if (this.closed || this.process.stdin.destroyed || this.process.killed) {
+      throw new Error("Stockfish process is no longer available");
+    }
+    this.process.stdin.write(data);
   }
 
   private waitFor(marker: string): Promise<string> {
@@ -91,7 +105,9 @@ function swiftMove(board: Board, engine: HumanSwiftEngine, history: string[], po
     depth: SWIFT_DEPTH,
     randomness: 0,
     errorBudget: 0,
-    safetyDepth: 3,
+    safetyDepth: HUMAN_SAFETY_DEPTH,
+    ponderDepth: HUMAN_PONDER_DEPTH,
+    candidateLimit: HUMAN_CANDIDATE_LIMIT,
     safetyMargin: 45,
     seed,
     moveHistory: history,
