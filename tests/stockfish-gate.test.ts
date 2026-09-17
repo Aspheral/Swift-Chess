@@ -15,6 +15,10 @@ const HUMAN_CANDIDATE_LIMIT = 3;
 // One consequence check is enough for the CI gate. Production Swift keeps its
 // normal candidate/safety budgets; this only bounds the regression-test cost.
 const HUMAN_SAFETY_CANDIDATE_LIMIT = 1;
+// Score only the strongest strategically prioritized candidates in the gate.
+// The human-selection layer remains active, but CI avoids evaluating every
+// generated idea move with repeated mobility calculations.
+const HUMAN_CONCRETE_CANDIDATE_LIMIT = 3;
 const HUMAN_TACTICAL_DEPTH = 0;
 
 class UciStockfish {
@@ -113,6 +117,7 @@ function swiftMove(board: Board, engine: HumanSwiftEngine, history: string[], po
     ponderDepth: HUMAN_PONDER_DEPTH,
     candidateLimit: HUMAN_CANDIDATE_LIMIT,
     safetyCandidateLimit: HUMAN_SAFETY_CANDIDATE_LIMIT,
+    concreteCandidateLimit: HUMAN_CONCRETE_CANDIDATE_LIMIT,
     tacticalSearchDepth: HUMAN_TACTICAL_DEPTH,
     safetyMargin: 45,
     seed,
