@@ -15,10 +15,6 @@ function squareName(index: number) {
   return `${files[index & 7]}${Math.floor(index / 8) + 1}`;
 }
 
-function moveLabel(move: Move) {
-  return move.uci();
-}
-
 function PieceArt({ piece }: { piece: Piece }) {
   const white = piece[0] === "w";
   const kind = piece[1];
@@ -55,6 +51,7 @@ const resultLabels: Record<string, string> = {
 export default function Playground() {
   const engine = useMemo(() => new HumanSwiftEngine(), []);
   const gameRef = useRef<Game>(Game.start());
+  const openingSeed = useRef(Date.now() & 0xffffffff);
   const [board, setBoard] = useState(() => gameRef.current.board());
   const [selected, setSelected] = useState<number | null>(null);
   const [history, setHistory] = useState<string[]>([]);
@@ -75,6 +72,7 @@ export default function Playground() {
   function reset() {
     gameVersion.current += 1;
     gameRef.current = Game.start();
+    openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
     setBoard(gameRef.current.board());
     setSelected(null);
     setHistory([]);
@@ -102,11 +100,12 @@ export default function Playground() {
       if (version !== gameVersion.current || gameRef.current !== game) return;
       const current = game.board();
       const engineResult = engine.search(current, {
-        depth: 2,
-        randomness: 0.08,
-        errorBudget: 0.28,
-        safetyDepth: 2,
-        seed: Date.now() & 0xffffffff,
+        depth: 3,
+        randomness: 0.035,
+        errorBudget: 0.18,
+        safetyDepth: 3,
+        safetyMargin: 45,
+        seed: openingSeed.current,
         moveHistory: game.moveHistory(),
         positionHistoryKeys: game.positionHistoryKeys(),
       });
@@ -211,7 +210,7 @@ export default function Playground() {
           {opening && <div className="opening-card"><span>OPENING</span><strong>{opening}</strong><small>Swift repertoire</small></div>}
           <div className="history-head"><span>MOVE HISTORY</span><span>{history.length}</span></div>
           <div className="history">{history.length === 0 ? <span className="muted">Make the first move.</span> : history.map((move, index) => <div className="move" key={`${move}-${index}`}><span>{Math.floor(index / 2) + 1}{index % 2 === 0 ? "." : "…"}</span><code>{move}</code></div>)}</div>
-          <div className="engine-note"><strong>SWIFT / HUMAN ENGINE</strong><span>Repertoire · game memory · threefold · anti-shuffle · promotion</span></div>
+          <div className="engine-note"><strong>SWIFT / HUMAN ENGINE</strong><span>Repertoire · game memory · threefold · anti-shuffle · deeper safety search</span></div>
         </aside>
       </div>
     </section>
