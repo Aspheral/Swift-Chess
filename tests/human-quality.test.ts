@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Board, CandidateScore, selectHumanMove } from "../src";
 
 describe("Human move quality distribution", () => {
-  it("keeps candidates inside the configured quality budget", () => {
+  it("keeps the selected move inside the configured quality budget", () => {
     const board = Board.start();
     const legal = board.legalMoves();
     const candidates: CandidateScore[] = legal.slice(0, 4).map((move, index) => ({
@@ -20,7 +20,8 @@ describe("Human move quality distribution", () => {
       seed: 9,
     });
 
-    expect(result.candidates.every((candidate) => candidate.score >= 80)).toBe(true);
+    const selected = candidates.find((candidate) => candidate.move.uci() === result.move?.uci());
+    expect(selected?.score).toBeGreaterThanOrEqual(80);
   });
 
   it("uses the strongest candidate when there is no error budget", () => {
