@@ -62,28 +62,6 @@ const LINES: OpeningLine[] = [
   },
 ];
 
-function key(board: Board): string {
-  return board.toFEN().split(/\s+/).slice(0, 4).join(" ");
-}
-
-function positionAfter(moves: string[]): Board {
-  let board = Board.start();
-  for (const uci of moves) {
-    const move = board.legalMoves().find((candidate) => candidate.uci() === uci);
-    if (!move) throw new Error(`Invalid opening-book move: ${uci}`);
-    board = board.makeMove(move);
-  }
-  return board;
-}
-
-const POSITIONS = LINES.flatMap((line) =>
-  line.moves.map((_, index) => ({
-    line,
-    index,
-    key: key(positionAfter(line.moves.slice(0, index))),
-  })),
-);
-
 function seededRandom(seed: number): number {
   let state = seed >>> 0;
   state ^= state << 13;
@@ -119,9 +97,9 @@ function naturalOpeningMove(board: Board, history: string[]): Move | null {
 }
 
 /**
- * Return a repertoire move only while the actual game history matches a
- * repertoire line. If the opponent makes a harmless deviation, Swift keeps
- * making normal developing moves instead of falling into engine-only play.
+ * Return a repertoire move while the actual game history matches a line. If
+ * the opponent makes a harmless deviation, Swift keeps making normal
+ * developing moves instead of falling into engine-only play.
  */
 export function openingBookMove(
   board: Board,
@@ -160,12 +138,10 @@ export function openingBookMove(
   return null;
 }
 
-/** Return the repertoire families Swift can use from its current side. */
 export function openingNames(): SwiftOpening[] {
   return ["Reti", "Queen's Gambit", "Queen's Gambit Declined", "Four Knights", "Bishop's Opening"];
 }
 
-/** Useful for tests and diagnostics without exposing the internal table. */
 export function openingLineMoves(name: SwiftOpening): string[] {
   return [...LINES.find((line) => line.name === name)!.moves];
 }
