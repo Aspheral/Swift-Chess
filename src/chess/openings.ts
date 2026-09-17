@@ -22,7 +22,7 @@ const LINES: OpeningLine[] = [
   },
   {
     name: "Reti",
-    moves: ["g1f3", "d7d5", "b1c3", "g8f6", "d2d4", "e7e6", "e2e4", "f8c4", "e1g1", "e8g8"],
+    moves: ["g1f3", "d7d5", "b1c3", "g8f6", "d2d4", "e7e6", "e2e4", "f8e7", "e1g1", "e8g8"],
     weight: 2,
   },
   {
