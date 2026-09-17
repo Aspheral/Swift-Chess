@@ -16,6 +16,12 @@ describe("Swift human opening repertoire", () => {
     expect(openingBookMove(board, 1)?.opening).toBe("Reti");
   });
 
+  it("keeps a natural Reti development after a harmless knight-first deviation", () => {
+    const board = play(Board.start(), ["g1f3", "d7d5", "b1c3"]);
+    expect(openingBookMove(board, 1)?.move.uci()).toBe("g8f6");
+    expect(openingBookMove(board, 1)?.opening).toBe("Reti");
+  });
+
   it("chooses between the Queen's Gambit branches like a repertoire", () => {
     const board = play(Board.start(), ["d2d4", "d7d5", "c2c4"]);
     const choice = openingBookMove(board, 7);
