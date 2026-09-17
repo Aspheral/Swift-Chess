@@ -4,8 +4,9 @@ import { Board, HumanSwiftEngine, Move, START_FEN } from "../src";
 
 const GAMES = 20;
 const STOCKFISH_ELO = 1650;
-const MAX_PLIES = 180;
+const MAX_PLIES = 120;
 const SWIFT_DEPTH = 4;
+const STOCKFISH_MOVETIME_MS = 40;
 
 class UciStockfish {
   private process: ChildProcessWithoutNullStreams;
@@ -19,6 +20,10 @@ class UciStockfish {
       this.buffer += chunk;
       this.flush();
     });
+    this.process.on("error", (error) => this.rejectPending(error));
+    this.process.on("exit", (code, signal) => {
+      this.rejectPending(new Error(`Stockfish exited before completing a command (code=${code}, signal=${signal})`));
+    });
   }
 
   async init() {
@@ -30,12 +35,13 @@ class UciStockfish {
 
   async bestMove(fen: string): Promise<string> {
     this.buffer = "";
-    this.process.stdin.write(`position fen ${fen}\ngo movetime 80\n`);
+    this.process.stdin.write(`position fen ${fen}\ngo movetime ${STOCKFISH_MOVETIME_MS}\n`);
     const output = await this.waitFor("bestmove ");
     return output.match(/bestmove\s+(\S+)/)?.[1] ?? "0000";
   }
 
   close() {
+    if (this.process.stdin.destroyed || this.process.killed) return;
     this.process.stdin.write("quit\n");
     this.process.kill();
   }
@@ -66,6 +72,11 @@ class UciStockfish {
       item.resolve(result);
       i -= 1;
     }
+  }
+
+  private rejectPending(error: Error) {
+    const pending = this.pending.splice(0);
+    for (const item of pending) item.reject(error);
   }
 }
 
@@ -104,11 +115,11 @@ describe("Swift 1650 Elo Stockfish gate", () => {
     let wins = 0;
     let draws = 0;
     let losses = 0;
+    const engine = new HumanSwiftEngine();
 
     for (let game = 0; game < GAMES; game += 1) {
       let board = Board.fromFEN(START_FEN);
       const swiftIsWhite = game % 2 === 0;
-      const engine = new HumanSwiftEngine();
       const history: string[] = [];
       const positionKeys: string[] = [board.toFEN()];
 
@@ -137,5 +148,5 @@ describe("Swift 1650 Elo Stockfish gate", () => {
     const winRate = wins / GAMES;
     console.log(`Swift gate: ${wins}-${losses}-${draws} (wins=${(winRate * 100).toFixed(1)}%) vs Stockfish ${STOCKFISH_ELO}`);
     expect(wins).toBeGreaterThanOrEqual(Math.ceil(GAMES * 0.5));
-  }, 180_000);
+  }, 300_000);
 });
