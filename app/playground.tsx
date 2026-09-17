@@ -92,28 +92,30 @@ export default function Playground() {
     setSelected(null);
     setPromotion(null);
     setLastMove({ from: move.from, to: move.to });
-    setHistory((items) => [...items, moveLabel(move)]);
+    setHistory(game.moveHistory());
 
     if (game.result() !== "ongoing" || game.turn() !== "b") return;
 
     const version = gameVersion.current;
     setThinking(true);
-    window.setTimeout(() => {
+    setTimeout(() => {
       if (version !== gameVersion.current || gameRef.current !== game) return;
       const current = game.board();
       const engineResult = engine.search(current, {
         depth: 2,
-        randomness: 0.16,
-        errorBudget: 0.3,
+        randomness: 0.08,
+        errorBudget: 0.28,
         safetyDepth: 2,
         seed: Date.now() & 0xffffffff,
+        moveHistory: game.moveHistory(),
+        positionHistoryKeys: game.positionHistoryKeys(),
       });
       if (version !== gameVersion.current || gameRef.current !== game) return;
       if (engineResult.move) {
         game.play(engineResult.move);
         setBoard(game.board());
         setLastMove({ from: engineResult.move.from, to: engineResult.move.to });
-        setHistory((items) => [...items, moveLabel(engineResult.move!)]);
+        setHistory(game.moveHistory());
         if (engineResult.opening) setOpening(engineResult.opening);
       }
       setThinking(false);
@@ -176,7 +178,7 @@ export default function Playground() {
   return (
     <section className="playground" id="play">
       <div className="play-head">
-        <div><p className="eyebrow">01 · SWIFT PLAYGROUND</p><h2>Play against a human-shaped engine.</h2><p>Drag or tap a piece. Swift opens from a small human repertoire, then switches to tactical safety and practical choice.</p></div>
+        <div><p className="eyebrow">01 · SWIFT PLAYGROUND</p><h2>Play against a human-shaped engine.</h2><p>Drag or tap a piece. Swift chooses from a small human repertoire, remembers the game, avoids needless repetitions, then returns to practical position-based play when the opening ends.</p></div>
         <button className="reset" onClick={reset}>New game</button>
       </div>
       <div className="game-shell">
@@ -209,7 +211,7 @@ export default function Playground() {
           {opening && <div className="opening-card"><span>OPENING</span><strong>{opening}</strong><small>Swift repertoire</small></div>}
           <div className="history-head"><span>MOVE HISTORY</span><span>{history.length}</span></div>
           <div className="history">{history.length === 0 ? <span className="muted">Make the first move.</span> : history.map((move, index) => <div className="move" key={`${move}-${index}`}><span>{Math.floor(index / 2) + 1}{index % 2 === 0 ? "." : "…"}</span><code>{move}</code></div>)}</div>
-          <div className="engine-note"><strong>SWIFT / HUMAN ENGINE</strong><span>Repertoire · legal moves · threefold · promotion</span></div>
+          <div className="engine-note"><strong>SWIFT / HUMAN ENGINE</strong><span>Repertoire · game memory · threefold · anti-shuffle · promotion</span></div>
         </aside>
       </div>
     </section>
