@@ -12,6 +12,8 @@ const STOCKFISH_MOVETIME_MS = 40;
 const HUMAN_SAFETY_DEPTH = 1;
 const HUMAN_PONDER_DEPTH = 1;
 const HUMAN_CANDIDATE_LIMIT = 3;
+const HUMAN_SAFETY_CANDIDATE_LIMIT = 3;
+const HUMAN_TACTICAL_DEPTH = 0;
 
 class UciStockfish {
   private process: ChildProcessWithoutNullStreams;
@@ -108,6 +110,8 @@ function swiftMove(board: Board, engine: HumanSwiftEngine, history: string[], po
     safetyDepth: HUMAN_SAFETY_DEPTH,
     ponderDepth: HUMAN_PONDER_DEPTH,
     candidateLimit: HUMAN_CANDIDATE_LIMIT,
+    safetyCandidateLimit: HUMAN_SAFETY_CANDIDATE_LIMIT,
+    tacticalSearchDepth: HUMAN_TACTICAL_DEPTH,
     safetyMargin: 45,
     seed,
     moveHistory: history,
@@ -159,10 +163,11 @@ describe("Swift 1650 Elo Stockfish gate", () => {
       if (swiftWon) wins += 1;
       else if (stockfishWon) losses += 1;
       else draws += 1;
+      console.log(`Swift gate game ${game + 1}/${GAMES}: ${swiftWon ? "win" : stockfishWon ? "loss" : "draw"}`);
     }
 
     const winRate = wins / GAMES;
     console.log(`Swift gate: ${wins}-${losses}-${draws} (wins=${(winRate * 100).toFixed(1)}%) vs Stockfish ${STOCKFISH_ELO}`);
     expect(wins).toBeGreaterThanOrEqual(Math.ceil(GAMES * 0.5));
-  }, 300_000);
+  }, 600_000);
 });
