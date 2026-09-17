@@ -23,8 +23,8 @@ class UciStockfish {
 
   async init() {
     await this.command("uci", "uciok");
-    await this.command("setoption name UCI_LimitStrength value true", "readyok");
-    await this.command(`setoption name UCI_Elo value ${STOCKFISH_ELO}`, "readyok");
+    this.process.stdin.write("setoption name UCI_LimitStrength value true\n");
+    this.process.stdin.write(`setoption name UCI_Elo value ${STOCKFISH_ELO}\n`);
     await this.command("isready", "readyok");
   }
 
@@ -116,18 +116,13 @@ describe("Swift 1650 Elo Stockfish gate", () => {
         if (board.isCheckmate() || board.isStalemate()) break;
 
         const side = board.toFEN().split(/\s+/)[1] as "w" | "b";
-        let uci: string;
-        if ((side === "w") === swiftIsWhite) {
-          uci = swiftMove(board, engine, history, positionKeys, 10_000 + game);
-        } else {
-          uci = await stockfish.bestMove(board.toFEN());
-        }
+        const uci = ((side === "w") === swiftIsWhite)
+          ? swiftMove(board, engine, history, positionKeys, 10_000 + game).uci()
+          : await stockfish.bestMove(board.toFEN());
 
         board = applyUci(board, uci);
         history.push(uci);
         positionKeys.push(board.toFEN());
-
-        if (board.isCheckmate()) break;
       }
 
       const sideToMove = board.toFEN().split(/\s+/)[1] as "w" | "b";
