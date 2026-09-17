@@ -4,10 +4,13 @@ import { SearchOptions, SearchResult, SwiftEngine } from "./engine";
 import { CandidateScore, scoreCandidates } from "./scoring";
 import { HumanErrorProfile, humanErrorProfile, selectHumanMove, HumanSelectionOptions } from "./human";
 import { SwiftOpening, openingBookMove } from "./openings";
+import { findTacticalPriority, isOwnQueenUnderAttack } from "./fast-tactics";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   safetyMargin?: number;
   safetyDepth?: number;
+  /** Extra consequence search after a candidate move, before Swift commits. */
+  ponderDepth?: number;
   moveHistory?: string[];
   positionHistoryKeys?: string[];
 }
@@ -29,22 +32,44 @@ export class HumanSwiftEngine {
 
   search(board: Board, options: HumanEngineOptions = {}): HumanSearchResult {
     const technicalEndgame = this.isTechnicalEndgame(board);
-    const searchDepth = this.positionSearchDepth(board, options.depth ?? 4);
+    const queenUnderAttack = isOwnQueenUnderAttack(board);
+    const searchDepth = this.positionSearchDepth(board, options.depth ?? 4, queenUnderAttack);
     const result = this.engine.search(board, { ...options, depth: searchDepth });
     if (!result.move) return { ...result, humanCandidates: [] };
 
+    // Tactical necessities are resolved before the human preference layer. A
+    // human may choose between several good plans, but not while mate is on the
+    // board or a queen is simply hanging for free.
+    const tacticalPriority = findTacticalPriority(board, this.engine, result);
+    if (tacticalPriority) {
+      return {
+        ...result,
+        move: tacticalPriority.move,
+        pv: result.pv?.length ? [tacticalPriority.move, ...result.pv.slice(1)] : [tacticalPriority.move],
+        humanCandidates: [],
+      };
+    }
+
     const history = options.moveHistory ?? options.history ?? [];
     const safetyMargin = Math.max(0, options.safetyMargin ?? (technicalEndgame ? 25 : 60));
-    const safetyDepth = Math.max(1, Math.min(4, Math.floor(options.safetyDepth ?? (technicalEndgame ? 4 : 2))));
+    const safetyDepth = Math.max(1, Math.min(4, Math.floor(options.safetyDepth ?? (technicalEndgame ? 4 : 3))));
     const generated = scoreCandidates(board);
     const baseErrorBudget = technicalEndgame ? Math.min(options.errorBudget ?? 0.35, 0.08) : (options.errorBudget ?? 0.35);
     const profile = humanErrorProfile(board, baseErrorBudget);
-    const baseline = this.childSearchScore(board, result.move, safetyDepth);
+
+    // Pondering is not a fake delay. Swift actually evaluates the position
+    // after its candidate move, including the opponent's best continuation.
+    // Sharp positions receive one extra ply of consequence search.
+    const ponderDepth = Math.max(
+      safetyDepth,
+      Math.min(5, Math.floor(options.ponderDepth ?? (profile.tacticalPressure > 0.2 ? safetyDepth + 1 : safetyDepth))),
+    );
+    const baseline = this.childSearchScore(board, result.move, ponderDepth);
     const tacticalMargin = this.positionSafetyMargin(safetyMargin, profile);
 
     const book = openingBookMove(board, options.seed ?? Date.now(), history);
     if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
-      const bookSafe = this.isSafeCandidate(board, book.move, baseline, tacticalMargin, safetyDepth);
+      const bookSafe = this.isSafeCandidate(board, book.move, baseline, tacticalMargin, ponderDepth);
       if (bookSafe) {
         return {
           ...result,
@@ -58,7 +83,7 @@ export class HumanSwiftEngine {
     }
 
     const safe = generated.scores.filter((candidate) =>
-      this.isSafeCandidate(board, candidate.move, baseline, tacticalMargin, safetyDepth),
+      this.isSafeCandidate(board, candidate.move, baseline, tacticalMargin, ponderDepth),
     );
 
     if (!safe.length) {
@@ -96,7 +121,7 @@ export class HumanSwiftEngine {
     return {
       ...result,
       move: selectedMove,
-      pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove],
+      pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove, ...pv.slice(1)],
       humanCandidates: movementSafe,
       humanProfile: selected.profile ?? profile,
     };
@@ -106,9 +131,10 @@ export class HumanSwiftEngine {
     return this.engine.evaluate(board);
   }
 
-  private positionSearchDepth(board: Board, requested: number): number {
+  private positionSearchDepth(board: Board, requested: number, queenUnderAttack = false): number {
     const pieces = board.toFEN().split(/\s+/)[0].replace(/[1-8/]/g, "").length;
     if (pieces <= 6) return Math.max(5, Math.floor(requested));
+    if (queenUnderAttack) return Math.max(5, Math.floor(requested) + 2);
     if (board.isInCheck(board.toFEN().split(/\s+/)[1] as "w" | "b")) return Math.max(4, Math.floor(requested));
     return Math.max(1, Math.floor(requested));
   }
