@@ -6,13 +6,9 @@ import { HumanErrorProfile, humanErrorProfile, selectHumanMove, HumanSelectionOp
 import { SwiftOpening, openingBookMove } from "./openings";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
-  /** Maximum search score loss, in centipawns, allowed from the engine move. */
   safetyMargin?: number;
-  /** Shallow reply-search depth used to reject tactical blunders. */
   safetyDepth?: number;
-  /** UCI moves already played in the current game. */
   moveHistory?: string[];
-  /** Repetition identities already encountered, including the initial position. */
   positionHistoryKeys?: string[];
 }
 
@@ -22,7 +18,6 @@ export interface HumanSearchResult extends SearchResult {
   opening?: SwiftOpening;
 }
 
-/** Adds bounded human-style choice without allowing shallow tactical blunders. */
 export class HumanSwiftEngine {
   private readonly engine: SwiftEngine;
   private readonly safetyEngine: SwiftEngine;
@@ -33,14 +28,17 @@ export class HumanSwiftEngine {
   }
 
   search(board: Board, options: HumanEngineOptions = {}): HumanSearchResult {
-    const result = this.engine.search(board, options);
+    const technicalEndgame = this.isTechnicalEndgame(board);
+    const searchDepth = this.positionSearchDepth(board, options.depth ?? 4);
+    const result = this.engine.search(board, { ...options, depth: searchDepth });
     if (!result.move) return { ...result, humanCandidates: [] };
 
     const history = options.moveHistory ?? options.history ?? [];
-    const safetyMargin = Math.max(0, options.safetyMargin ?? 60);
-    const safetyDepth = Math.max(1, Math.min(3, Math.floor(options.safetyDepth ?? 2)));
+    const safetyMargin = Math.max(0, options.safetyMargin ?? (technicalEndgame ? 25 : 60));
+    const safetyDepth = Math.max(1, Math.min(4, Math.floor(options.safetyDepth ?? (technicalEndgame ? 4 : 2))));
     const generated = scoreCandidates(board);
-    const profile = humanErrorProfile(board, options.errorBudget ?? 0.35);
+    const baseErrorBudget = technicalEndgame ? Math.min(options.errorBudget ?? 0.35, 0.08) : (options.errorBudget ?? 0.35);
+    const profile = humanErrorProfile(board, baseErrorBudget);
     const baseline = this.childSearchScore(board, result.move, safetyDepth);
     const tacticalMargin = this.positionSafetyMargin(safetyMargin, profile);
 
@@ -64,34 +62,22 @@ export class HumanSwiftEngine {
     );
 
     if (!safe.length) {
-      return {
-        ...result,
-        humanCandidates: generated.scores.slice(0, options.candidateLimit ?? 6),
-        humanProfile: profile,
-      };
+      return { ...result, humanCandidates: generated.scores.slice(0, options.candidateLimit ?? 6), humanProfile: profile };
     }
 
-    // Never deliberately choose a move that creates the third occurrence of
-    // a known position. If every shallow-safe move repeats, fall back to the
-    // best non-repeating legal candidate rather than letting the safety filter
-    // trap Swift in a shuffle.
     const historyKeys = options.positionHistoryKeys ?? [];
     const nonRepeatingSafe = safe.filter((candidate) => !this.wouldRepeatPosition(board, candidate.move, historyKeys));
     const allNonRepeating = generated.scores.filter((candidate) => !this.wouldRepeatPosition(board, candidate.move, historyKeys));
     const repetitionSafe = nonRepeatingSafe.length ? nonRepeatingSafe : allNonRepeating;
     const movementPool = repetitionSafe.length ? repetitionSafe : safe;
-
-    // Humans rarely move the same undeveloped piece back to the square it just
-    // occupied unless there is a concrete reason. This specifically prevents
-    // Nf6-g8-g8-f6 style shuffles and rook side-to-side oscillation.
     const nonBacktracking = movementPool.filter((candidate) => !this.isMechanicalBacktrack(board, candidate.move, history));
     const movementSafe = nonBacktracking.length ? nonBacktracking : movementPool;
 
     const selected = selectHumanMove(board, {
       candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length),
-      randomness: options.randomness,
-      riskTolerance: options.riskTolerance,
-      errorBudget: options.errorBudget,
+      randomness: technicalEndgame ? 0 : options.randomness,
+      riskTolerance: technicalEndgame ? 0.2 : options.riskTolerance,
+      errorBudget: baseErrorBudget,
       seed: options.seed,
       initiative: options.initiative,
       simplification: options.simplification,
@@ -118,6 +104,21 @@ export class HumanSwiftEngine {
 
   evaluate(board: Board): number {
     return this.engine.evaluate(board);
+  }
+
+  private positionSearchDepth(board: Board, requested: number): number {
+    const pieces = board.toFEN().split(/\s+/)[0].replace(/[1-8/]/g, "").length;
+    if (pieces <= 6) return Math.max(5, Math.floor(requested));
+    if (board.isInCheck(board.toFEN().split(/\s+/)[1] as "w" | "b")) return Math.max(4, Math.floor(requested));
+    return Math.max(1, Math.floor(requested));
+  }
+
+  private isTechnicalEndgame(board: Board): boolean {
+    const pieces = board.toFEN().split(/\s+/)[0].replace(/[1-8/]/g, "");
+    const nonKings = pieces.replace(/[kK]/g, "");
+    const queens = (nonKings.match(/[qQ]/g) ?? []).length;
+    const rooks = (nonKings.match(/[rR]/g) ?? []).length;
+    return pieces.length <= 6 || (queens + rooks > 0 && pieces.length <= 8 && !/[pP]/.test(nonKings));
   }
 
   private childSearchScore(board: Board, move: Move, depth: number): number {
@@ -151,11 +152,7 @@ export class HumanSwiftEngine {
     if (move.castle || move.enPassant || board.pieceAt(move.to)) return false;
     const piece = board.pieceAt(move.from);
     if (!piece || piece[1] === "p") return false;
-
     const from = move.uci().slice(0, 2);
-    // History is indexed by ply. For a move at index i, the same side's prior
-    // moves are i-2, i-4, ... . The old implementation started at i-1,
-    // accidentally checking the opponent's moves and missing Nf6-g8-g8-f6.
     for (let index = history.length - 3; index >= Math.max(0, history.length - 12); index -= 2) {
       const previous = history[index];
       if (!previous) continue;
