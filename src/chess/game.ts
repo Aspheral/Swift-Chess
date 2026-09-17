@@ -108,8 +108,19 @@ export class Game {
     return fields[1] as Color;
   }
 
+  /**
+   * Repetition identity is the actual chess position, not every detail of the
+   * FEN serialization. An en-passant target only changes the position when an
+   * en-passant capture is actually legal. This prevents harmless pawn-double
+   * moves from creating false non-repetitions and lets Swift stop repeating
+   * before it wanders into the 100-move wilderness.
+   */
   static positionKey(board: Board): string {
-    return board.toFEN().split(/\s+/).slice(0, 4).join(" ");
+    const fields = board.toFEN().split(/\s+/);
+    const enPassant = fields[3] !== "-" && board.legalMoves().some((move) => move.enPassant)
+      ? fields[3]
+      : "-";
+    return [fields[0], fields[1], fields[2], enPassant].join(" ");
   }
 }
 
