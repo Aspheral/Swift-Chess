@@ -5,6 +5,7 @@ export { PvsSwiftEngine as SwiftEnginePVS } from "./chess/pvs";
 export * from "./chess/benchmark";
 export * from "./chess/see";
 export * from "./chess/tactics";
+export * from "./chess/fast-tactics";
 export * from "./chess/understanding";
 export * from "./chess/ideas";
 export * from "./chess/scoring";
