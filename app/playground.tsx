@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Board, HumanSwiftEngine, Move, Piece } from "../src";
+import { Game, HumanSwiftEngine, Move, Piece, SwiftOpening } from "../src";
 
 const files = "abcdefgh";
 const pieceNames: Record<Piece, string> = {
@@ -45,70 +45,87 @@ function PieceArt({ piece }: { piece: Piece }) {
   );
 }
 
+const resultLabels: Record<string, string> = {
+  threefold: "Threefold repetition · draw",
+  "fifty-move": "Fifty-move rule · draw",
+  "insufficient-material": "Insufficient material · draw",
+  stalemate: "Stalemate · draw",
+};
+
 export default function Playground() {
   const engine = useMemo(() => new HumanSwiftEngine(), []);
-  const [board, setBoard] = useState(() => Board.start());
+  const gameRef = useRef<Game>(Game.start());
+  const [board, setBoard] = useState(() => gameRef.current.board());
   const [selected, setSelected] = useState<number | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [lastMove, setLastMove] = useState<{ from: number; to: number } | null>(null);
   const [thinking, setThinking] = useState(false);
   const [promotion, setPromotion] = useState<{ moves: Move[]; target: number } | null>(null);
-  const gameRef = useRef(0);
+  const [opening, setOpening] = useState<SwiftOpening | null>(null);
+  const gameVersion = useRef(0);
 
   const legalMoves = board.legalMoves();
   const selectedMoves = selected === null ? [] : legalMoves.filter((move) => move.from === selected);
   const selectedTargets = new Set(selectedMoves.map((move) => move.to));
-  const terminal = board.isCheckmate() || board.isStalemate();
+  const result = gameRef.current.result();
+  const terminal = result !== "ongoing";
   const turn = board.toFEN().split(/\s+/)[1] as "w" | "b";
   const inCheck = board.isInCheck(turn);
 
   function reset() {
-    gameRef.current += 1;
-    setBoard(Board.start());
+    gameVersion.current += 1;
+    gameRef.current = Game.start();
+    setBoard(gameRef.current.board());
     setSelected(null);
     setHistory([]);
     setLastMove(null);
     setThinking(false);
     setPromotion(null);
+    setOpening(null);
   }
 
   function applyHumanMove(move: Move) {
-    const next = board.makeMove(move);
+    const game = gameRef.current;
+    game.play(move);
+    const next = game.board();
     setBoard(next);
     setSelected(null);
     setPromotion(null);
     setLastMove({ from: move.from, to: move.to });
     setHistory((items) => [...items, moveLabel(move)]);
 
-    if (next.isCheckmate() || next.isStalemate() || next.toFEN().split(/\s+/)[1] !== "b") return;
+    if (game.result() !== "ongoing" || game.turn() !== "b") return;
 
-    const game = gameRef.current;
+    const version = gameVersion.current;
     setThinking(true);
     window.setTimeout(() => {
-      if (game !== gameRef.current) return;
-      const result = engine.search(next, {
+      if (version !== gameVersion.current || gameRef.current !== game) return;
+      const current = game.board();
+      const engineResult = engine.search(current, {
         depth: 2,
         randomness: 0.16,
         errorBudget: 0.3,
         safetyDepth: 2,
         seed: Date.now() & 0xffffffff,
       });
-      if (game !== gameRef.current) return;
-      if (result.move) {
-        setBoard((current) => current.makeMove(result.move!));
-        setLastMove({ from: result.move.from, to: result.move.to });
-        setHistory((items) => [...items, moveLabel(result.move!)]);
+      if (version !== gameVersion.current || gameRef.current !== game) return;
+      if (engineResult.move) {
+        game.play(engineResult.move);
+        setBoard(game.board());
+        setLastMove({ from: engineResult.move.from, to: engineResult.move.to });
+        setHistory((items) => [...items, moveLabel(engineResult.move!)]);
+        if (engineResult.opening) setOpening(engineResult.opening);
       }
       setThinking(false);
     }, 90);
   }
 
-  function chooseMove(moves: Move[], target: number) {
+  function chooseMove(moves: Move[]) {
     if (moves.length === 1) {
       applyHumanMove(moves[0]);
       return;
     }
-    setPromotion({ moves, target });
+    setPromotion({ moves, target: moves[0].to });
   }
 
   function clickSquare(index: number) {
@@ -116,7 +133,7 @@ export default function Playground() {
     const piece = board.pieceAt(index);
 
     if (selectedTargets.has(index)) {
-      chooseMove(selectedMoves.filter((move) => move.to === index), index);
+      chooseMove(selectedMoves.filter((move) => move.to === index));
       return;
     }
     if (piece?.startsWith("w")) {
@@ -141,10 +158,16 @@ export default function Playground() {
     const from = Number(event.dataTransfer.getData("text/plain"));
     if (!Number.isInteger(from)) return;
     const moves = board.legalMoves().filter((move) => move.from === from && move.to === target);
-    if (moves.length) chooseMove(moves, target);
+    if (moves.length) chooseMove(moves);
   }
 
-  let status = thinking ? "Swift is thinking…" : terminal ? (board.isCheckmate() ? `Checkmate · ${turn === "w" ? "Swift" : "You"} wins` : "Stalemate · draw") : turn === "w" ? (inCheck ? "Your king is in check" : "Your move") : "Swift to move";
+  const status = thinking
+    ? "Swift is thinking…"
+    : terminal
+      ? (result === "checkmate" ? `Checkmate · ${turn === "w" ? "Swift" : "You"} wins` : resultLabels[result] ?? "Game over")
+      : turn === "w"
+        ? (inCheck ? "Your king is in check" : "Your move")
+        : "Swift to move";
 
   const promotionOptions: Array<{ piece: PromotionPiece; label: string }> = [
     { piece: "q", label: "Queen" }, { piece: "r", label: "Rook" }, { piece: "b", label: "Bishop" }, { piece: "n", label: "Knight" },
@@ -153,7 +176,7 @@ export default function Playground() {
   return (
     <section className="playground" id="play">
       <div className="play-head">
-        <div><p className="eyebrow">01 · SWIFT PLAYGROUND</p><h2>Play against a human-shaped engine.</h2><p>Drag or tap a piece. Swift plays Black with tactical safety, positional ideas, and a bounded error budget.</p></div>
+        <div><p className="eyebrow">01 · SWIFT PLAYGROUND</p><h2>Play against a human-shaped engine.</h2><p>Drag or tap a piece. Swift opens from a small human repertoire, then switches to tactical safety and practical choice.</p></div>
         <button className="reset" onClick={reset}>New game</button>
       </div>
       <div className="game-shell">
@@ -183,9 +206,10 @@ export default function Playground() {
         </div>
         <aside className="game-info">
           <div className="game-status"><span className={thinking ? "pulse" : "dot"} />{status}</div>
+          {opening && <div className="opening-card"><span>OPENING</span><strong>{opening}</strong><small>Swift repertoire</small></div>}
           <div className="history-head"><span>MOVE HISTORY</span><span>{history.length}</span></div>
           <div className="history">{history.length === 0 ? <span className="muted">Make the first move.</span> : history.map((move, index) => <div className="move" key={`${move}-${index}`}><span>{Math.floor(index / 2) + 1}{index % 2 === 0 ? "." : "…"}</span><code>{move}</code></div>)}</div>
-          <div className="engine-note"><strong>SWIFT / HUMAN ENGINE</strong><span>Drag · tap · legal moves · promotion</span></div>
+          <div className="engine-note"><strong>SWIFT / HUMAN ENGINE</strong><span>Repertoire · legal moves · threefold · promotion</span></div>
         </aside>
       </div>
     </section>
