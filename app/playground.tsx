@@ -25,12 +25,7 @@ function PieceArt({ piece }: { piece: Piece }) {
 
   return (
     <svg className="piece-art" viewBox="0 0 100 100" aria-hidden="true">
-      <defs>
-        <linearGradient id={`piece-${piece}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={fill} />
-          <stop offset="1" stopColor={shadow} />
-        </linearGradient>
-      </defs>
+      <defs><linearGradient id={`piece-${piece}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={fill} /><stop offset="1" stopColor={shadow} /></linearGradient></defs>
       {kind === "p" && <g {...common}><path d="M50 15c-10 0-16 8-16 17 0 7 3 12 8 16-8 4-14 11-15 21h46c-1-10-7-17-15-21 5-4 8-9 8-16 0-9-6-17-16-17Z" fill={`url(#piece-${piece})`} /><path d="M20 78h60v9H20z" fill={`url(#piece-${piece})`} /></g>}
       {kind === "r" && <g {...common}><path d="M28 18h10v8h8v-8h8v8h8v-8h10v18l-7 8v27H35V44l-7-8V18Z" fill={`url(#piece-${piece})`} /><path d="M23 71h54v9H23z" fill={`url(#piece-${piece})`} /></g>}
       {kind === "n" && <g {...common}><path d="M25 80h51v-9H65c4-12 1-25-8-36-5-6-11-10-18-14l2 15-12 8 10 4c-8 8-11 19-9 32H25Z" fill={`url(#piece-${piece})`} /><path d="M29 42c8-2 15 0 20 5M47 30l7 3" fill="none" /></g>}
@@ -42,10 +37,10 @@ function PieceArt({ piece }: { piece: Piece }) {
 }
 
 const resultLabels: Record<string, string> = {
-  threefold: "Threefold repetition · draw",
-  "fifty-move": "Fifty-move rule · draw",
-  "insufficient-material": "Insufficient material · draw",
-  stalemate: "Stalemate · draw",
+  threefold: "Draw by threefold repetition",
+  "fifty-move": "Draw by the fifty-move rule",
+  "insufficient-material": "Draw by insufficient material",
+  stalemate: "Stalemate",
 };
 
 export default function Playground() {
@@ -73,48 +68,24 @@ export default function Playground() {
     gameVersion.current += 1;
     gameRef.current = Game.start();
     openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
-    setBoard(gameRef.current.board());
-    setSelected(null);
-    setHistory([]);
-    setLastMove(null);
-    setThinking(false);
-    setPromotion(null);
-    setOpening(null);
+    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setPromotion(null); setOpening(null);
   }
 
   function applyHumanMove(move: Move) {
     const game = gameRef.current;
     game.play(move);
     const next = game.board();
-    setBoard(next);
-    setSelected(null);
-    setPromotion(null);
-    setLastMove({ from: move.from, to: move.to });
-    setHistory(game.moveHistory());
-
+    setBoard(next); setSelected(null); setPromotion(null); setLastMove({ from: move.from, to: move.to }); setHistory(game.moveHistory());
     if (game.result() !== "ongoing" || game.turn() !== "b") return;
-
     const version = gameVersion.current;
     setThinking(true);
     setTimeout(() => {
       if (version !== gameVersion.current || gameRef.current !== game) return;
       const current = game.board();
-      const engineResult = engine.search(current, {
-        depth: 3,
-        randomness: 0.035,
-        errorBudget: 0.18,
-        safetyDepth: 3,
-        safetyMargin: 45,
-        seed: openingSeed.current,
-        moveHistory: game.moveHistory(),
-        positionHistoryKeys: game.positionHistoryKeys(),
-      });
+      const engineResult = engine.search(current, { depth: 3, randomness: 0.035, errorBudget: 0.18, safetyDepth: 3, safetyMargin: 45, seed: openingSeed.current, moveHistory: game.moveHistory(), positionHistoryKeys: game.positionHistoryKeys() });
       if (version !== gameVersion.current || gameRef.current !== game) return;
       if (engineResult.move) {
-        game.play(engineResult.move);
-        setBoard(game.board());
-        setLastMove({ from: engineResult.move.from, to: engineResult.move.to });
-        setHistory(game.moveHistory());
+        game.play(engineResult.move); setBoard(game.board()); setLastMove({ from: engineResult.move.from, to: engineResult.move.to }); setHistory(game.moveHistory());
         if (engineResult.opening) setOpening(engineResult.opening);
       }
       setThinking(false);
@@ -122,36 +93,21 @@ export default function Playground() {
   }
 
   function chooseMove(moves: Move[]) {
-    if (moves.length === 1) {
-      applyHumanMove(moves[0]);
-      return;
-    }
+    if (moves.length === 1) { applyHumanMove(moves[0]); return; }
     setPromotion({ moves, target: moves[0].to });
   }
 
   function clickSquare(index: number) {
     if (thinking || terminal || turn !== "w" || promotion) return;
     const piece = board.pieceAt(index);
-
-    if (selectedTargets.has(index)) {
-      chooseMove(selectedMoves.filter((move) => move.to === index));
-      return;
-    }
-    if (piece?.startsWith("w")) {
-      setSelected(index);
-      return;
-    }
+    if (selectedTargets.has(index)) { chooseMove(selectedMoves.filter((move) => move.to === index)); return; }
+    if (piece?.startsWith("w")) { setSelected(index); return; }
     setSelected(null);
   }
 
   function dragStart(event: React.DragEvent, index: number) {
-    if (thinking || terminal || turn !== "w" || !board.pieceAt(index)?.startsWith("w")) {
-      event.preventDefault();
-      return;
-    }
-    setSelected(index);
-    event.dataTransfer.setData("text/plain", String(index));
-    event.dataTransfer.effectAllowed = "move";
+    if (thinking || terminal || turn !== "w" || !board.pieceAt(index)?.startsWith("w")) { event.preventDefault(); return; }
+    setSelected(index); event.dataTransfer.setData("text/plain", String(index)); event.dataTransfer.effectAllowed = "move";
   }
 
   function dropSquare(event: React.DragEvent, target: number) {
@@ -162,22 +118,13 @@ export default function Playground() {
     if (moves.length) chooseMove(moves);
   }
 
-  const status = thinking
-    ? "Swift is thinking…"
-    : terminal
-      ? (result === "checkmate" ? `Checkmate · ${turn === "w" ? "Swift" : "You"} wins` : resultLabels[result] ?? "Game over")
-      : turn === "w"
-        ? (inCheck ? "Your king is in check" : "Your move")
-        : "Swift to move";
-
-  const promotionOptions: Array<{ piece: PromotionPiece; label: string }> = [
-    { piece: "q", label: "Queen" }, { piece: "r", label: "Rook" }, { piece: "b", label: "Bishop" }, { piece: "n", label: "Knight" },
-  ];
+  const status = thinking ? "Swift is considering the position…" : terminal ? (result === "checkmate" ? `Checkmate · ${turn === "w" ? "Swift" : "You"} wins` : resultLabels[result] ?? "Game over") : turn === "w" ? (inCheck ? "Your king is in check" : "Your move") : "Swift to move";
+  const promotionOptions: Array<{ piece: PromotionPiece; label: string }> = [{ piece: "q", label: "Queen" }, { piece: "r", label: "Rook" }, { piece: "b", label: "Bishop" }, { piece: "n", label: "Knight" }];
 
   return (
     <section className="playground" id="play">
       <div className="play-head">
-        <div><p className="eyebrow">01 · SWIFT PLAYGROUND</p><h2>Play against a human-shaped engine.</h2><p>Drag or tap a piece. Swift chooses from a small human repertoire, remembers the game, avoids needless repetitions, then returns to practical position-based play when the opening ends.</p></div>
+        <div><p className="eyebrow">YOUR GAME</p><h2>Set up the board. See what happens.</h2><p>Take the white pieces and play at your own pace. Swift follows the opening, remembers the game, and settles into the position as the board opens up.</p></div>
         <button className="reset" onClick={reset}>New game</button>
       </div>
       <div className="game-shell">
@@ -186,15 +133,7 @@ export default function Playground() {
             <div className="rank-labels" aria-hidden="true">{[8,7,6,5,4,3,2,1].map((rank) => <span key={rank}>{rank}</span>)}</div>
             <div className="chessboard" aria-label="Interactive chessboard">
               {Array.from({ length: 64 }, (_, visualIndex) => {
-                const rank = 7 - Math.floor(visualIndex / 8);
-                const file = visualIndex % 8;
-                const index = rank * 8 + file;
-                const piece = board.pieceAt(index);
-                const isSelected = selected === index;
-                const isTarget = selectedTargets.has(index);
-                const isLast = lastMove?.from === index || lastMove?.to === index;
-                const isKingInCheck = piece?.[1] === "k" && piece[0] === turn && inCheck;
-                const dark = (rank + file) % 2 === 1;
+                const rank = 7 - Math.floor(visualIndex / 8); const file = visualIndex % 8; const index = rank * 8 + file; const piece = board.pieceAt(index); const isSelected = selected === index; const isTarget = selectedTargets.has(index); const isLast = lastMove?.from === index || lastMove?.to === index; const isKingInCheck = piece?.[1] === "k" && piece[0] === turn && inCheck; const dark = (rank + file) % 2 === 1;
                 return <button key={index} className={`square ${dark ? "dark" : "light"} ${isSelected ? "selected" : ""} ${isTarget ? "target" : ""} ${isLast ? "last" : ""} ${isKingInCheck ? "in-check" : ""}`} onClick={() => clickSquare(index)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropSquare(event, index)} aria-label={piece ? `${pieceNames[piece]} on ${squareName(index)}` : squareName(index)}>
                   {piece && <span className={`piece ${piece[0]}`} draggable={piece[0] === "w"} onDragStart={(event) => dragStart(event, index)}><PieceArt piece={piece} /></span>}
                   {isTarget && <span className={`move-dot ${piece ? "capture" : ""}`} />}
@@ -207,10 +146,9 @@ export default function Playground() {
         </div>
         <aside className="game-info">
           <div className="game-status"><span className={thinking ? "pulse" : "dot"} />{status}</div>
-          {opening && <div className="opening-card"><span>OPENING</span><strong>{opening}</strong><small>Swift repertoire</small></div>}
-          <div className="history-head"><span>MOVE HISTORY</span><span>{history.length}</span></div>
-          <div className="history">{history.length === 0 ? <span className="muted">Make the first move.</span> : history.map((move, index) => <div className="move" key={`${move}-${index}`}><span>{Math.floor(index / 2) + 1}{index % 2 === 0 ? "." : "…"}</span><code>{move}</code></div>)}</div>
-          <div className="engine-note"><strong>SWIFT / HUMAN ENGINE</strong><span>Repertoire · game memory · threefold · anti-shuffle · deeper safety search</span></div>
+          {opening && <div className="opening-card"><span>Opening</span><strong>{opening}</strong></div>}
+          <div className="history-head"><span>Moves</span><span>{history.length}</span></div>
+          <div className="history">{history.length === 0 ? <span className="muted">The first move is yours.</span> : history.map((move, index) => <div className="move" key={`${move}-${index}`}><span>{Math.floor(index / 2) + 1}{index % 2 === 0 ? "." : "…"}</span><code>{move}</code></div>)}</div>
         </aside>
       </div>
     </section>
