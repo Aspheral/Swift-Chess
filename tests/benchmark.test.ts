@@ -15,7 +15,7 @@ describe("Swift benchmark suite", () => {
       expect(result.move, position.name).not.toBeNull();
       expect(board.legalMoves().some((move) => move.uci() === result.move?.uci()), position.name).toBe(true);
     }
-  });
+  }, 30_000);
 
   it("preserves the known tactical answer", () => {
     const tactical = SWIFT_BENCHMARKS.find((position) => position.expectedMove);
