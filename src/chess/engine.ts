@@ -280,3 +280,22 @@ export class SwiftEngine {
     return score;
   }
 
+  private kingSafety(board: Board, color: Color): number {
+    const fen = board.toFEN().split(/\s+/);
+    const boardPart = fen[0];
+    const king = color === "w" ? "K" : "k";
+    const kingSquare = boardPart.indexOf(king);
+    if (kingSquare < 0) return 0;
+    let score = 0;
+    const castled = color === "w" ? /g1|c1/.test(boardPart) : /g8|c8/.test(boardPart);
+    if (castled) score += 12;
+    const enemy = color === "w" ? "b" : "w";
+    const homeRank = color === "w" ? 0 : 7;
+    for (const file of [3, 4]) {
+      const pawnSquare = homeRank * 8 + file;
+      const p = board.pieceAt(pawnSquare);
+      if (p === `${color}p`) score += 3;
+    }
+    return score;
+  }
+}
