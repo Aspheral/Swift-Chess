@@ -87,12 +87,12 @@ export class HumanSwiftEngine {
       safetyDepth,
       Math.min(5, Math.floor(options.ponderDepth ?? (profile.tacticalPressure > 0.2 ? safetyDepth + 1 : safetyDepth))),
     );
-    const baseline = this.childSearchScore(board, result.move, ponderDepth);
+    const baseline = this.childSearchScore(board, result.move, ponderDepth, options.ponderTimeMs);
     const tacticalMargin = this.positionSafetyMargin(safetyMargin, profile);
 
     const book = openingBookMove(board, options.seed ?? Date.now(), history);
     if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
-      const bookSafe = this.isSafeCandidate(board, book.move, baseline, tacticalMargin, ponderDepth);
+      const bookSafe = this.isSafeCandidate(board, book.move, baseline, tacticalMargin, ponderDepth, options.safetyTimeMs);
       if (bookSafe) {
         return {
           ...result,
@@ -108,7 +108,7 @@ export class HumanSwiftEngine {
     const safetyLimit = Math.max(1, Math.floor(options.safetyCandidateLimit ?? candidateScores.length));
     const safetyCandidates = candidateScores.slice(0, safetyLimit);
     const safe = safetyCandidates.filter((candidate) =>
-      this.isSafeCandidate(board, candidate.move, baseline, tacticalMargin, ponderDepth),
+      this.isSafeCandidate(board, candidate.move, baseline, tacticalMargin, ponderDepth, options.safetyTimeMs),
     );
 
     if (!safe.length) {
@@ -172,9 +172,9 @@ export class HumanSwiftEngine {
     return pieces.length <= 6 || (queens + rooks > 0 && pieces.length <= 8 && !/[pP]/.test(nonKings));
   }
 
-  private childSearchScore(board: Board, move: Move, depth: number): number {
+  private childSearchScore(board: Board, move: Move, depth: number, timeMs?: number): number {
     const child = board.makeMove(move);
-    return -this.safetyEngine.search(child, { depth, timeMs: this.optionsTimeMs(this.ponderTimeMs) }).score;
+    return -this.safetyEngine.search(child, { depth, timeMs: this.optionsTimeMs(timeMs) }).score;
   }
 
   private optionsTimeMs(value?: number): number | undefined {
@@ -186,7 +186,7 @@ export class HumanSwiftEngine {
     return Math.max(0, baseMargin * (1 - pressure));
   }
 
-  private isSafeCandidate(board: Board, move: Move, baseline: number, margin: number, depth: number): boolean {
+  private isSafeCandidate(board: Board, move: Move, baseline: number, margin: number, depth: number, timeMs?: number): boolean {
     const child = board.makeMove(move);
     if (!child.isCheckmate()) {
       const opponent = child.toFEN().split(/\s+/)[1] as "w" | "b";
