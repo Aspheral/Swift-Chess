@@ -10,8 +10,6 @@ const MATE = 100_000;
 const MAX_PV = 32;
 const pieceValues: Record<PieceType, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
 
-const KING_PST_MID = [-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-20,-30,-30,-40,-40,-30,-30,-20,-10,-20,-20,-20,-20,-20,-20,-10,20,20,0,0,0,0,20,20,30,35,10,0,0,10,35,30,35,45,20,0,0,20,45,35];
-const KING_PST_END = [-50,-30,-30,-30,-30,-30,-30,-50,-30,-10,0,0,0,0,-10,-30,-30,0,10,15,15,10,0,-30,-30,5,20,25,25,20,5,-30,-30,5,25,35,35,25,5,-30,-30,5,25,35,35,25,5,-30,-30,0,15,25,25,15,0,-30,-50,-30,-30,-30,-30,-30,-30,-50];
 const PST: Record<Exclude<PieceType, "k">, number[]> = {
   p: [0,0,0,0,0,0,0,0,50,50,50,50,50,50,50,50,10,10,20,30,30,20,10,10,5,5,10,25,25,10,5,5,0,0,0,20,20,0,0,0,5,-5,-10,0,0,-10,-5,5,5,10,10,-20,-20,10,10,5,0,0,0,0,0,0,0,0],
   n: [-50,-40,-30,-30,-30,-30,-40,-50,-40,-20,0,0,0,0,-20,-40,-30,-30,0,10,15,15,10,0,-30,-30,5,15,20,20,15,5,-30,-30,0,15,20,20,15,0,-30,-30,5,10,15,15,10,5,-30,-40,-20,0,5,5,0,-20,-40,-50,-40,-30,-30,-40,-50],
@@ -232,13 +230,7 @@ export class SwiftEngine {
       const type = char.toLowerCase() as PieceType;
       const white = char === char.toUpperCase(); const sign = white ? 1 : -1;
       score += sign * pieceValues[type];
-      const tableSquare = white ? square : 63 - square;
-      if (type === "k") {
-        const endgame = fenBoard.replace(/[1-8/]/g, "").length <= 10;
-        score += sign * (endgame ? KING_PST_END[tableSquare] : KING_PST_MID[tableSquare]);
-      } else {
-        score += sign * PST[type as Exclude<PieceType, "k">][tableSquare];
-      }
+      if (type !== "k") { const tableSquare = white ? square : 63 - square; score += sign * PST[type as Exclude<PieceType, "k">][tableSquare]; }
       if (type === "p") (white ? whitePawns : blackPawns).push(square);
       if (type === "b") white ? whiteBishops++ : blackBishops++;
       square++;
@@ -263,39 +255,26 @@ export class SwiftEngine {
     return score;
   }
 
-  private passedPawnScore(pawns: number[], enemyPawns: number[], white: boolean): number {
-    let score = 0;
-    for (const pawn of pawns) {
-      const file = pawn & 7;
-      const rank = Math.floor(pawn / 8);
-      const enemyAhead = enemyPawns.some((enemy) => {
-        const enemyFile = enemy & 7;
-        const enemyRank = Math.floor(enemy / 8);
-        return Math.abs(enemyFile - file) <= 1 && (white ? enemyRank > rank : enemyRank < rank);
-      });
-      if (enemyAhead) continue;
-      const advance = white ? rank : 7 - rank;
-      if (advance >= 3) score += 8 + advance * 5;
+  private kingSafety(board: Board, color: Color): number {
+    const fen = board.toFEN().split(/\s+/)[0]; const target = color === "w" ? "K" : "k";
+    let kingSquare = -1, square = 56;
+    for (const char of fen) {
+      if (char === "/") { square -= 16; continue; }
+      if (/\d/.test(char)) { square += Number(char); continue; }
+      if (char === target) kingSquare = square; square++;
     }
-    return score;
+    if (kingSquare < 0) return 0;
+    const file = kingSquare & 7, rank = Math.floor(kingSquare / 8);
+    const castling = board.toFEN().split(/\s+/)[2];
+    const hasRights = color === "w" ? /K|Q/.test(castling) : /k|q/.test(castling);
+    let score = hasRights ? 8 : 0;
+    score -= (file === 0 || file === 7 ? 3 : 0) + (rank === 0 || rank === 7 ? 3 : 0);
+    return color === "w" ? score : -score;
   }
 
-  private kingSafety(board: Board, color: Color): number {
-    const fen = board.toFEN().split(/\s+/);
-    const boardPart = fen[0];
-    const king = color === "w" ? "K" : "k";
-    const kingSquare = boardPart.indexOf(king);
-    if (kingSquare < 0) return 0;
-    let score = 0;
-    const castled = color === "w" ? /g1|c1/.test(boardPart) : /g8|c8/.test(boardPart);
-    if (castled) score += 12;
-    const enemy = color === "w" ? "b" : "w";
-    const homeRank = color === "w" ? 0 : 7;
-    for (const file of [3, 4]) {
-      const pawnSquare = homeRank * 8 + file;
-      const p = board.pieceAt(pawnSquare);
-      if (p === `${color}p`) score += 3;
-    }
-    return score;
-  }
+  private sideToMove(board: Board): Color { return board.toFEN().split(/\s+/)[1] as Color; }
+  private key(board: Board): string { return board.toFEN().split(/\s+/).slice(0, 4).join(" "); }
+  private checkTime(): void { if (Date.now() > this.deadline) throw TIMEOUT; }
 }
+
+const TIMEOUT = Symbol("Swift search timeout");
