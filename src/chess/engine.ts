@@ -78,10 +78,10 @@ export class SwiftEngine {
     const inCheck = board.isInCheck(this.sideToMove(board));
     const legal = board.legalMoves();
     if (legal.length === 0) return { score: inCheck ? -MATE + ply : 0, pv: [] };
-    if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta), pv: [] };
+    if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta, 0), pv: [] };
     const extension = inCheck && depth > 0 ? 1 : 0;
     const effectiveDepth = depth + extension;
-    if (effectiveDepth <= 0) return { score: this.quiescence(board, alpha, beta), pv: [] };
+    if (effectiveDepth <= 0) return { score: this.quiescence(board, alpha, beta, 0), pv: [] };
     const key = this.key(board), cached = this.table.get(key), alphaOriginal = alpha;
     if (cached && cached.depth >= effectiveDepth) {
       if (cached.bound === "exact") return { score: cached.score, pv: cached.move ? [cached.move] : [] };
@@ -134,14 +134,15 @@ export class SwiftEngine {
     return { score: best, pv: bestPv.slice(0, MAX_PV) };
   }
 
-  private quiescence(board: Board, alpha: number, beta: number): number {
+  private quiescence(board: Board, alpha: number, beta: number, qDepth: number): number {
     this.checkTime();
     this.nodes++;
     const side = this.sideToMove(board);
+    if (qDepth >= 8) return this.evaluate(board);
     if (board.isInCheck(side)) {
       let best = -INF;
       for (const move of this.orderMoves(board, board.legalMoves(), undefined, 0)) {
-        const score = -this.quiescence(board.makeMove(move), -beta, -alpha);
+        const score = -this.quiescence(board.makeMove(move), -beta, -alpha, qDepth + 1);
         best = Math.max(best, score); alpha = Math.max(alpha, score);
         if (alpha >= beta) break;
       }
@@ -156,8 +157,9 @@ export class SwiftEngine {
     const captures = this.orderMoves(board, tactical, undefined, 0);
     for (const move of captures) {
       this.checkTime();
-      if (!this.givesCheck(board, move) && canDeltaPrune(board, move, standPat, alpha)) continue;
-      const score = -this.quiescence(board.makeMove(move), -beta, -alpha);
+      const checking = this.givesCheck(board, move);
+      if (!checking && canDeltaPrune(board, move, standPat, alpha)) continue;
+      const score = -this.quiescence(board.makeMove(move), -beta, -alpha, qDepth + 1);
       if (score >= beta) return beta;
       if (score > alpha) alpha = score;
     }
