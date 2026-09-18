@@ -62,6 +62,20 @@ export class HumanSwiftEngine {
     const safetyMargin = Math.max(0, options.safetyMargin ?? (technicalEndgame ? 25 : 60));
     const safetyDepth = Math.max(1, Math.min(4, Math.floor(options.safetyDepth ?? (technicalEndgame ? 4 : 3))));
     const generated = scoreCandidates(board, options.concreteCandidateLimit);
+    const engineCandidate: CandidateScore = {
+      move: result.move,
+      // The engine's concrete search score is the strongest evidence available
+      // for its principal move. Keep it in the human menu so the human layer
+      // chooses among real engine ideas instead of accidentally excluding the
+      // searched move during strategic candidate generation.
+      score: result.score,
+      ideaKinds: ["tactical"],
+      reasons: ["Swift's concrete search selected this move as its principal variation."],
+    };
+    const candidateScores = [
+      engineCandidate,
+      ...generated.scores.filter((candidate) => candidate.move.uci() !== result.move?.uci()),
+    ];
     const baseErrorBudget = technicalEndgame ? Math.min(options.errorBudget ?? 0.35, 0.08) : (options.errorBudget ?? 0.35);
     const profile = humanErrorProfile(board, baseErrorBudget);
 
@@ -80,26 +94,26 @@ export class HumanSwiftEngine {
           ...result,
           move: book.move,
           pv: result.pv?.length ? [book.move, ...result.pv.slice(1)] : [book.move],
-          humanCandidates: generated.scores.filter((candidate) => candidate.move.uci() === book.move.uci()),
+          humanCandidates: candidateScores.filter((candidate) => candidate.move.uci() === book.move.uci()),
           humanProfile: profile,
           opening: book.opening,
         };
       }
     }
 
-    const safetyLimit = Math.max(1, Math.floor(options.safetyCandidateLimit ?? generated.scores.length));
-    const safetyCandidates = generated.scores.slice(0, safetyLimit);
+    const safetyLimit = Math.max(1, Math.floor(options.safetyCandidateLimit ?? candidateScores.length));
+    const safetyCandidates = candidateScores.slice(0, safetyLimit);
     const safe = safetyCandidates.filter((candidate) =>
       this.isSafeCandidate(board, candidate.move, baseline, tacticalMargin, ponderDepth),
     );
 
     if (!safe.length) {
-      return { ...result, humanCandidates: generated.scores.slice(0, options.candidateLimit ?? 6), humanProfile: profile };
+      return { ...result, humanCandidates: candidateScores.slice(0, options.candidateLimit ?? 6), humanProfile: profile };
     }
 
     const historyKeys = options.positionHistoryKeys ?? [];
     const nonRepeatingSafe = safe.filter((candidate) => !this.wouldRepeatPosition(board, candidate.move, historyKeys));
-    const allNonRepeating = generated.scores.filter((candidate) => !this.wouldRepeatPosition(board, candidate.move, historyKeys));
+    const allNonRepeating = candidateScores.filter((candidate) => !this.wouldRepeatPosition(board, candidate.move, historyKeys));
     const repetitionSafe = nonRepeatingSafe.length ? nonRepeatingSafe : allNonRepeating;
     const movementPool = repetitionSafe.length ? repetitionSafe : safe;
     const nonBacktracking = movementPool.filter((candidate) => !this.isMechanicalBacktrack(board, candidate.move, history));
