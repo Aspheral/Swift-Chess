@@ -10,6 +10,8 @@ const MATE = 100_000;
 const MAX_PV = 32;
 const pieceValues: Record<PieceType, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
 
+const KING_PST_MID = [-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-20,-30,-30,-40,-40,-30,-30,-20,-10,-20,-20,-20,-20,-20,-20,-10,20,20,0,0,0,0,20,20,30,35,10,0,0,10,35,30,35,45,20,0,0,20,45,35];
+const KING_PST_END = [-50,-30,-30,-30,-30,-30,-30,-50,-30,-10,0,0,0,0,-10,-30,-30,0,10,15,15,10,0,-30,-30,5,20,25,25,20,5,-30,-30,5,25,35,35,25,5,-30,-30,5,25,35,35,25,5,-30,-30,0,15,25,25,15,0,-30,-50,-30,-30,-30,-30,-30,-30,-50];
 const PST: Record<Exclude<PieceType, "k">, number[]> = {
   p: [0,0,0,0,0,0,0,0,50,50,50,50,50,50,50,50,10,10,20,30,30,20,10,10,5,5,10,25,25,10,5,5,0,0,0,20,20,0,0,0,5,-5,-10,0,0,-10,-5,5,5,10,10,-20,-20,10,10,5,0,0,0,0,0,0,0,0],
   n: [-50,-40,-30,-30,-30,-30,-40,-50,-40,-20,0,0,0,0,-20,-40,-30,-30,0,10,15,15,10,0,-30,-30,5,15,20,20,15,5,-30,-30,0,15,20,20,15,0,-30,-30,5,10,15,15,10,5,-30,-40,-20,0,5,5,0,-20,-40,-50,-40,-30,-30,-40,-50],
@@ -230,7 +232,13 @@ export class SwiftEngine {
       const type = char.toLowerCase() as PieceType;
       const white = char === char.toUpperCase(); const sign = white ? 1 : -1;
       score += sign * pieceValues[type];
-      if (type !== "k") { const tableSquare = white ? square : 63 - square; score += sign * PST[type as Exclude<PieceType, "k">][tableSquare]; }
+      const tableSquare = white ? square : 63 - square;
+      if (type === "k") {
+        const endgame = fenBoard.replace(/[1-8/]/g, "").length <= 10;
+        score += sign * (endgame ? KING_PST_END[tableSquare] : KING_PST_MID[tableSquare]);
+      } else {
+        score += sign * PST[type as Exclude<PieceType, "k">][tableSquare];
+      }
       if (type === "p") (white ? whitePawns : blackPawns).push(square);
       if (type === "b") white ? whiteBishops++ : blackBishops++;
       square++;
@@ -251,6 +259,52 @@ export class SwiftEngine {
       const file = square & 7, rank = Math.floor(square / 8);
       if ((file > 0 && files[file - 1] > 0) || (file < 7 && files[file + 1] > 0)) score += 5;
       const advance = rank >= 4 ? rank - 3 : 0; if (advance > 0) score += advance * 4;
+    }
+    return score;
+  }
+
+  private passedPawnScore(pawns: number[], enemyPawns: number[]): number {
+    let score = 0;
+    for (const pawn of pawns) {
+      const file = pawn & 7;
+      const rank = Math.floor(pawn / 8);
+      const enemyAhead = enemyPawns.some((enemy) => {
+        const enemyFile = enemy & 7;
+        const enemyRank = Math.floor(enemy / 8);
+        return Math.abs(enemyFile - file) <= 1 && (pawns === enemyPawns || enemyRank > rank);
+      });
+      if (enemyAhead) continue;
+      const advance = pawns === enemyPawns ? rank : 7 - rank;
+      if (advance >= 3) score += 8 + advance * 5;
+    }
+    return score;
+  }
+
+  private rookActivity(board: Board, color: Color): number {
+    const fenBoard = board.toFEN().split(/\s+/)[0];
+    const ownPawnFiles = new Set<number>();
+    const enemyPawnFiles = new Set<number>();
+    let square = 56;
+    for (const char of fenBoard) {
+      if (char === "/") { square -= 16; continue; }
+      if (/\d/.test(char)) { square += Number(char); continue; }
+      if (char.toLowerCase() === "p") {
+        (char === (color === "w" ? "P" : "p") ? ownPawnFiles : enemyPawnFiles).add(square & 7);
+      }
+      square++;
+    }
+    let score = 0;
+    square = 56;
+    for (const char of fenBoard) {
+      if (char === "/") { square -= 16; continue; }
+      if (/\d/.test(char)) { square += Number(char); continue; }
+      if (char === (color === "w" ? "R" : "r")) {
+        const file = square & 7;
+        if (!ownPawnFiles.has(file)) score += 12;
+        else if (!enemyPawnFiles.has(file)) score += 7;
+        if (Math.floor(square / 8) === (color === "w" ? 6 : 1)) score += 8;
+      }
+      square++;
     }
     return score;
   }
