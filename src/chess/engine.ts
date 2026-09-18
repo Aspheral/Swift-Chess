@@ -263,7 +263,7 @@ export class SwiftEngine {
     return score;
   }
 
-  private passedPawnScore(pawns: number[], enemyPawns: number[]): number {
+  private passedPawnScore(pawns: number[], enemyPawns: number[], white: boolean): number {
     let score = 0;
     for (const pawn of pawns) {
       const file = pawn & 7;
@@ -271,64 +271,12 @@ export class SwiftEngine {
       const enemyAhead = enemyPawns.some((enemy) => {
         const enemyFile = enemy & 7;
         const enemyRank = Math.floor(enemy / 8);
-        return Math.abs(enemyFile - file) <= 1 && (pawns === enemyPawns || enemyRank > rank);
+        return Math.abs(enemyFile - file) <= 1 && (white ? enemyRank > rank : enemyRank < rank);
       });
       if (enemyAhead) continue;
-      const advance = pawns === enemyPawns ? rank : 7 - rank;
+      const advance = white ? rank : 7 - rank;
       if (advance >= 3) score += 8 + advance * 5;
     }
     return score;
   }
 
-  private rookActivity(board: Board, color: Color): number {
-    const fenBoard = board.toFEN().split(/\s+/)[0];
-    const ownPawnFiles = new Set<number>();
-    const enemyPawnFiles = new Set<number>();
-    let square = 56;
-    for (const char of fenBoard) {
-      if (char === "/") { square -= 16; continue; }
-      if (/\d/.test(char)) { square += Number(char); continue; }
-      if (char.toLowerCase() === "p") {
-        (char === (color === "w" ? "P" : "p") ? ownPawnFiles : enemyPawnFiles).add(square & 7);
-      }
-      square++;
-    }
-    let score = 0;
-    square = 56;
-    for (const char of fenBoard) {
-      if (char === "/") { square -= 16; continue; }
-      if (/\d/.test(char)) { square += Number(char); continue; }
-      if (char === (color === "w" ? "R" : "r")) {
-        const file = square & 7;
-        if (!ownPawnFiles.has(file)) score += 12;
-        else if (!enemyPawnFiles.has(file)) score += 7;
-        if (Math.floor(square / 8) === (color === "w" ? 6 : 1)) score += 8;
-      }
-      square++;
-    }
-    return score;
-  }
-
-  private kingSafety(board: Board, color: Color): number {
-    const fen = board.toFEN().split(/\s+/)[0]; const target = color === "w" ? "K" : "k";
-    let kingSquare = -1, square = 56;
-    for (const char of fen) {
-      if (char === "/") { square -= 16; continue; }
-      if (/\d/.test(char)) { square += Number(char); continue; }
-      if (char === target) kingSquare = square; square++;
-    }
-    if (kingSquare < 0) return 0;
-    const file = kingSquare & 7, rank = Math.floor(kingSquare / 8);
-    const castling = board.toFEN().split(/\s+/)[2];
-    const hasRights = color === "w" ? /K|Q/.test(castling) : /k|q/.test(castling);
-    let score = hasRights ? 8 : 0;
-    score -= (file === 0 || file === 7 ? 3 : 0) + (rank === 0 || rank === 7 ? 3 : 0);
-    return color === "w" ? score : -score;
-  }
-
-  private sideToMove(board: Board): Color { return board.toFEN().split(/\s+/)[1] as Color; }
-  private key(board: Board): string { return board.toFEN().split(/\s+/).slice(0, 4).join(" "); }
-  private checkTime(): void { if (Date.now() > this.deadline) throw TIMEOUT; }
-}
-
-const TIMEOUT = Symbol("Swift search timeout");
