@@ -110,7 +110,8 @@ export class SwiftEngine {
     for (const move of this.orderMoves(board, legal, cached?.move, ply)) {
       this.checkTime();
       const child = board.makeMove(move);
-      const quiet = !this.isCapture(board, move) && !move.promotion;
+      const forcing = this.isCapture(board, move) || !!move.promotion || this.givesCheck(board, move);
+      const quiet = !forcing;
       const canReduce = effectiveDepth >= 3 && moveIndex >= 3 && quiet && !inCheck;
       let score: number;
       let childResult: { score: number; pv: Move[] };
@@ -149,7 +150,9 @@ export class SwiftEngine {
     const standPat = this.evaluate(board);
     if (standPat >= beta) return beta;
     if (standPat > alpha) alpha = standPat;
-    const tactical = board.legalMoves().filter((move) => this.isCapture(board, move) || !!move.promotion);
+    const tactical = board.legalMoves().filter((move) =>
+      this.isCapture(board, move) || !!move.promotion || this.givesCheck(board, move),
+    );
     const captures = this.orderMoves(board, tactical, undefined, 0);
     for (const move of captures) {
       this.checkTime();
@@ -169,7 +172,8 @@ export class SwiftEngine {
     if (hashMove && move.uci() === hashMove.uci()) return 2_000_000;
     let score = 0;
     const moving = board.pieceAt(move.from), captured = board.pieceAt(move.to);
-    if (captured || move.enPassant || move.promotion) score += tacticalMoveScore(board, move);
+    if (captured || move.enPassant || move.promotion || this.givesCheck(board, move)) score += tacticalMoveScore(board, move);
+    if (this.givesCheck(board, move)) score += 250_000;
     if (move.castle) score += 100;
     if (!this.isCapture(board, move) && !move.promotion) {
       const key = move.uci();
