@@ -17,6 +17,10 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
   concreteCandidateLimit?: number;
   /** Cap the tactical mate search; 0 keeps immediate/SEE priorities only. */
   tacticalSearchDepth?: number;
+  /** Optional time budget for the consequence-search safety checks. */
+  safetyTimeMs?: number;
+  /** Optional time budget for the baseline ponder search. */
+  ponderTimeMs?: number;
   moveHistory?: string[];
   positionHistoryKeys?: string[];
 }
@@ -170,7 +174,11 @@ export class HumanSwiftEngine {
 
   private childSearchScore(board: Board, move: Move, depth: number): number {
     const child = board.makeMove(move);
-    return -this.safetyEngine.search(child, { depth }).score;
+    return -this.safetyEngine.search(child, { depth, timeMs: this.optionsTimeMs(this.ponderTimeMs) }).score;
+  }
+
+  private optionsTimeMs(value?: number): number | undefined {
+    return value !== undefined && value > 0 ? Math.floor(value) : undefined;
   }
 
   private positionSafetyMargin(baseMargin: number, profile: HumanErrorProfile): number {
@@ -185,7 +193,7 @@ export class HumanSwiftEngine {
       if (child.legalMoves().some((reply) => child.makeMove(reply).isCheckmate())) return false;
       if (child.isInCheck(opponent) && child.legalMoves().length === 0) return false;
     }
-    return -this.safetyEngine.search(child, { depth }).score >= baseline - margin;
+    return -this.safetyEngine.search(child, { depth, timeMs: this.optionsTimeMs(this.safetyTimeMs) }).score >= baseline - margin;
   }
 
   private wouldRepeatPosition(board: Board, move: Move, positionHistoryKeys: string[]): boolean {
