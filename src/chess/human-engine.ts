@@ -193,7 +193,7 @@ export class HumanSwiftEngine {
       if (child.legalMoves().some((reply) => child.makeMove(reply).isCheckmate())) return false;
       if (child.isInCheck(opponent) && child.legalMoves().length === 0) return false;
     }
-    return -this.safetyEngine.search(child, { depth, timeMs: this.optionsTimeMs(this.safetyTimeMs) }).score >= baseline - margin;
+    return -this.safetyEngine.search(child, { depth, timeMs: this.optionsTimeMs(timeMs) }).score >= baseline - margin;
   }
 
   private wouldRepeatPosition(board: Board, move: Move, positionHistoryKeys: string[]): boolean {
