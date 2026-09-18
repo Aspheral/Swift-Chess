@@ -121,7 +121,7 @@ function strategicIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): 
     if (candidates.length) ideas.push({ kind: "simplify", priority: 58, reason: "Material advantage makes favorable simplification a candidate plan.", candidates: uniqueMoves(candidates).slice(0, 8) });
   }
   if ((u.materialAdvantage === "white" && color === "b") || (u.materialAdvantage === "black" && color === "w")) {
-    const candidates = uniqueMoves([...captures(board, legal), ...quietMoves.filter((m) => ["n", "b", "r", "q"].includes(pieceType(board, m) ?? "")]);
+    const candidates = uniqueMoves([...captures(board, legal), ...quietMoves.filter((m) => ["n", "b", "r", "q"].includes(pieceType(board, m) ?? ""))]);
     if (candidates.length) ideas.push({ kind: "complicate", priority: 58, reason: "Material deficit makes active, forcing play worth considering.", candidates: candidates.slice(0, 8) });
   }
   return ideas.filter((i) => i.candidates.length);
