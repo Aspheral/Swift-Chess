@@ -5,10 +5,13 @@ import { Board, HumanSwiftEngine, Move, START_FEN } from "../src";
 const GAMES = 20;
 const STOCKFISH_ELO = 1650;
 const MAX_PLIES = 100;
-const SWIFT_DEPTH = 3;
+const SWIFT_DEPTH = 5;
+const SWIFT_TIME_MS = 125;
 const STOCKFISH_MOVETIME_MS = 25;
 const HUMAN_SAFETY_DEPTH = 1;
 const HUMAN_PONDER_DEPTH = 1;
+const HUMAN_SAFETY_TIME_MS = 20;
+const HUMAN_PONDER_TIME_MS = 20;
 const HUMAN_CANDIDATE_LIMIT = 3;
 const HUMAN_SAFETY_CANDIDATE_LIMIT = 1;
 const HUMAN_CONCRETE_CANDIDATE_LIMIT = 1;
@@ -104,10 +107,13 @@ function applyUci(board: Board, uci: string): Board {
 function swiftMove(board: Board, engine: HumanSwiftEngine, history: string[], positionKeys: string[], seed: number): Move {
   const result = engine.search(board, {
     depth: SWIFT_DEPTH,
+    timeMs: SWIFT_TIME_MS,
     randomness: 0,
     errorBudget: 0,
     safetyDepth: HUMAN_SAFETY_DEPTH,
     ponderDepth: HUMAN_PONDER_DEPTH,
+    safetyTimeMs: HUMAN_SAFETY_TIME_MS,
+    ponderTimeMs: HUMAN_PONDER_TIME_MS,
     candidateLimit: HUMAN_CANDIDATE_LIMIT,
     safetyCandidateLimit: HUMAN_SAFETY_CANDIDATE_LIMIT,
     concreteCandidateLimit: HUMAN_CONCRETE_CANDIDATE_LIMIT,
