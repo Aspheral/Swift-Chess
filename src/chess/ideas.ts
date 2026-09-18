@@ -6,6 +6,7 @@ export interface ChessIdea { kind: IdeaKind; priority: number; reason: string; c
 export interface IdeaGeneration { understanding: PositionUnderstanding; ideas: ChessIdea[]; candidates: Move[]; }
 
 const squareName = (s: number) => `${"abcdefgh"[s & 7]}${Math.floor(s / 8) + 1}`;
+const squareIndex = (name: string) => (Number(name[1]) - 1) * 8 + (name.charCodeAt(0) - 97);
 const uniqueMoves = (moves: Move[]) => { const seen = new Set<string>(); return moves.filter((m) => !seen.has(m.uci()) && seen.add(m.uci())); };
 const captures = (board: Board, moves: Move[]) => moves.filter((m) => m.enPassant || board.pieceAt(m.to) !== null);
 const quiet = (board: Board, moves: Move[]) => moves.filter((m) => !m.enPassant && !board.pieceAt(m.to) && !m.promotion);
@@ -16,19 +17,8 @@ const pieceType = (board: Board, move: Move): PieceType | null => {
 
 function fromSquares(moves: Move[], squares: Set<string>) { return moves.filter((m) => squares.has(squareName(m.from))); }
 
-function boardWithTurn(board: Board, color: Color): Board {
-  return Board.fromFEN(board.toFEN().replace(/ [wb] /, ` ${color} `));
-}
-
 function attacksSquare(board: Board, color: Color, square: string): boolean {
-  const side = boardWithTurn(board, color);
-  return side.legalMoves().some((move) => squareName(move.to) === square);
-}
-
-function movedPieceMobility(board: Board, move: Move): number {
-  const next = board.makeMove(move);
-  const side = boardWithTurn(next, board.toFEN().split(/\s+/)[1] as Color);
-  return side.legalMoves().filter((candidate) => candidate.from === move.to).length;
+  return board.isSquareAttacked(squareIndex(square), color);
 }
 
 function tacticalIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): ChessIdea[] {
@@ -56,8 +46,7 @@ function strategicIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): 
   const vulnerableOwn = own.filter((p) => p.vulnerable);
   if (vulnerableOwn.length) {
     const candidates = legal.filter((move) => {
-      const target = vulnerableOwn.some((p) => p.square === squareName(move.from));
-      if (target) return true;
+      if (vulnerableOwn.some((p) => p.square === squareName(move.from))) return true;
       const next = board.makeMove(move);
       return vulnerableOwn.some((p) => attacksSquare(next, color, p.square));
     });
@@ -81,14 +70,16 @@ function strategicIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): 
     if (candidates.length) ideas.push({ kind: "develop", priority: 55, reason: "A minor piece remains on its original square and can improve development.", candidates: candidates.slice(0, 8) });
   }
 
+  // Keep idea generation cheap. Strategic improvement is a broad concept, so
+  // use destination activity and centralization rather than a fresh legal-move
+  // generation for every quiet move.
   const improvementCandidates = quietMoves.filter((move) => {
     const type = pieceType(board, move);
     if (!type || type === "p" || type === "k") return false;
-    const beforeMobility = legal.filter((candidate) => candidate.from === move.from).length;
-    const afterMobility = movedPieceMobility(board, move);
-    const centralBefore = [27, 28, 35, 36].includes(move.from);
     const centralAfter = [27, 28, 35, 36].includes(move.to);
-    return afterMobility > beforeMobility || (!centralBefore && centralAfter);
+    const destinationIsSafe = !board.isSquareAttacked(move.to, enemyColor);
+    const destinationIsActive = board.isSquareAttacked(move.to, color);
+    return centralAfter || (destinationIsSafe && destinationIsActive);
   });
   if (improvementCandidates.length) ideas.push({ kind: "improve-piece", priority: 52, reason: "A piece can move to a more active square or gain useful mobility.", candidates: uniqueMoves(improvementCandidates).slice(0, 8) });
 
@@ -130,7 +121,7 @@ function strategicIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): 
     if (candidates.length) ideas.push({ kind: "simplify", priority: 58, reason: "Material advantage makes favorable simplification a candidate plan.", candidates: uniqueMoves(candidates).slice(0, 8) });
   }
   if ((u.materialAdvantage === "white" && color === "b") || (u.materialAdvantage === "black" && color === "w")) {
-    const candidates = uniqueMoves([...captures(board, legal), ...quietMoves.filter((m) => ["n", "b", "r", "q"].includes(pieceType(board, m) ?? ""))]);
+    const candidates = uniqueMoves([...captures(board, legal), ...quietMoves.filter((m) => ["n", "b", "r", "q"].includes(pieceType(board, m) ?? "")]);
     if (candidates.length) ideas.push({ kind: "complicate", priority: 58, reason: "Material deficit makes active, forcing play worth considering.", candidates: candidates.slice(0, 8) });
   }
   return ideas.filter((i) => i.candidates.length);

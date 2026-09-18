@@ -24,21 +24,12 @@ function materialForSide(board: Board, side: Color): number {
   return side === "w" ? material : -material;
 }
 
-function mobilityForSide(board: Board, side: Color): number {
-  return boardWithTurn(board, side).legalMoves().length;
-}
-
-function movedPieceMobility(board: Board, move: Move, side: Color): number {
-  const next = board.makeMove(move);
-  return boardWithTurn(next, side).legalMoves().filter((candidate) => candidate.from === move.to).length;
-}
-
 function moveScore(
   board: Board,
   move: Move,
   ideaKinds: ChessIdea["kind"][],
   side: Color,
-  beforeOwnMobility: number,
+  legal: Move[],
   beforeOpponentMobility: number,
 ): number {
   const moving = board.pieceAt(move.from);
@@ -54,16 +45,21 @@ function moveScore(
   if (center.has(move.to)) score += 4;
   if (moving?.[1] === "p" && Math.abs(move.to - move.from) === 16) score += 1;
 
-  const afterOpponentMobility = mobilityForSide(next, side === "w" ? "b" : "w");
-  score += Math.max(-12, Math.min(12, (beforeOpponentMobility - afterOpponentMobility) * 0.5));
+  // After a move, the opponent is the side to move, so next.legalMoves()
+  // already gives the opponent mobility. Avoid reconstructing a second board.
+  const nextLegal = next.legalMoves();
+  score += Math.max(-12, Math.min(12, (beforeOpponentMobility - nextLegal.length) * 0.5));
 
   if (moving && moving[0] === side) {
-    const afterOwnMobility = mobilityForSide(next, side);
+    // Own mobility requires changing the turn back, but only calculate it when
+    // the move actually belongs to the side being scored.
+    const afterOwnMobility = boardWithTurn(next, side).legalMoves().length;
+    const beforeOwnMobility = legal.length;
     score += Math.max(-6, Math.min(8, (afterOwnMobility - beforeOwnMobility) * 0.15));
 
     if (!move.promotion && moving[1] !== "p" && !board.pieceAt(move.to)) {
-      const beforePieceMobility = board.legalMoves().filter((candidate) => candidate.from === move.from).length;
-      const afterPieceMobility = movedPieceMobility(board, move, side);
+      const beforePieceMobility = legal.filter((candidate) => candidate.from === move.from).length;
+      const afterPieceMobility = boardWithTurn(next, side).legalMoves().filter((candidate) => candidate.from === move.to).length;
       score += Math.max(-5, Math.min(7, (afterPieceMobility - beforePieceMobility) * 0.5));
     }
   }
@@ -89,11 +85,10 @@ interface MoveEvidence {
 export function scoreCandidates(board: Board, concreteLimit?: number): CandidateGeneration {
   const generated = generateIdeas(board);
   const side = generated.understanding.sideToMove;
-  const beforeOwnMobility = mobilityForSide(board, side);
-  const beforeOpponentMobility = mobilityForSide(board, side === "w" ? "b" : "w");
+  const legal = board.legalMoves();
+  const beforeOpponentMobility = boardWithTurn(board, side === "w" ? "b" : "w").legalMoves().length;
   const byMove = new Map<string, MoveEvidence>();
 
-  // Aggregate strategic evidence before paying the expensive concrete scoring cost.
   for (const idea of generated.ideas) {
     for (const move of idea.candidates) {
       const key = move.uci();
@@ -122,7 +117,7 @@ export function scoreCandidates(board: Board, concreteLimit?: number): Candidate
   const scores = concreteEvidence
     .map((entry) => ({
       move: entry.move,
-      score: moveScore(board, entry.move, entry.ideaKinds, side, beforeOwnMobility, beforeOpponentMobility)
+      score: moveScore(board, entry.move, entry.ideaKinds, side, legal, beforeOpponentMobility)
         + Math.min(12, entry.priority * 0.15),
       ideaKinds: entry.ideaKinds,
       reasons: entry.reasons,
