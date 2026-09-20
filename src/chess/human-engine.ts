@@ -90,8 +90,7 @@ export class HumanSwiftEngine {
     const baseline = this.childSearchScore(board, result.move, ponderDepth, options.ponderTimeMs);
     const tacticalMargin = this.positionSafetyMargin(safetyMargin, profile);
 
-    const deterministicBestPlay = (options.randomness ?? 0.08) === 0 && baseErrorBudget === 0;
-    const book = deterministicBestPlay ? null : openingBookMove(board, options.seed ?? Date.now(), history);
+    const book = openingBookMove(board, options.seed ?? Date.now(), history);
     if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
       const bookSafe = this.isSafeCandidate(board, book.move, baseline, tacticalMargin, ponderDepth, options.safetyTimeMs);
       if (bookSafe) {
@@ -108,9 +107,11 @@ export class HumanSwiftEngine {
 
     const safetyLimit = Math.max(1, Math.floor(options.safetyCandidateLimit ?? candidateScores.length));
     const safetyCandidates = candidateScores.slice(0, safetyLimit);
-    const safe = safetyCandidates.filter((candidate) =>
-      this.isSafeCandidate(board, candidate.move, baseline, tacticalMargin, ponderDepth, options.safetyTimeMs),
-    );
+    const safe = safetyCandidates
+      .map((candidate) =>
+        this.assessCandidate(board, candidate, baseline, tacticalMargin, ponderDepth, options.safetyTimeMs),
+      )
+      .filter((candidate): candidate is CandidateScore => candidate !== null);
 
     if (!safe.length) {
       return { ...result, humanCandidates: candidateScores.slice(0, options.candidateLimit ?? 6), humanProfile: profile };
@@ -118,9 +119,8 @@ export class HumanSwiftEngine {
 
     const historyKeys = options.positionHistoryKeys ?? [];
     const nonRepeatingSafe = safe.filter((candidate) => !this.wouldRepeatPosition(board, candidate.move, historyKeys));
-    const allNonRepeating = candidateScores.filter((candidate) => !this.wouldRepeatPosition(board, candidate.move, historyKeys));
-    const repetitionSafe = nonRepeatingSafe.length ? nonRepeatingSafe : allNonRepeating;
-    const movementPool = repetitionSafe.length ? repetitionSafe : safe;
+    const repetitionSafe = nonRepeatingSafe.length ? nonRepeatingSafe : safe;
+    const movementPool = repetitionSafe;
     const nonBacktracking = movementPool.filter((candidate) => !this.isMechanicalBacktrack(board, candidate.move, history));
     const movementSafe = nonBacktracking.length ? nonBacktracking : movementPool;
 
@@ -185,6 +185,35 @@ export class HumanSwiftEngine {
   private positionSafetyMargin(baseMargin: number, profile: HumanErrorProfile): number {
     const pressure = profile.tacticalPressure * 0.65 + profile.practicalPressure * 0.35;
     return Math.max(0, baseMargin * (1 - pressure));
+  }
+
+  private assessCandidate(
+    board: Board,
+    candidate: CandidateScore,
+    baseline: number,
+    margin: number,
+    depth: number,
+    timeMs?: number,
+  ): CandidateScore | null {
+    const child = board.makeMove(candidate.move);
+    if (!child.isCheckmate()) {
+      const opponent = child.toFEN().split(/\s+/)[1] as "w" | "b";
+      const replies = child.legalMoves();
+      if (replies.some((reply) => child.makeMove(reply).isCheckmate())) return null;
+      if (child.isInCheck(opponent) && replies.length === 0) return null;
+    }
+
+    const concreteScore = -this.safetyEngine.search(child, {
+      depth,
+      timeMs: this.optionsTimeMs(timeMs),
+    }).score;
+    if (concreteScore < baseline - margin) return null;
+
+    return {
+      ...candidate,
+      score: concreteScore,
+      reasons: [...candidate.reasons, "Concrete consequence search kept this move inside Swift's safety margin."],
+    };
   }
 
   private isSafeCandidate(board: Board, move: Move, baseline: number, margin: number, depth: number, timeMs?: number): boolean {
