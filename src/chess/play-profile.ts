@@ -2,6 +2,8 @@ import { Board } from "./board";
 import { HumanEngineOptions } from "./human-engine";
 import { humanErrorProfile } from "./human";
 
+export const SWIFT_PLAY_PROFILE = "adaptive-human-v2";
+
 export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 
 export interface SwiftPlayProfile {
@@ -31,18 +33,18 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
   if (tactical) {
     return {
       kind: "tactical",
-      minimumThinkMs: 420,
+      minimumThinkMs: 380,
       options: {
-        depth: 5,
-        timeMs: 760,
-        randomness: 0.006,
-        errorBudget: 0.025,
+        depth: 6,
+        timeMs: 850,
+        randomness: 0.003,
+        errorBudget: 0.015,
         strictBestPlay: false,
         safetyDepth: 4,
-        ponderDepth: 4,
+        ponderDepth: 5,
         safetyMargin: 24,
-        safetyTimeMs: 80,
-        ponderTimeMs: 100,
+        safetyTimeMs: 90,
+        ponderTimeMs: 120,
         candidateLimit: 5,
         safetyCandidateLimit: 4,
         concreteCandidateLimit: 8,
@@ -54,22 +56,22 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
   if (opening) {
     return {
       kind: "opening",
-      minimumThinkMs: 160,
+      minimumThinkMs: 140,
       options: {
-        depth: 4,
-        timeMs: 300,
-        randomness: 0.008,
-        errorBudget: 0.04,
+        depth: 5,
+        timeMs: 350,
+        randomness: 0.006,
+        errorBudget: 0.035,
         strictBestPlay: false,
-        safetyDepth: 2,
-        ponderDepth: 2,
-        safetyMargin: 36,
-        safetyTimeMs: 35,
-        ponderTimeMs: 45,
+        safetyDepth: 3,
+        ponderDepth: 3,
+        safetyMargin: 30,
+        safetyTimeMs: 55,
+        ponderTimeMs: 70,
         candidateLimit: 4,
         safetyCandidateLimit: 2,
         concreteCandidateLimit: 6,
-        tacticalSearchDepth: 1,
+        tacticalSearchDepth: 2,
       },
     };
   }
@@ -77,18 +79,18 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
   if (endgame) {
     return {
       kind: "endgame",
-      minimumThinkMs: 280,
+      minimumThinkMs: 260,
       options: {
-        depth: 5,
-        timeMs: 640,
-        randomness: 0.006,
-        errorBudget: 0.025,
+        depth: 6,
+        timeMs: 700,
+        randomness: 0.003,
+        errorBudget: 0.015,
         strictBestPlay: false,
         safetyDepth: 4,
         ponderDepth: 4,
         safetyMargin: 24,
-        safetyTimeMs: 70,
-        ponderTimeMs: 90,
+        safetyTimeMs: 80,
+        ponderTimeMs: 100,
         candidateLimit: 4,
         safetyCandidateLimit: 3,
         concreteCandidateLimit: 7,
@@ -99,21 +101,21 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
 
   return {
     kind: "calm",
-    minimumThinkMs: 280,
+    minimumThinkMs: 250,
     options: {
       depth: 5,
-      timeMs: 520,
-      randomness: 0.012,
-      errorBudget: 0.05,
+      timeMs: 600,
+      randomness: 0.008,
+      errorBudget: 0.035,
       strictBestPlay: false,
-      safetyDepth: 3,
-      ponderDepth: 3,
-      safetyMargin: 28,
-      safetyTimeMs: 60,
-      ponderTimeMs: 75,
+      safetyDepth: 4,
+      ponderDepth: 4,
+      safetyMargin: 24,
+      safetyTimeMs: 80,
+      ponderTimeMs: 95,
       candidateLimit: 5,
-      safetyCandidateLimit: 3,
-      concreteCandidateLimit: 7,
+      safetyCandidateLimit: 4,
+      concreteCandidateLimit: 8,
       tacticalSearchDepth: 2,
     },
   };
