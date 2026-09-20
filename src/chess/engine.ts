@@ -409,7 +409,7 @@ export class SwiftEngine {
     return color === "w" ? score : -score;
   }
 
-  private sideToMove(board: Board): Color { return board.toFEN().split(/\s+/)[1] as Color; }
+  private sideToMove(board: Board): Color { return board.turn(); }
   private key(board: Board): string { return board.toFEN().split(/\s+/).slice(0, 4).join(" "); }
   private checkTime(): void { if (Date.now() > this.deadline) throw TIMEOUT; }
 }
