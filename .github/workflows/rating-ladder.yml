@@ -1,0 +1,81 @@
+name: Swift Rating Ladder
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rating-games:
+    name: human-elo-${{ matrix.elo }}-batch-${{ matrix.batch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        elo: [1450, 1550, 1650, 1750, 1850]
+        batch: [0, 1]
+    env:
+      SWIFT_RUN_STOCKFISH_GATE: "1"
+      SWIFT_CALIBRATION_MODE: "human"
+      SWIFT_CALIBRATION_BATCH: ${{ matrix.batch }}
+      SWIFT_STOCKFISH_ELO: ${{ matrix.elo }}
+      SWIFT_CALIBRATION_REQUIRE_TARGET: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Install Stockfish
+        run: sudo apt-get update && sudo apt-get install -y stockfish
+
+      - name: Run paired rating games
+        run: pnpm exec vitest run tests/stockfish-gate.test.ts --config vitest.config.mts
+
+      - name: Upload rating batch
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-rating-human-elo-${{ matrix.elo }}-batch-${{ matrix.batch }}
+          path: calibration-results/human-elo-${{ matrix.elo }}-batch-${{ matrix.batch }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    name: calibrated-elo
+    needs: rating-games
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download rating batches
+        uses: actions/download-artifact@v4
+        with:
+          pattern: swift-rating-human-*
+          path: rating-downloads
+          merge-multiple: true
+
+      - name: Fit Elo and confidence interval
+        run: node scripts/aggregate-rating-ladder.mjs rating-downloads calibration-results/rating-ladder-summary.json
+
+      - name: Upload rating summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-rating-summary
+          path: calibration-results/rating-ladder-summary.json
+          if-no-files-found: error
+          retention-days: 30
