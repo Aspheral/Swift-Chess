@@ -1,5 +1,5 @@
 import { Board, Color, Move, PieceType } from "./board";
-import { canDeltaPrune, tacticalMoveScore } from "./tactics";
+import { canDeltaPrune } from "./tactics";
 
 export interface SearchOptions { depth?: number; timeMs?: number; }
 export interface SearchResult { move: Move | null; score: number; depth: number; nodes: number; pv?: Move[]; }
@@ -227,8 +227,13 @@ export class SwiftEngine {
     if (hashMove && move.uci() === hashMove.uci()) return 2_000_000;
     let score = 0;
     const moving = board.pieceAt(move.from), captured = board.pieceAt(move.to);
-    const tactical = !!captured || move.enPassant || !!move.promotion;
-    if (tactical) score += tacticalMoveScore(board, move);
+    if (move.promotion) score += 900_000 + pieceValues[move.promotion];
+    if (move.enPassant) score += 1_000_000 + 1_000;
+    if (captured && moving) {
+      const victim = pieceValues[captured[1] as PieceType];
+      const attacker = pieceValues[moving[1] as PieceType];
+      score += 1_000_000 + victim * 10 - attacker;
+    }
     if (move.castle) score += 100;
     if (!this.isCapture(board, move) && !move.promotion) {
       const key = move.uci();
@@ -237,7 +242,6 @@ export class SwiftEngine {
       else if (key === killer2) score += 700_000;
       score += this.history.get(key) ?? 0;
     }
-    if (captured && moving) score += pieceValues[captured[1] as PieceType] - pieceValues[moving[1] as PieceType];
     return score;
   }
 
