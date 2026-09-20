@@ -5,21 +5,19 @@ on:
 
 jobs:
   stockfish-calibration:
-    name: stockfish-${{ matrix.mode }}
+    name: stockfish-${{ matrix.mode }}-batch-${{ matrix.batch }}
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - mode: strict
-            require_target: "1"
-          - mode: human
-            require_target: "0"
+        mode: [strict, human]
+        batch: [0, 1, 2]
     env:
       SWIFT_RUN_STOCKFISH_GATE: "1"
       SWIFT_CALIBRATION_MODE: ${{ matrix.mode }}
-      SWIFT_CALIBRATION_REQUIRE_TARGET: ${{ matrix.require_target }}
+      SWIFT_CALIBRATION_BATCH: ${{ matrix.batch }}
+      SWIFT_CALIBRATION_REQUIRE_TARGET: "0"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,14 +39,42 @@ jobs:
       - name: Install Stockfish
         run: sudo apt-get update && sudo apt-get install -y stockfish
 
-      - name: Run 1650 calibration match
+      - name: Run 1650 calibration batch
         run: pnpm exec vitest run tests/stockfish-gate.test.ts --config vitest.config.mts
 
-      - name: Upload calibration results
+      - name: Upload calibration batch
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: swift-calibration-${{ matrix.mode }}
-          path: calibration-results/${{ matrix.mode }}.json
+          name: swift-calibration-${{ matrix.mode }}-batch-${{ matrix.batch }}
+          path: calibration-results/${{ matrix.mode }}-batch-${{ matrix.batch }}.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  aggregate:
+    name: aggregate-rating
+    needs: stockfish-calibration
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download calibration batches
+        uses: actions/download-artifact@v4
+        with:
+          pattern: swift-calibration-*
+          path: calibration-downloads
+          merge-multiple: true
+
+      - name: Aggregate rating and enforce strict gate
+        run: node scripts/aggregate-calibration.mjs calibration-downloads calibration-results/summary.json
+
+      - name: Upload aggregate rating
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-calibration-summary
+          path: calibration-results/summary.json
           if-no-files-found: warn
           retention-days: 30
