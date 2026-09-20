@@ -10,6 +10,9 @@ const MATE = 100_000;
 const MAX_PV = 32;
 const pieceValues: Record<PieceType, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
 
+const KING_PST_MID = [-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-20,-30,-30,-40,-40,-30,-30,-20,-10,-20,-20,-20,-20,-20,-20,-10,20,20,0,0,0,0,20,20,30,35,10,0,0,10,35,30,35,45,20,0,0,20,45,35];
+const KING_PST_END = [-50,-30,-30,-30,-30,-30,-30,-50,-30,-10,0,0,0,0,-10,-30,-30,0,10,15,15,10,0,-30,-30,5,20,25,25,20,5,-30,-30,5,25,35,35,25,5,-30,-30,5,25,35,35,25,5,-30,-30,0,15,25,25,15,0,-30,-50,-30,-30,-30,-30,-30,-30,-50];
+
 const PST: Record<Exclude<PieceType, "k">, number[]> = {
   p: [0,0,0,0,0,0,0,0,50,50,50,50,50,50,50,50,10,10,20,30,30,20,10,10,5,5,10,25,25,10,5,5,0,0,0,20,20,0,0,0,5,-5,-10,0,0,-10,-5,5,5,10,10,-20,-20,10,10,5,0,0,0,0,0,0,0,0],
   n: [-50,-40,-30,-30,-30,-30,-40,-50,-40,-20,0,0,0,0,-20,-40,-30,-30,0,10,15,15,10,0,-30,-30,5,15,20,20,15,5,-30,-30,0,15,20,20,15,0,-30,-30,5,10,15,15,10,5,-30,-40,-20,0,5,5,0,-20,-40,-50,-40,-30,-30,-40,-50],
@@ -224,6 +227,7 @@ export class SwiftEngine {
 
   private evaluateWhite(board: Board): number {
     const fenBoard = board.toFEN().split(/\s+/)[0];
+    const totalPieces = fenBoard.replace(/[1-8/]/g, "").length;
     let score = 0, square = 56;
     const whitePawns: number[] = [], blackPawns: number[] = [];
     let whiteBishops = 0, blackBishops = 0;
@@ -232,46 +236,95 @@ export class SwiftEngine {
       if (/\d/.test(char)) { square += Number(char); continue; }
       const type = char.toLowerCase() as PieceType;
       const white = char === char.toUpperCase(); const sign = white ? 1 : -1;
+      const tableSquare = white ? square : 63 - square;
       score += sign * pieceValues[type];
-      if (type !== "k") { const tableSquare = white ? square : 63 - square; score += sign * PST[type as Exclude<PieceType, "k">][tableSquare]; }
+      if (type === "k") score += sign * (totalPieces <= 10 ? KING_PST_END[tableSquare] : KING_PST_MID[tableSquare]);
+      else score += sign * PST[type as Exclude<PieceType, "k">][tableSquare];
       if (type === "p") (white ? whitePawns : blackPawns).push(square);
       if (type === "b") white ? whiteBishops++ : blackBishops++;
       square++;
     }
-    score += this.pawnStructure(whitePawns); score -= this.pawnStructure(blackPawns);
+    score += this.pawnStructure(whitePawns, "w", blackPawns);
+    score -= this.pawnStructure(blackPawns, "b", whitePawns);
     if (whiteBishops >= 2) score += 28; if (blackBishops >= 2) score -= 28;
+    score += this.rookActivity(board, "w", whitePawns, blackPawns);
+    score -= this.rookActivity(board, "b", blackPawns, whitePawns);
     const fields = board.toFEN().split(/\s+/); const mobility = board.legalMoves().length;
     score += (fields[1] === "w" ? mobility : -mobility) * 2;
     score += this.kingSafety(board, "w"); score += this.kingSafety(board, "b");
     return score;
   }
 
-  private pawnStructure(pawns: number[]): number {
+  private pawnStructure(pawns: number[], color: Color, enemyPawns: number[]): number {
     const files = new Array<number>(8).fill(0); for (const square of pawns) files[square & 7]++;
     let score = 0;
     for (const count of files) if (count > 1) score -= 14 * (count - 1);
     for (const square of pawns) {
       const file = square & 7, rank = Math.floor(square / 8);
       if ((file > 0 && files[file - 1] > 0) || (file < 7 && files[file + 1] > 0)) score += 5;
-      const advance = rank >= 4 ? rank - 3 : 0; if (advance > 0) score += advance * 4;
+      else score -= 8;
+
+      const advance = color === "w" ? Math.max(0, rank - 1) : Math.max(0, 6 - rank);
+      score += advance * 4;
+
+      const passed = !enemyPawns.some((enemySquare) => {
+        const enemyFile = enemySquare & 7;
+        if (Math.abs(enemyFile - file) > 1) return false;
+        const enemyRank = Math.floor(enemySquare / 8);
+        return color === "w" ? enemyRank > rank : enemyRank < rank;
+      });
+      if (passed) score += 8 + advance * 8;
+    }
+    return score;
+  }
+
+  private rookActivity(board: Board, color: Color, ownPawns: number[], enemyPawns: number[]): number {
+    const ownFiles = new Set(ownPawns.map((square) => square & 7));
+    const enemyFiles = new Set(enemyPawns.map((square) => square & 7));
+    let score = 0;
+    for (let square = 0; square < 64; square++) {
+      if (board.pieceAt(square) !== `${color}r`) continue;
+      const file = square & 7;
+      if (!ownFiles.has(file)) score += 8;
+      if (!ownFiles.has(file) && !enemyFiles.has(file)) score += 6;
+      const rank = Math.floor(square / 8);
+      if (rank === (color === "w" ? 6 : 1)) score += 8;
     }
     return score;
   }
 
   private kingSafety(board: Board, color: Color): number {
-    const fen = board.toFEN().split(/\s+/)[0]; const target = color === "w" ? "K" : "k";
-    let kingSquare = -1, square = 56;
-    for (const char of fen) {
-      if (char === "/") { square -= 16; continue; }
-      if (/\d/.test(char)) { square += Number(char); continue; }
-      if (char === target) kingSquare = square; square++;
+    const target = `${color}k`;
+    let kingSquare = -1;
+    for (let square = 0; square < 64; square++) {
+      if (board.pieceAt(square) === target) { kingSquare = square; break; }
     }
     if (kingSquare < 0) return 0;
-    const file = kingSquare & 7, rank = Math.floor(kingSquare / 8);
+
+    const file = kingSquare & 7;
+    const rank = Math.floor(kingSquare / 8);
     const castling = board.toFEN().split(/\s+/)[2];
     const hasRights = color === "w" ? /K|Q/.test(castling) : /k|q/.test(castling);
-    let score = hasRights ? 8 : 0;
-    score -= (file === 0 || file === 7 ? 3 : 0) + (rank === 0 || rank === 7 ? 3 : 0);
+    const castled = color === "w"
+      ? (kingSquare === 6 || kingSquare === 2)
+      : (kingSquare === 62 || kingSquare === 58);
+
+    let score = castled ? 20 : hasRights ? 6 : 0;
+    const direction = color === "w" ? 8 : -8;
+    for (const df of [-1, 0, 1]) {
+      const shieldFile = file + df;
+      if (shieldFile < 0 || shieldFile > 7) continue;
+      const first = kingSquare + direction + df;
+      const second = kingSquare + direction * 2 + df;
+      if (first >= 0 && first < 64 && board.pieceAt(first) === `${color}p`) score += 5;
+      else if (second >= 0 && second < 64 && board.pieceAt(second) === `${color}p`) score += 2;
+    }
+
+    const queensPresent = Array.from({ length: 64 }, (_, square) => board.pieceAt(square))
+      .some((piece) => piece?.[1] === "q");
+    if (queensPresent && !castled && !hasRights && (file === 3 || file === 4)) score -= 12;
+    if (queensPresent && rank !== (color === "w" ? 0 : 7)) score -= 4;
+
     return color === "w" ? score : -score;
   }
 
