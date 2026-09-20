@@ -108,8 +108,16 @@ export class HumanSwiftEngine {
     const safetyLimit = Math.max(1, Math.floor(options.safetyCandidateLimit ?? candidateScores.length));
     const safetyCandidates = candidateScores.slice(0, safetyLimit);
     const safe = safetyCandidates
-      .map((candidate) =>
-        this.assessCandidate(board, candidate, baseline, tacticalMargin, ponderDepth, options.safetyTimeMs),
+      .map((candidate, index) =>
+        this.assessCandidate(
+          board,
+          candidate,
+          baseline,
+          tacticalMargin,
+          ponderDepth,
+          options.safetyTimeMs,
+          index === 0,
+        ),
       )
       .filter((candidate): candidate is CandidateScore => candidate !== null);
 
@@ -195,6 +203,7 @@ export class HumanSwiftEngine {
     margin: number,
     depth: number,
     timeMs?: number,
+    preservePrincipalScore = false,
   ): CandidateScore | null {
     const child = board.makeMove(candidate.move);
     if (!child.isCheckmate()) {
@@ -212,7 +221,7 @@ export class HumanSwiftEngine {
 
     return {
       ...candidate,
-      score: concreteScore,
+      score: preservePrincipalScore ? candidate.score : concreteScore,
       reasons: [...candidate.reasons, "Concrete consequence search kept this move inside Swift's safety margin."],
     };
   }
