@@ -24,6 +24,29 @@ describe("Human move quality distribution", () => {
     expect(selected?.score).toBeGreaterThanOrEqual(80);
   });
 
+  it("does not let style bonuses override a stronger zero-error candidate", () => {
+    const board = Board.start();
+    const legal = new Map(board.legalMoves().map((move) => [move.uci(), move]));
+    const quiet = legal.get("a2a3");
+    const developing = legal.get("g1f3");
+    expect(quiet).toBeDefined();
+    expect(developing).toBeDefined();
+
+    const candidates: CandidateScore[] = [
+      { move: quiet!, score: 100, ideaKinds: ["simplify"], reasons: ["concrete best"] },
+      { move: developing!, score: 99, ideaKinds: ["develop"], reasons: ["more natural but slightly worse"] },
+    ];
+
+    const result = selectHumanMove(board, {
+      candidates,
+      candidateLimit: 2,
+      errorBudget: 0,
+      randomness: 0,
+    });
+
+    expect(result.move?.uci()).toBe("a2a3");
+  });
+
   it("uses the strongest candidate when there is no error budget", () => {
     const board = Board.start();
     const legal = board.legalMoves();
