@@ -90,7 +90,8 @@ export class HumanSwiftEngine {
     const baseline = this.childSearchScore(board, result.move, ponderDepth, options.ponderTimeMs);
     const tacticalMargin = this.positionSafetyMargin(safetyMargin, profile);
 
-    const book = openingBookMove(board, options.seed ?? Date.now(), history);
+    const deterministicBestPlay = (options.randomness ?? 0.08) === 0 && baseErrorBudget === 0;
+    const book = deterministicBestPlay ? null : openingBookMove(board, options.seed ?? Date.now(), history);
     if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
       const bookSafe = this.isSafeCandidate(board, book.move, baseline, tacticalMargin, ponderDepth, options.safetyTimeMs);
       if (bookSafe) {
