@@ -105,7 +105,13 @@ function applyUci(board: Board, uci: string): Board {
   return board.makeMove(move);
 }
 
-function swiftMove(board: Board, engine: HumanSwiftEngine, history: string[], positionKeys: string[], seed: number): Move {
+function swiftMove(
+  board: Board,
+  engine: HumanSwiftEngine,
+  history: string[],
+  positionKeys: string[],
+  seed: number,
+): { move: Move; depth: number; score: number; nodes: number } {
   const result = engine.search(board, {
     depth: SWIFT_DEPTH,
     timeMs: SWIFT_TIME_MS,
@@ -125,7 +131,7 @@ function swiftMove(board: Board, engine: HumanSwiftEngine, history: string[], po
     positionHistoryKeys: positionKeys,
   });
   if (!result.move) throw new Error(`Swift returned no move in ${board.toFEN()}`);
-  return result.move;
+  return { move: result.move, depth: result.depth, score: result.score, nodes: result.nodes };
 }
 
 describe("Swift 1650 Elo Stockfish gate", () => {
@@ -149,14 +155,22 @@ describe("Swift 1650 Elo Stockfish gate", () => {
       const swiftIsWhite = game % 2 === 0;
       const history: string[] = [];
       const positionKeys: string[] = [board.toFEN()];
+      const swiftDepths: number[] = [];
+      const swiftNodes: number[] = [];
 
       for (let ply = 0; ply < MAX_PLIES; ply += 1) {
         if (board.isCheckmate() || board.isStalemate()) break;
 
         const side = board.toFEN().split(/\s+/)[1] as "w" | "b";
-        const uci = ((side === "w") === swiftIsWhite)
-          ? swiftMove(board, engine, history, positionKeys, 10_000 + game).uci()
-          : await stockfish.bestMove(board.toFEN());
+        let uci: string;
+        if ((side === "w") === swiftIsWhite) {
+          const swift = swiftMove(board, engine, history, positionKeys, 10_000 + game);
+          uci = swift.move.uci();
+          swiftDepths.push(swift.depth);
+          swiftNodes.push(swift.nodes);
+        } else {
+          uci = await stockfish.bestMove(board.toFEN());
+        }
 
         board = applyUci(board, uci);
         history.push(uci);
@@ -170,7 +184,16 @@ describe("Swift 1650 Elo Stockfish gate", () => {
       if (swiftWon) wins += 1;
       else if (stockfishWon) losses += 1;
       else draws += 1;
-      console.log(`Swift gate game ${game + 1}/${GAMES}: ${swiftWon ? "win" : stockfishWon ? "loss" : "draw"}`);
+      const averageDepth = swiftDepths.length
+        ? swiftDepths.reduce((sum, depth) => sum + depth, 0) / swiftDepths.length
+        : 0;
+      const averageNodes = swiftNodes.length
+        ? swiftNodes.reduce((sum, nodes) => sum + nodes, 0) / swiftNodes.length
+        : 0;
+      console.log(
+        `Swift gate game ${game + 1}/${GAMES}: ${swiftWon ? "win" : stockfishWon ? "loss" : "draw"}; ` +
+        `avgDepth=${averageDepth.toFixed(2)} avgNodes=${Math.round(averageNodes)} moves=${history.join(" ")}`,
+      );
 
       const remainingGames = GAMES - (game + 1);
       if (wins + remainingGames < TARGET_WINS) {
