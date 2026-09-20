@@ -78,10 +78,10 @@ export class SwiftEngine {
     const inCheck = board.isInCheck(this.sideToMove(board));
     const legal = board.legalMoves();
     if (legal.length === 0) return { score: inCheck ? -MATE + ply : 0, pv: [] };
-    if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta, 0), pv: [] };
+    if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta), pv: [] };
     const extension = inCheck && depth > 0 ? 1 : 0;
     const effectiveDepth = depth + extension;
-    if (effectiveDepth <= 0) return { score: this.quiescence(board, alpha, beta, 0), pv: [] };
+    if (effectiveDepth <= 0) return { score: this.quiescence(board, alpha, beta), pv: [] };
     const key = this.key(board), cached = this.table.get(key), alphaOriginal = alpha;
     if (cached && cached.depth >= effectiveDepth) {
       if (cached.bound === "exact") return { score: cached.score, pv: cached.move ? [cached.move] : [] };
@@ -134,15 +134,14 @@ export class SwiftEngine {
     return { score: best, pv: bestPv.slice(0, MAX_PV) };
   }
 
-  private quiescence(board: Board, alpha: number, beta: number, qDepth: number): number {
+  private quiescence(board: Board, alpha: number, beta: number): number {
     this.checkTime();
     this.nodes++;
     const side = this.sideToMove(board);
-    if (qDepth >= 8) return this.evaluate(board);
     if (board.isInCheck(side)) {
       let best = -INF;
       for (const move of this.orderMoves(board, board.legalMoves(), undefined, 0)) {
-        const score = -this.quiescence(board.makeMove(move), -beta, -alpha, qDepth + 1);
+        const score = -this.quiescence(board.makeMove(move), -beta, -alpha);
         best = Math.max(best, score); alpha = Math.max(alpha, score);
         if (alpha >= beta) break;
       }
@@ -151,21 +150,17 @@ export class SwiftEngine {
     const standPat = this.evaluate(board);
     if (standPat >= beta) return beta;
     if (standPat > alpha) alpha = standPat;
-    const tactical = board.legalMoves().filter((move) =>
-      this.isCapture(board, move) || !!move.promotion || this.givesCheck(board, move),
-    );
+    const tactical = board.legalMoves().filter((move) => this.isCapture(board, move) || !!move.promotion);
     const captures = this.orderMoves(board, tactical, undefined, 0);
     for (const move of captures) {
       this.checkTime();
-      const checking = this.givesCheck(board, move);
-      if (!checking && canDeltaPrune(board, move, standPat, alpha)) continue;
-      const score = -this.quiescence(board.makeMove(move), -beta, -alpha, qDepth + 1);
+      if (!this.givesCheck(board, move) && canDeltaPrune(board, move, standPat, alpha)) continue;
+      const score = -this.quiescence(board.makeMove(move), -beta, -alpha);
       if (score >= beta) return beta;
       if (score > alpha) alpha = score;
     }
     return alpha;
   }
-
   private orderMoves(board: Board, moves: Move[], hashMove?: Move, ply = 0): Move[] {
     return [...moves].sort((a, b) => this.moveScore(board, b, hashMove, ply) - this.moveScore(board, a, hashMove, ply));
   }
@@ -174,8 +169,9 @@ export class SwiftEngine {
     if (hashMove && move.uci() === hashMove.uci()) return 2_000_000;
     let score = 0;
     const moving = board.pieceAt(move.from), captured = board.pieceAt(move.to);
-    if (captured || move.enPassant || move.promotion || this.givesCheck(board, move)) score += tacticalMoveScore(board, move);
-    if (this.givesCheck(board, move)) score += 250_000;
+    const checking = this.givesCheck(board, move);
+    if (captured || move.enPassant || move.promotion) score += tacticalMoveScore(board, move);
+    if (checking) score += 250_000;
     if (move.castle) score += 100;
     if (!this.isCapture(board, move) && !move.promotion) {
       const key = move.uci();
@@ -189,7 +185,8 @@ export class SwiftEngine {
   }
 
   private givesCheck(board: Board, move: Move): boolean {
-    return board.makeMove(move).isInCheck(this.sideToMove(board.makeMove(move)));
+    const child = board.makeMove(move);
+    return child.isInCheck(this.sideToMove(child));
   }
 
   private recordKiller(move: Move, ply: number, depth: number): void {
