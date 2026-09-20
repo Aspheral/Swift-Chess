@@ -12,7 +12,7 @@ export default function Home() {
         <div className="copy">
           <p className="eyebrow">PLAY CHESS, TAKE YOUR TIME</p>
           <h1>Think the position.<br /><em>Then make a move.</em></h1>
-          <p className="lede">Swift is made for the rhythm of a good game: patient in the opening, purposeful in the middlegame, and always looking for the move that feels right on the board.</p>
+          <p className="lede">Swift is made for the rhythm of a good game: quick in familiar positions, more deliberate when the board gets sharp, and always looking for a move that feels right on the board.</p><div className="rating-strip"><strong>≈1630 Elo</strong><span>200-game calibrated estimate</span><small>95% benchmark interval 1580–1684</small></div>
           <div className="actions"><a href="#play">Play a game</a><a className="secondary" href="https://github.com/Aspheral/Swift-Chess">View the project ↗</a></div>
         </div>
         <div className="board" aria-hidden="true">{Array.from({length:64},(_,i)=><div key={i} className={(Math.floor(i/8)+i)%2===0?"light":"dark"}>{[0,7].includes(Math.floor(i/8)) && [0,7].includes(i%8) ? "♜" : ""}</div>)}</div>
