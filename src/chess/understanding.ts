@@ -92,7 +92,7 @@ function pieceUnderstanding(board: Board, color: Color, ownMoves: ReturnType<Boa
 }
 
 export function understandPosition(board: Board): PositionUnderstanding {
-  const sideToMove = board.toFEN().split(/\s+/)[1] as Color;
+  const sideToMove = board.turn();
   const material = board.material();
   const whiteMoves = sideBoard(board, "w").legalMoves();
   const blackMoves = sideBoard(board, "b").legalMoves();
