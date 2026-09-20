@@ -2,6 +2,9 @@ name: Swift Rating Ladder
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - rating-ladder-run-20260920
 
 jobs:
   rating-games:
