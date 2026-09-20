@@ -37,6 +37,8 @@ export interface PositionState {
 }
 
 export class Board {
+  private searchKeyCache?: string;
+
   private constructor(private readonly state: PositionState) {}
 
   static start(): Board { return Board.fromFEN(START_FEN); }
@@ -88,6 +90,13 @@ export class Board {
   turn(): Color { return this.state.turn; }
 
   castlingRights(): string { return this.state.castling; }
+
+  searchKey(): string {
+    if (this.searchKeyCache !== undefined) return this.searchKeyCache;
+    const placement = this.state.board.map((piece) => piece ?? "__").join("");
+    this.searchKeyCache = `${placement}|${this.state.turn}|${this.state.castling}|${this.state.enPassant ?? -1}`;
+    return this.searchKeyCache;
+  }
 
   legalMoves(): Move[] {
     return this.pseudoLegalMoves().filter((move) => {
