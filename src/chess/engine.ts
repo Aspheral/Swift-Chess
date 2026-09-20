@@ -119,11 +119,10 @@ export class SwiftEngine {
     this.nodes++;
     const inCheck = board.isInCheck(this.sideToMove(board));
     if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta), pv: [] };
-    const legal = board.legalMoves();
-    if (legal.length === 0) return { score: inCheck ? -MATE + ply : 0, pv: [] };
     const extension = inCheck && depth > 0 ? 1 : 0;
     const effectiveDepth = depth + extension;
     if (effectiveDepth <= 0) return { score: this.quiescence(board, alpha, beta), pv: [] };
+
     const key = this.key(board), cached = this.table.get(key), alphaOriginal = alpha;
     if (cached && cached.depth >= effectiveDepth) {
       if (cached.bound === "exact") return { score: cached.score, pv: cached.move ? [cached.move] : [] };
@@ -131,6 +130,9 @@ export class SwiftEngine {
       if (cached.bound === "upper") beta = Math.min(beta, cached.score);
       if (alpha >= beta) return { score: cached.score, pv: cached.move ? [cached.move] : [] };
     }
+
+    const legal = board.legalMoves();
+    if (legal.length === 0) return { score: inCheck ? -MATE + ply : 0, pv: [] };
 
     if (allowNullMove && effectiveDepth >= 3 && !inCheck && beta < MATE - 1_000 && this.canNullMove(board)) {
       const reduction = effectiveDepth >= 7 ? 3 : 2;
