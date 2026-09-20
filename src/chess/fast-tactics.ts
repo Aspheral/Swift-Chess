@@ -53,6 +53,45 @@ function hasTacticalSignal(board: Board): boolean {
   });
 }
 
+function canForceMate(
+  board: Board,
+  attacker: Color,
+  pliesRemaining: number,
+  memo: Map<string, boolean>,
+): boolean {
+  const key = `${board.toFEN().split(/\s+/).slice(0, 4).join(" ")}|${attacker}|${pliesRemaining}`;
+  const cached = memo.get(key);
+  if (cached !== undefined) return cached;
+
+  if (board.isCheckmate()) {
+    const result = sideToMove(board) !== attacker;
+    memo.set(key, result);
+    return result;
+  }
+  if (pliesRemaining <= 0 || board.isStalemate()) {
+    memo.set(key, false);
+    return false;
+  }
+
+  const attackerToMove = sideToMove(board) === attacker;
+  const legal = board.legalMoves();
+  const result = attackerToMove
+    ? legal.some((move) => canForceMate(board.makeMove(move), attacker, pliesRemaining - 1, memo))
+    : legal.every((move) => canForceMate(board.makeMove(move), attacker, pliesRemaining - 1, memo));
+  memo.set(key, result);
+  return result;
+}
+
+function exactMateInTwo(board: Board): Move | null {
+  const attacker = sideToMove(board);
+  const memo = new Map<string, boolean>();
+  for (const move of board.legalMoves()) {
+    const child = board.makeMove(move);
+    if (canForceMate(child, attacker, 2, memo)) return move;
+  }
+  return null;
+}
+
 function forcedMate(
   board: Board,
   engine: SwiftEngine,
@@ -65,6 +104,11 @@ function forcedMate(
   if (tacticalSearchDepth <= 0) return null;
 
   const pieces = board.toFEN().split(/\s+/)[0].replace(/[1-8/]/g, "").length;
+  if (pieces <= 8 && tacticalSearchDepth >= 3) {
+    const exact = exactMateInTwo(board);
+    if (exact) return exact;
+  }
+
   const tactical = hasTacticalSignal(board);
   if (!tactical && pieces > 12) return null;
 
