@@ -45,6 +45,12 @@ describe("Swift search", () => {
     expect(staticExchange(board, move!)).toBe(-800);
   });
 
+  it("does not burn castling rights with the rook in a live opening", () => {
+    const board = Board.fromFEN("r1bqk2r/pppp1ppp/1b3n2/4p3/1P1nP3/P1NQ4/1BPP1PPP/R3KBNR b KQkq - 2 8");
+    const result = new SwiftEngine().search(board, { depth: 4 });
+    expect(result.move?.uci()).not.toBe("h8g8");
+  });
+
   it("does not cash in a bishop while connected passers are about to reach the seventh", () => {
     const board = Board.fromFEN("7r/p1p1k1pp/1PP1b3/5p2/1P2B3/P5P1/5P1P/3R2K1 b - - 0 35");
     const result = new SwiftEngine().search(board, { depth: 4 });
