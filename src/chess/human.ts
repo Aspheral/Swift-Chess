@@ -273,6 +273,7 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
   const eligible = ranked.filter((candidate) => candidate.score >= topScore - allowedLoss);
   const rng = options.seed === undefined ? Math.random : seededRandom(options.seed);
   const temperature = 1 + randomness * 5 + profile.effectiveBudget * 7;
+  const initiative = clamp(options.initiative ?? 0.5);
 
   const adjusted = eligible.map((candidate, index) => {
     const rankPenalty = index * (1.5 + (1 - profile.effectiveBudget) * 2.5);
