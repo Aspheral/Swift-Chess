@@ -19,6 +19,7 @@ jobs:
       SWIFT_CALIBRATION_BATCH: ${{ matrix.batch }}
       SWIFT_STOCKFISH_ELO: ${{ matrix.elo }}
       SWIFT_CALIBRATION_REQUIRE_TARGET: "0"
+      SWIFT_MAX_PLIES: "360"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
