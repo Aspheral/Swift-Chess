@@ -117,6 +117,7 @@ function swiftMove(
     timeMs: SWIFT_TIME_MS,
     randomness: 0,
     errorBudget: 0,
+    strictBestPlay: true,
     safetyDepth: HUMAN_SAFETY_DEPTH,
     ponderDepth: HUMAN_PONDER_DEPTH,
     safetyTimeMs: HUMAN_SAFETY_TIME_MS,
