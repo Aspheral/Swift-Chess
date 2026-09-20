@@ -1,14 +1,7 @@
 import { Board, Move } from "./board";
+import { seededRandom } from "./random";
 
 export type SwiftOpening = "Reti" | "Queen's Gambit" | "Queen's Gambit Declined" | "Four Knights" | "Bishop's Opening";
-
-function seededRandom(seed: number): number {
-  let state = seed >>> 0;
-  state ^= state << 13;
-  state ^= state >>> 17;
-  state ^= state << 5;
-  return (state >>> 0) / 0x100000000;
-}
 
 function legalChoice(board: Board, choices: string[], seed: number): Move | null {
   const legal = new Map(board.legalMoves().map((move) => [move.uci(), move]));
@@ -26,6 +19,8 @@ function openingFamily(history: string[], seed: number): SwiftOpening | null {
   const first = history[0];
   if (first === "g1f3" || first === "c2c4") return "Reti";
   if (first === "d2d4") {
+    if (history.includes("d5c4")) return "Queen's Gambit";
+    if (history.includes("e7e6")) return "Queen's Gambit Declined";
     return seededRandom(seed) < 0.62 ? "Queen's Gambit Declined" : "Queen's Gambit";
   }
   if (first === "e2e4") {

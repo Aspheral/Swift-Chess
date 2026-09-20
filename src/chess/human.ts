@@ -1,6 +1,7 @@
 import { Board, Move } from "./board";
 import { CandidateScore, scoreCandidates } from "./scoring";
 import { understandPosition } from "./understanding";
+import { createSeededRandom } from "./random";
 
 export interface HumanStyleOptions {
   /** Preference for active, forcing play over quiet choices. */
@@ -50,16 +51,6 @@ export interface HumanSelection {
   candidates: CandidateScore[];
   selectedScore: number;
   profile?: HumanErrorProfile;
-}
-
-function seededRandom(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state ^= state << 13;
-    state ^= state >>> 17;
-    state >>>= 0;
-    return state / 0x100000000;
-  };
 }
 
 function clamp(value: number, min = 0, max = 1): number {
@@ -271,7 +262,7 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
   const topScore = ranked[0].score;
   const allowedLoss = profile.effectiveBudget * 80;
   const eligible = ranked.filter((candidate) => candidate.score >= topScore - allowedLoss);
-  const rng = options.seed === undefined ? Math.random : seededRandom(options.seed);
+  const rng = options.seed === undefined ? Math.random : createSeededRandom(options.seed);
   const temperature = 1 + randomness * 5 + profile.effectiveBudget * 7;
   const initiative = clamp(options.initiative ?? 0.5);
 

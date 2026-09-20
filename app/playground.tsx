@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Game, HumanSwiftEngine, Move, Piece, SwiftOpening } from "../src";
+import { deriveSeed, Game, HumanSwiftEngine, Move, Piece, SwiftOpening } from "../src";
 
 const files = "abcdefgh";
 const pieceNames: Record<Piece, string> = {
@@ -110,7 +110,7 @@ export default function Playground() {
         safetyCandidateLimit: 4,
         concreteCandidateLimit: 8,
         tacticalSearchDepth: 3,
-        seed: openingSeed.current,
+        seed: deriveSeed(openingSeed.current, game.moveHistory().length),
         moveHistory: game.moveHistory(),
         positionHistoryKeys: game.positionHistoryKeys(),
       });
