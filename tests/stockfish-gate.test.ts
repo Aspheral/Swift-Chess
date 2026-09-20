@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
 import {
   Board,
   deriveSeed,
@@ -70,6 +71,21 @@ const HUMAN_OPTIONS: HumanEngineOptions = {
 const SWIFT_OPTIONS = MODE === "human" ? HUMAN_OPTIONS : STRICT_OPTIONS;
 
 type Outcome = "win" | "loss" | "draw" | "unresolved";
+
+interface CalibrationGame {
+  game: number;
+  mode: typeof MODE;
+  swiftColor: "White" | "Black";
+  opening: string;
+  result: Outcome;
+  reason: string;
+  seed: number;
+  plies: number;
+  averageDepth: number;
+  averageNodes: number;
+  moves: string[];
+  finalFen: string;
+}
 
 interface MatchStats {
   games: number;
@@ -191,6 +207,12 @@ class UciStockfish {
     await this.command("isready", "readyok");
   }
 
+  async newGame(): Promise<void> {
+    this.write("ucinewgame\n");
+    this.write("setoption name Clear Hash\n");
+    await this.command("isready", "readyok");
+  }
+
   async bestMove(fen: string): Promise<string> {
     this.buffer = "";
     this.write(`position fen ${fen}\ngo movetime ${STOCKFISH_MOVETIME_MS}\n`);
@@ -280,12 +302,15 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
     const byColor = { White: emptyStats(), Black: emptyStats() };
     const byOutcome = new Map<Outcome, MatchStats>();
     const byOpening = new Map<string, MatchStats>();
+    const gameRecords: CalibrationGame[] = [];
 
     for (let gameIndex = 0; gameIndex < GAMES; gameIndex += 1) {
       const opening = OPENING_PAIRS[Math.floor(gameIndex / 2)];
       const swiftIsWhite = gameIndex % 2 === 0;
       const colorLabel = swiftIsWhite ? "White" : "Black";
       const baseSeed = 20_000 + Math.floor(gameIndex / 2) * 7_919;
+
+      await stockfish.newGame();
 
       const engine = new HumanSwiftEngine();
       const game = Game.start();
@@ -338,6 +363,21 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
       if (!byOpening.has(opening.name)) byOpening.set(opening.name, emptyStats());
       addGame(byOpening.get(opening.name)!, outcome, swiftDepths, swiftNodes, moves.length);
 
+      gameRecords.push({
+        game: gameIndex + 1,
+        mode: MODE,
+        swiftColor: colorLabel,
+        opening: opening.name,
+        result: outcome,
+        reason: endReason,
+        seed: baseSeed,
+        plies: moves.length,
+        averageDepth,
+        averageNodes,
+        moves,
+        finalFen: game.fen(),
+      });
+
       console.log(
         `Swift calibration game ${gameIndex + 1}/${GAMES}: mode=${MODE} color=${colorLabel} ` +
         `opening="${opening.name}" result=${outcome} reason=${endReason}; ` +
@@ -362,6 +402,28 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
       const stats = byOpening.get(opening.name);
       if (stats) console.log(statsLine(`Opening ${opening.name}`, stats));
     }
+
+    mkdirSync("calibration-results", { recursive: true });
+    writeFileSync(
+      `calibration-results/${MODE}.json`,
+      JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        configuration: {
+          mode: MODE,
+          opponent: `Stockfish-${STOCKFISH_ELO}`,
+          stockfishMoveMs: STOCKFISH_MOVETIME_MS,
+          maxPlies: MAX_PLIES,
+          swift: SWIFT_OPTIONS,
+        },
+        overall,
+        byColor,
+        byOutcome: Object.fromEntries(byOutcome),
+        byOpening: Object.fromEntries(byOpening),
+        performanceElo: performanceElo(scoreRate(overall)),
+        games: gameRecords,
+      }, null, 2),
+      "utf8",
+    );
 
     // A safety cap is allowed to stop a runaway test, but an unfinished game is
     // never silently converted into a draw. If this trips, raise the cap or add
