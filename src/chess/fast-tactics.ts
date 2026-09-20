@@ -12,7 +12,7 @@ export interface TacticalPriority {
 }
 
 function sideToMove(board: Board): Color {
-  return board.toFEN().split(/\s+/)[1] as Color;
+  return board.turn();
 }
 
 function opposite(color: Color): Color {
