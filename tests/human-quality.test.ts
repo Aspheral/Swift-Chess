@@ -42,6 +42,7 @@ describe("Human move quality distribution", () => {
       candidateLimit: 2,
       errorBudget: 0,
       randomness: 0,
+      strictBestPlay: true,
     });
 
     expect(result.move?.uci()).toBe("a2a3");
