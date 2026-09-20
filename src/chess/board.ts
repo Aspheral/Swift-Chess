@@ -109,6 +109,17 @@ export class Board {
     return this.isSquareAttackedIndex(index, by);
   }
 
+  makeNullMove(): Board {
+    return new Board({
+      board: this.state.board,
+      turn: opposite(this.state.turn),
+      castling: this.state.castling,
+      enPassant: null,
+      halfmove: this.state.halfmove + 1,
+      fullmove: this.state.fullmove + (this.state.turn === "b" ? 1 : 0),
+    });
+  }
+
   makeMove(move: Move): Board {
     const board = [...this.state.board];
     const moving = board[move.from];
