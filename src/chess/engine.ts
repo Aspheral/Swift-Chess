@@ -184,6 +184,7 @@ export class SwiftEngine {
     const moving = board.pieceAt(move.from), captured = board.pieceAt(move.to);
     const tactical = !!captured || move.enPassant || !!move.promotion;
     if (tactical) score += tacticalMoveScore(board, move);
+    else if (this.givesCheck(board, move)) score += 250_000;
     if (move.castle) score += 100;
     if (!this.isCapture(board, move) && !move.promotion) {
       const key = move.uci();
@@ -242,12 +243,15 @@ export class SwiftEngine {
     const whitePawns: number[] = [], blackPawns: number[] = [];
     let whiteBishops = 0, blackBishops = 0;
     let whiteKing = -1, blackKing = -1;
+    let totalPieces = 0, queens = 0;
 
     for (const char of fenBoard) {
       if (char === "/") { square -= 16; continue; }
       if (/\d/.test(char)) { square += Number(char); continue; }
       const type = char.toLowerCase() as PieceType;
       const white = char === char.toUpperCase();
+      totalPieces++;
+      if (type === "q") queens++;
       const sign = white ? 1 : -1;
       score += sign * pieceValues[type];
       if (type !== "k") {
@@ -264,8 +268,8 @@ export class SwiftEngine {
     score -= this.pawnStructure(blackPawns, "b", whitePawns);
     if (whiteBishops >= 2) score += 28;
     if (blackBishops >= 2) score -= 28;
-    score += this.kingSafetyFromSquare(whiteKing, "w", castling);
-    score += this.kingSafetyFromSquare(blackKing, "b", castling);
+    score += this.kingSafetyFromSquare(whiteKing, "w", castling, totalPieces, queens > 0);
+    score += this.kingSafetyFromSquare(blackKing, "b", castling, totalPieces, queens > 0);
     return score;
   }
 
@@ -299,13 +303,26 @@ export class SwiftEngine {
     return score;
   }
 
-  private kingSafetyFromSquare(kingSquare: number, color: Color, castling: string): number {
+  private kingSafetyFromSquare(
+    kingSquare: number,
+    color: Color,
+    castling: string,
+    totalPieces: number,
+    queensPresent: boolean,
+  ): number {
     if (kingSquare < 0) return 0;
     const file = kingSquare & 7;
     const rank = Math.floor(kingSquare / 8);
+    const homeRank = color === "w" ? 0 : 7;
     const hasRights = color === "w" ? /K|Q/.test(castling) : /k|q/.test(castling);
-    let score = hasRights ? 8 : 0;
-    score -= (file === 0 || file === 7 ? 3 : 0) + (rank === 0 || rank === 7 ? 3 : 0);
+    const castled = color === "w"
+      ? kingSquare === 6 || kingSquare === 2
+      : kingSquare === 62 || kingSquare === 58;
+    const middlegame = queensPresent && totalPieces >= 14;
+
+    let score = castled ? 28 : hasRights ? (middlegame ? 18 : 6) : 0;
+    if (middlegame && !castled && !hasRights && rank === homeRank && (file === 3 || file === 4)) score -= 18;
+    if (middlegame && rank !== homeRank && !castled) score -= 10;
     return color === "w" ? score : -score;
   }
 
