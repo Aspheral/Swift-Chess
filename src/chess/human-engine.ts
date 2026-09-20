@@ -120,7 +120,8 @@ export class HumanSwiftEngine {
     const historyKeys = options.positionHistoryKeys ?? [];
     const nonRepeatingSafe = safe.filter((candidate) => !this.wouldRepeatPosition(board, candidate.move, historyKeys));
     const repetitionSafe = nonRepeatingSafe.length ? nonRepeatingSafe : safe;
-    const movementPool = repetitionSafe;
+    const naturalSafe = repetitionSafe.filter((candidate) => !this.burnsCastlingRightEarly(board, candidate.move, history));
+    const movementPool = naturalSafe.length ? naturalSafe : repetitionSafe;
     const nonBacktracking = movementPool.filter((candidate) => !this.isMechanicalBacktrack(board, candidate.move, history));
     const movementSafe = nonBacktracking.length ? nonBacktracking : movementPool;
 
@@ -231,6 +232,23 @@ export class HumanSwiftEngine {
     const child = board.makeMove(move);
     const key = Game.positionKey(child);
     return positionHistoryKeys.filter((entry) => entry === key).length >= 2;
+  }
+
+  private burnsCastlingRightEarly(board: Board, move: Move, history: string[]): boolean {
+    if (history.length >= 20 || move.castle || move.enPassant || board.pieceAt(move.to)) return false;
+    const piece = board.pieceAt(move.from);
+    if (!piece || piece[1] !== "r") return false;
+
+    const side = piece[0] as "w" | "b";
+    const kingHome = side === "w" ? 4 : 60;
+    if (board.pieceAt(kingHome) !== `${side}k`) return false;
+
+    const castling = board.toFEN().split(/\s+/)[2];
+    const kingRook = side === "w" ? 7 : 63;
+    const queenRook = side === "w" ? 0 : 56;
+    if (move.from === kingRook) return side === "w" ? castling.includes("K") : castling.includes("k");
+    if (move.from === queenRook) return side === "w" ? castling.includes("Q") : castling.includes("q");
+    return false;
   }
 
   private isMechanicalBacktrack(board: Board, move: Move, history: string[]): boolean {
