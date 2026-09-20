@@ -4,11 +4,22 @@ on:
   workflow_dispatch:
 
 jobs:
-  stockfish-gate:
+  stockfish-calibration:
+    name: stockfish-${{ matrix.mode }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: strict
+            require_target: "1"
+          - mode: human
+            require_target: "0"
     env:
       SWIFT_RUN_STOCKFISH_GATE: "1"
+      SWIFT_CALIBRATION_MODE: ${{ matrix.mode }}
+      SWIFT_CALIBRATION_REQUIRE_TARGET: ${{ matrix.require_target }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
