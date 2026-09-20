@@ -157,7 +157,7 @@ That is the part we want to build.
 >
 > Swift is currently an experimental project. Its current playable profile is calibrated at **1632 Elo** across 200 paired games against Stockfish strength levels from 1450 to 1850. The 95% benchmark interval is **1580–1684**. This is a measured engine-vs-engine calibration, not an official human rating, and the number will move as Swift changes.
 
-The current browser build also runs Swift in a Web Worker and uses adaptive thinking time: quick in familiar openings, measured in quiet positions, and longer when the board becomes tactical.
+The current browser build also runs Swift in a Web Worker and uses adaptive thinking time: quick in familiar openings, measured in quiet positions, and longer when the board becomes tactical. The full rating methodology and ladder results are documented in [docs/calibration.md](docs/calibration.md).
 
 The architecture is still being built around the idea first, rather than building a conventional engine and trying to bolt a personality onto it afterward.
 
