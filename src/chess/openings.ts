@@ -19,7 +19,7 @@ function legalChoice(board: Board, choices: string[], seed: number): Move | null
 }
 
 function sideToMove(board: Board): "w" | "b" {
-  return board.toFEN().split(/\s+/)[1] as "w" | "b";
+  return board.turn();
 }
 
 function openingFamily(history: string[], seed: number): SwiftOpening | null {
