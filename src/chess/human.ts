@@ -261,6 +261,11 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
   if (!ranked.length) return { move: null, candidates: [], selectedScore: -Infinity };
 
   const profile = humanErrorProfile(board, baseBudget);
+  if (randomness === 0 && profile.effectiveBudget === 0) {
+    const strongest = ranked.reduce((best, candidate) => candidate.score > best.score ? candidate : best);
+    return { move: strongest.move, candidates: ranked, selectedScore: strongest.score, profile };
+  }
+
   const topScore = ranked[0].score;
   const allowedLoss = profile.effectiveBudget * 80;
   const eligible = ranked.filter((candidate) => candidate.score >= topScore - allowedLoss);
@@ -278,10 +283,6 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
   });
 
   const best = adjusted.reduce((a, b) => (a.value >= b.value ? a : b));
-  if (randomness === 0 && profile.effectiveBudget === 0) {
-    return { move: best.candidate.move, candidates: ranked, selectedScore: best.candidate.score, profile };
-  }
-
   const weights = adjusted.map(({ value }) => Math.exp((value - best.value) / (10 * temperature)));
   const total = weights.reduce((sum, weight) => sum + weight, 0);
   let roll = rng() * total;
