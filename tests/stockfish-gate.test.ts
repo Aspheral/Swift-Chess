@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
-import { Board, HumanSwiftEngine, Move, START_FEN } from "../src";
+import { Board, Game, HumanSwiftEngine, Move, START_FEN } from "../src";
 
 const GAMES = 20;
 const TARGET_WINS = Math.ceil(GAMES * 0.5);
@@ -155,7 +155,7 @@ describe("Swift 1650 Elo Stockfish gate", () => {
       let board = Board.fromFEN(START_FEN);
       const swiftIsWhite = game % 2 === 0;
       const history: string[] = [];
-      const positionKeys: string[] = [board.toFEN()];
+      const positionKeys: string[] = [Game.positionKey(board)];
       const swiftDepths: number[] = [];
       const swiftNodes: number[] = [];
 
@@ -175,7 +175,7 @@ describe("Swift 1650 Elo Stockfish gate", () => {
 
         board = applyUci(board, uci);
         history.push(uci);
-        positionKeys.push(board.toFEN());
+        positionKeys.push(Game.positionKey(board));
       }
 
       const sideToMove = board.toFEN().split(/\s+/)[1] as "w" | "b";
