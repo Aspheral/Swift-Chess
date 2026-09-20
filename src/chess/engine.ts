@@ -240,6 +240,7 @@ export class SwiftEngine {
     const castling = fields[2];
     let score = 0, square = 56;
     const whitePawns: number[] = [], blackPawns: number[] = [];
+    const whiteRooks: number[] = [], blackRooks: number[] = [];
     let whiteBishops = 0, blackBishops = 0;
     let whiteKing = -1, blackKing = -1;
     let totalPieces = 0, queens = 0;
@@ -259,6 +260,7 @@ export class SwiftEngine {
       } else if (white) whiteKing = square;
       else blackKing = square;
       if (type === "p") (white ? whitePawns : blackPawns).push(square);
+      if (type === "r") (white ? whiteRooks : blackRooks).push(square);
       if (type === "b") white ? whiteBishops++ : blackBishops++;
       square++;
     }
@@ -267,8 +269,10 @@ export class SwiftEngine {
     score -= this.pawnStructure(blackPawns, "b", whitePawns);
     if (whiteBishops >= 2) score += 28;
     if (blackBishops >= 2) score -= 28;
-    score += this.kingSafetyFromSquare(whiteKing, "w", castling, totalPieces, queens > 0);
-    score += this.kingSafetyFromSquare(blackKing, "b", castling, totalPieces, queens > 0);
+    score += this.rookActivity(whiteRooks, "w", whitePawns, blackPawns);
+    score -= this.rookActivity(blackRooks, "b", blackPawns, whitePawns);
+    score += this.kingSafetyFromSquare(board, whiteKing, "w", castling, totalPieces, queens > 0);
+    score += this.kingSafetyFromSquare(board, blackKing, "b", castling, totalPieces, queens > 0);
     return score;
   }
 
@@ -284,6 +288,7 @@ export class SwiftEngine {
       const rank = Math.floor(square / 8);
       const connected = (file > 0 && files[file - 1] > 0) || (file < 7 && files[file + 1] > 0);
       if (connected) score += 6;
+      else score -= 8;
 
       const advance = color === "w" ? Math.max(0, rank - 1) : Math.max(0, 6 - rank);
       if (advance > 2) score += (advance - 2) * 4;
@@ -302,7 +307,27 @@ export class SwiftEngine {
     return score;
   }
 
+  private rookActivity(
+    rooks: number[],
+    color: Color,
+    ownPawns: number[],
+    enemyPawns: number[],
+  ): number {
+    const ownFiles = new Set(ownPawns.map((square) => square & 7));
+    const enemyFiles = new Set(enemyPawns.map((square) => square & 7));
+    let score = 0;
+    for (const square of rooks) {
+      const file = square & 7;
+      const rank = Math.floor(square / 8);
+      if (!ownFiles.has(file)) score += 10;
+      if (!ownFiles.has(file) && !enemyFiles.has(file)) score += 8;
+      if (rank === (color === "w" ? 6 : 1)) score += 12;
+    }
+    return score;
+  }
+
   private kingSafetyFromSquare(
+    board: Board,
     kingSquare: number,
     color: Color,
     castling: string,
@@ -313,15 +338,29 @@ export class SwiftEngine {
     const file = kingSquare & 7;
     const rank = Math.floor(kingSquare / 8);
     const homeRank = color === "w" ? 0 : 7;
-    const hasRights = color === "w" ? /K|Q/.test(castling) : /k|q/.test(castling);
+    const kingSideRight = color === "w" ? castling.includes("K") : castling.includes("k");
+    const queenSideRight = color === "w" ? castling.includes("Q") : castling.includes("q");
+    const rights = Number(kingSideRight) + Number(queenSideRight);
     const castled = color === "w"
       ? kingSquare === 6 || kingSquare === 2
       : kingSquare === 62 || kingSquare === 58;
     const middlegame = queensPresent && totalPieces >= 14;
 
-    let score = castled ? 28 : hasRights ? (middlegame ? 18 : 6) : 0;
-    if (middlegame && !castled && !hasRights && rank === homeRank && (file === 3 || file === 4)) score -= 18;
-    if (middlegame && rank !== homeRank && !castled) score -= 10;
+    let score = castled ? 30 : rights * (middlegame ? 10 : 4);
+    if (middlegame) {
+      const direction = color === "w" ? 8 : -8;
+      for (const df of [-1, 0, 1]) {
+        const shieldFile = file + df;
+        if (shieldFile < 0 || shieldFile > 7) continue;
+        const square = kingSquare + direction + df;
+        if (square >= 0 && square < 64 && board.pieceAt(square) === `${color}p`) score += 4;
+      }
+      if (!castled && rights === 0 && rank === homeRank && (file === 3 || file === 4)) score -= 18;
+      if (rank !== homeRank && !castled) score -= 10;
+    } else if (totalPieces <= 10) {
+      const centerDistance = Math.abs(file - 3.5) + Math.abs(rank - 3.5);
+      score += Math.round((7 - centerDistance) * 4);
+    }
     return color === "w" ? score : -score;
   }
 
