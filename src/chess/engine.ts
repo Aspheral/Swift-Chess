@@ -118,9 +118,9 @@ export class SwiftEngine {
     this.checkTime();
     this.nodes++;
     const inCheck = board.isInCheck(this.sideToMove(board));
+    if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta), pv: [] };
     const legal = board.legalMoves();
     if (legal.length === 0) return { score: inCheck ? -MATE + ply : 0, pv: [] };
-    if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta), pv: [] };
     const extension = inCheck && depth > 0 ? 1 : 0;
     const effectiveDepth = depth + extension;
     if (effectiveDepth <= 0) return { score: this.quiescence(board, alpha, beta), pv: [] };
