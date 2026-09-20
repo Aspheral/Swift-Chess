@@ -155,7 +155,7 @@ for (const color of ["White", "Black"]) {
 const summary = {
   generatedAt: new Date().toISOString(),
   method: "paired Stockfish UCI_LimitStrength ladder; fractional-result logistic MLE",
-  profile: "adaptive-human-v1",
+  profile: [...new Set(reports.map((report) => report.configuration?.swift?.profile).filter(Boolean))][0] ?? "unknown",
   games: completed.length,
   opponentRatings: EXPECTED_RATINGS,
   batchesPerRating: EXPECTED_BATCHES,

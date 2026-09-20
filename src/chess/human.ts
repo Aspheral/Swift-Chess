@@ -250,7 +250,12 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
   const riskTolerance = clamp(options.riskTolerance ?? 0.5);
   const baseBudget = clamp(options.errorBudget ?? 0.35);
   const generated = options.candidates ?? scoreCandidates(board).scores;
-  const ranked = diversifyCandidates(generated, candidateLimit);
+  // Safety/consequence searches can change the relative ordering of candidates.
+  // Re-rank by the latest verified score before applying human style, otherwise
+  // a strategically interesting but concretely weaker move can accidentally
+  // become the anchor for the whole decision menu.
+  const verified = [...generated].sort((a, b) => b.score - a.score);
+  const ranked = diversifyCandidates(verified, candidateLimit);
   if (!ranked.length) return { move: null, candidates: [], selectedScore: -Infinity };
 
   const profile = humanErrorProfile(board, baseBudget);
@@ -259,7 +264,7 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
     return { move: strongest.move, candidates: ranked, selectedScore: strongest.score, profile };
   }
 
-  const topScore = ranked[0].score;
+  const topScore = Math.max(...ranked.map((candidate) => candidate.score));
   const allowedLoss = profile.effectiveBudget * 80;
   const eligible = ranked.filter((candidate) => candidate.score >= topScore - allowedLoss);
   const rng = options.seed === undefined ? Math.random : createSeededRandom(options.seed);

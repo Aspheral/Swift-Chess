@@ -7,6 +7,7 @@ import {
   HumanEngineOptions,
   HumanSwiftEngine,
   Move,
+  SWIFT_PLAY_PROFILE,
   swiftPlayProfile,
 } from "../src";
 
@@ -50,7 +51,6 @@ const STRICT_OPTIONS: HumanEngineOptions = {
   safetyMargin: 45,
 };
 
-const HUMAN_PROFILE = "adaptive-human-v1";
 
 type Outcome = "win" | "loss" | "draw" | "unresolved";
 
@@ -373,7 +373,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
 
     console.log(`Swift calibration configuration: mode=${MODE} batch=${BATCH} opponent=Stockfish-${STOCKFISH_ELO} ` +
       `stockfishMoveMs=${STOCKFISH_MOVETIME_MS} maxPlies=${MAX_PLIES} ` +
-      (MODE === "human" ? `swiftProfile=${HUMAN_PROFILE}` : `swiftMaxDepth=${STRICT_OPTIONS.depth} swiftMoveMs=${STRICT_OPTIONS.timeMs}`));
+      (MODE === "human" ? `swiftProfile=${SWIFT_PLAY_PROFILE}` : `swiftMaxDepth=${STRICT_OPTIONS.depth} swiftMoveMs=${STRICT_OPTIONS.timeMs}`));
     console.log(statsLine("Overall", overall));
     console.log(statsLine("White", byColor.White));
     console.log(statsLine("Black", byColor.Black));
@@ -400,7 +400,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
           opponentElo: STOCKFISH_ELO,
           stockfishMoveMs: STOCKFISH_MOVETIME_MS,
           maxPlies: MAX_PLIES,
-          swift: MODE === "human" ? { profile: HUMAN_PROFILE } : STRICT_OPTIONS,
+          swift: MODE === "human" ? { profile: SWIFT_PLAY_PROFILE } : STRICT_OPTIONS,
         },
         overall,
         byColor,

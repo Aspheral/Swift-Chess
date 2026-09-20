@@ -35,6 +35,28 @@ describe("Swift human move selection", () => {
     expect(new Set(result.candidates.map((candidate) => candidate.ideaKinds[0])).size).toBeGreaterThan(1);
   });
 
+
+  it("re-ranks safety-scored candidates before applying human style", () => {
+    const board = Board.start();
+    const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
+    const a3 = board.legalMoves().find((move) => move.uci() === "a2a3");
+    if (!e4 || !a3) throw new Error("Expected fixture moves");
+
+    const weaker: CandidateScore = { move: a3, score: 20, ideaKinds: ["develop"], reasons: ["test"] };
+    const stronger: CandidateScore = { move: e4, score: 100, ideaKinds: ["attack"], reasons: ["test"] };
+    const result = selectHumanMove(board, {
+      candidates: [weaker, stronger],
+      candidateLimit: 2,
+      randomness: 0,
+      errorBudget: 0,
+      initiative: 0,
+      development: 1,
+    });
+
+    expect(result.candidates[0].move.uci()).toBe(e4.uci());
+    expect(result.move?.uci()).toBe(e4.uci());
+  });
+
   it("returns no move for a checkmated position", () => {
     const board = Board.fromFEN("7k/5Q2/7K/8/8/8/8/8 b - - 0 1");
     const result = selectHumanMove(board);
