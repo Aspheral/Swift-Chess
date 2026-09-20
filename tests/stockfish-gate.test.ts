@@ -7,9 +7,10 @@ import {
   HumanEngineOptions,
   HumanSwiftEngine,
   Move,
+  swiftPlayProfile,
 } from "../src";
 
-const STOCKFISH_ELO = 1650;
+const STOCKFISH_ELO = Math.max(1320, Number.parseInt(process.env.SWIFT_STOCKFISH_ELO ?? "1650", 10) || 1650);
 const STOCKFISH_MOVETIME_MS = 100;
 const MAX_PLIES = 240;
 const MODE = process.env.SWIFT_CALIBRATION_MODE === "human" ? "human" : "strict";
@@ -49,26 +50,7 @@ const STRICT_OPTIONS: HumanEngineOptions = {
   safetyMargin: 45,
 };
 
-const HUMAN_OPTIONS: HumanEngineOptions = {
-  // Keep this aligned with the public playground so this calibration measures
-  // the Swift people actually play, not a separate benchmark-only personality.
-  depth: 5,
-  timeMs: 800,
-  randomness: 0.012,
-  errorBudget: 0.05,
-  strictBestPlay: false,
-  safetyDepth: 4,
-  ponderDepth: 4,
-  safetyTimeMs: 100,
-  ponderTimeMs: 120,
-  candidateLimit: 5,
-  safetyCandidateLimit: 4,
-  concreteCandidateLimit: 8,
-  tacticalSearchDepth: 3,
-  safetyMargin: 28,
-};
-
-const SWIFT_OPTIONS = MODE === "human" ? HUMAN_OPTIONS : STRICT_OPTIONS;
+const HUMAN_PROFILE = "adaptive-human-v1";
 
 type Outcome = "win" | "loss" | "draw" | "unresolved";
 
@@ -274,8 +256,11 @@ function swiftMove(
   baseSeed: number,
 ): { move: Move; depth: number; score: number; nodes: number } {
   const history = game.moveHistory();
+  const searchOptions = MODE === "human"
+    ? swiftPlayProfile(board, history).options
+    : STRICT_OPTIONS;
   const result = engine.search(board, {
-    ...SWIFT_OPTIONS,
+    ...searchOptions,
     seed: baseSeed,
     moveHistory: history,
     positionHistoryKeys: game.positionHistoryKeys(),
@@ -388,7 +373,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
 
     console.log(`Swift calibration configuration: mode=${MODE} batch=${BATCH} opponent=Stockfish-${STOCKFISH_ELO} ` +
       `stockfishMoveMs=${STOCKFISH_MOVETIME_MS} maxPlies=${MAX_PLIES} ` +
-      `swiftMaxDepth=${SWIFT_OPTIONS.depth} swiftMoveMs=${SWIFT_OPTIONS.timeMs}`);
+      (MODE === "human" ? `swiftProfile=${HUMAN_PROFILE}` : `swiftMaxDepth=${STRICT_OPTIONS.depth} swiftMoveMs=${STRICT_OPTIONS.timeMs}`));
     console.log(statsLine("Overall", overall));
     console.log(statsLine("White", byColor.White));
     console.log(statsLine("Black", byColor.Black));
@@ -405,16 +390,17 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
 
     mkdirSync("calibration-results", { recursive: true });
     writeFileSync(
-      `calibration-results/${MODE}-batch-${BATCH}.json`,
+      `calibration-results/${MODE}-elo-${STOCKFISH_ELO}-batch-${BATCH}.json`,
       JSON.stringify({
         generatedAt: new Date().toISOString(),
         configuration: {
           mode: MODE,
           batch: BATCH,
           opponent: `Stockfish-${STOCKFISH_ELO}`,
+          opponentElo: STOCKFISH_ELO,
           stockfishMoveMs: STOCKFISH_MOVETIME_MS,
           maxPlies: MAX_PLIES,
-          swift: SWIFT_OPTIONS,
+          swift: MODE === "human" ? { profile: HUMAN_PROFILE } : STRICT_OPTIONS,
         },
         overall,
         byColor,

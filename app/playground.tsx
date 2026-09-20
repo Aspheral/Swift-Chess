@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Game, HumanSwiftEngine, Move, Piece, SwiftOpening } from "../src";
+import { useEffect, useRef, useState } from "react";
+import { Game, Move, Piece, SwiftOpening } from "../src";
+import type { SwiftWorkerResponse } from "../src/chess/worker-protocol";
 
 const files = "abcdefgh";
 const pieceNames: Record<Piece, string> = {
@@ -15,6 +16,17 @@ type Arrow = { from: number; to: number };
 
 function squareName(index: number) {
   return `${files[index & 7]}${Math.floor(index / 8) + 1}`;
+}
+
+function squareIndex(square: string): number | null {
+  if (!/^[a-h][1-8]$/.test(square)) return null;
+  return (Number(square[1]) - 1) * 8 + square.charCodeAt(0) - 97;
+}
+
+function arrowFromUci(uci: string): Arrow | null {
+  const from = squareIndex(uci.slice(0, 2));
+  const to = squareIndex(uci.slice(2, 4));
+  return from === null || to === null ? null : { from, to };
 }
 
 function PieceArt({ piece }: { piece: Piece }) {
@@ -68,9 +80,12 @@ function ThoughtArrows({ arrows, flipped }: { arrows: Arrow[]; flipped: boolean 
 }
 
 export default function Playground() {
-  const engine = useMemo(() => new HumanSwiftEngine(), []);
   const gameRef = useRef<Game>(Game.start());
   const openingSeed = useRef(Date.now() & 0xffffffff);
+  const workerRef = useRef<Worker | null>(null);
+  const requestIdRef = useRef(0);
+  const activeSearchRef = useRef<{ id: number; version: number; game: Game; startedAt: number } | null>(null);
+  const playerSideRef = useRef<Side>("w");
   const [board, setBoard] = useState(() => gameRef.current.board());
   const [selected, setSelected] = useState<number | null>(null);
   const [history, setHistory] = useState<string[]>([]);
@@ -91,47 +106,95 @@ export default function Playground() {
   const turn = board.toFEN().split(/\s+/)[1] as Side;
   const inCheck = board.isInCheck(turn);
 
-  function runSwift(version: number, game: Game) {
-    setThinking(true);
-    setTimeout(() => {
-      if (version !== gameVersion.current || gameRef.current !== game) return;
-      const current = game.board();
-      const engineResult = engine.search(current, {
-        depth: 5,
-        timeMs: 800,
-        randomness: 0.012,
-        errorBudget: 0.05,
-        safetyDepth: 4,
-        ponderDepth: 4,
-        safetyMargin: 28,
-        safetyTimeMs: 100,
-        ponderTimeMs: 120,
-        candidateLimit: 5,
-        safetyCandidateLimit: 4,
-        concreteCandidateLimit: 8,
-        tacticalSearchDepth: 3,
-        seed: openingSeed.current,
-        moveHistory: game.moveHistory(),
-        positionHistoryKeys: game.positionHistoryKeys(),
-      });
-      if (version !== gameVersion.current || gameRef.current !== game) return;
-      setThoughtArrows((engineResult.pv ?? []).slice(0, 4).map((move) => ({ from: move.from, to: move.to })));
-      if (engineResult.opening) setOpening(engineResult.opening);
-      if (game.turn() === "b" || playerSide === "b") {
-        if (engineResult.move) {
-          game.play(engineResult.move); setBoard(game.board()); setLastMove({ from: engineResult.move.from, to: engineResult.move.to }); setHistory(game.moveHistory());
-        }
+  function ensureWorker(): Worker {
+    if (workerRef.current) return workerRef.current;
+
+    const worker = new Worker(new URL("../src/chess/browser-worker.ts", import.meta.url), { type: "module" });
+    worker.onmessage = (event: MessageEvent<SwiftWorkerResponse>) => {
+      const response = event.data;
+      const active = activeSearchRef.current;
+      if (!active || response.id !== active.id) return;
+
+      if (response.type === "error") {
+        activeSearchRef.current = null;
+        setThinking(false);
+        return;
       }
+
+      const finish = () => {
+        const latest = activeSearchRef.current;
+        if (
+          !latest ||
+          latest.id !== response.id ||
+          latest.version !== gameVersion.current ||
+          gameRef.current !== latest.game
+        ) return;
+
+        const game = latest.game;
+        const move = response.move
+          ? game.legalMoves().find((candidate) => candidate.uci() === response.move)
+          : null;
+
+        setThoughtArrows(
+          response.pv
+            .slice(0, 4)
+            .map(arrowFromUci)
+            .filter((arrow): arrow is Arrow => arrow !== null),
+        );
+        if (response.opening) setOpening(response.opening);
+
+        if (move && game.turn() !== playerSideRef.current) {
+          game.play(move);
+          setBoard(game.board());
+          setLastMove({ from: move.from, to: move.to });
+          setHistory(game.moveHistory());
+        }
+
+        activeSearchRef.current = null;
+        setThinking(false);
+      };
+
+      const elapsed = performance.now() - active.startedAt;
+      const remaining = Math.max(0, response.minimumThinkMs - elapsed);
+      if (remaining > 0) window.setTimeout(finish, remaining);
+      else finish();
+    };
+    worker.onerror = () => {
+      activeSearchRef.current = null;
       setThinking(false);
-    }, 70);
+    };
+    workerRef.current = worker;
+    return worker;
+  }
+
+  function restartWorker() {
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    activeSearchRef.current = null;
+  }
+
+  function runSwift(version: number, game: Game) {
+    if (version !== gameVersion.current || gameRef.current !== game || game.turn() === playerSideRef.current) return;
+    const id = ++requestIdRef.current;
+    activeSearchRef.current = { id, version, game, startedAt: performance.now() };
+    setThinking(true);
+    ensureWorker().postMessage({
+      type: "search",
+      id,
+      fen: game.fen(),
+      seed: openingSeed.current,
+      moveHistory: game.moveHistory(),
+      positionHistoryKeys: game.positionHistoryKeys(),
+    });
   }
 
   function reset(side: Side = playerSide) {
     gameVersion.current += 1;
+    restartWorker();
     gameRef.current = Game.start();
     openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
+    playerSideRef.current = side;
     setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setPromotion(null); setOpening(null); setThoughtArrows([]); setPlayerSide(side); setFlipped(side === "b");
-    if (side === "b") runSwift(gameVersion.current, gameRef.current);
   }
 
   function applyHumanMove(move: Move) {
@@ -140,7 +203,6 @@ export default function Playground() {
     const next = game.board();
     setBoard(next); setSelected(null); setPromotion(null); setLastMove({ from: move.from, to: move.to }); setHistory(game.moveHistory());
     if (game.result() !== "ongoing") { setThoughtArrows([]); return; }
-    runSwift(gameVersion.current, game);
   }
 
   function chooseMove(moves: Move[]) {
@@ -173,9 +235,15 @@ export default function Playground() {
   const promotionOptions: Array<{ piece: PromotionPiece; label: string }> = [{ piece: "q", label: "Queen" }, { piece: "r", label: "Rook" }, { piece: "b", label: "Bishop" }, { piece: "n", label: "Knight" }];
 
   useEffect(() => {
+    playerSideRef.current = playerSide;
+  }, [playerSide]);
+
+  useEffect(() => {
     if (turn === playerSide || terminal || thinking) return;
     runSwift(gameVersion.current, gameRef.current);
-  }, [turn, playerSide, terminal]);
+  }, [turn, playerSide, terminal, thinking]);
+
+  useEffect(() => () => workerRef.current?.terminate(), []);
 
   return (
     <section className="playground" id="play">
