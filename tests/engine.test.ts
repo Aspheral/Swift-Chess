@@ -31,6 +31,13 @@ describe("Swift search", () => {
     expect(engine.evaluate(extraQueen)).toBeGreaterThan(engine.evaluate(equal) + 800);
   });
 
+  it("does not reward a white pawn for staying on its starting rank", () => {
+    const engine = new SwiftEngine();
+    const home = Board.fromFEN("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+    const advanced = Board.fromFEN("4k3/8/8/8/4P3/8/8/4K3 w - - 0 1");
+    expect(engine.evaluate(advanced)).toBeGreaterThan(engine.evaluate(home));
+  });
+
   it("recognizes a profitable pawn capture with no recapture", () => {
     const board = Board.fromFEN("4k3/8/8/4p3/4Q3/8/8/4K3 w - - 0 1");
     const move = board.legalMoves().find((candidate) => candidate.uci() === "e4e5");
