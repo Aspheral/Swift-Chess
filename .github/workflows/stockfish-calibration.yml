@@ -2,6 +2,9 @@ name: Swift 1650 Calibration
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - calibration-validation-20260920
 
 jobs:
   stockfish-calibration:
