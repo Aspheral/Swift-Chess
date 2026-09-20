@@ -118,10 +118,10 @@ export class SwiftEngine {
     this.checkTime();
     this.nodes++;
     const inCheck = board.isInCheck(this.sideToMove(board));
-    if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta), pv: [] };
+    if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta, ply), pv: [] };
     const extension = inCheck && depth > 0 ? 1 : 0;
     const effectiveDepth = depth + extension;
-    if (effectiveDepth <= 0) return { score: this.quiescence(board, alpha, beta), pv: [] };
+    if (effectiveDepth <= 0) return { score: this.quiescence(board, alpha, beta, ply), pv: [] };
 
     const key = this.key(board), cached = this.table.get(key), alphaOriginal = alpha;
     if (cached && cached.depth >= effectiveDepth) {
@@ -186,17 +186,17 @@ export class SwiftEngine {
     return { score: best, pv: bestPv.slice(0, MAX_PV) };
   }
 
-  private quiescence(board: Board, alpha: number, beta: number): number {
+  private quiescence(board: Board, alpha: number, beta: number, ply: number): number {
     this.checkTime();
     this.nodes++;
     const side = this.sideToMove(board);
     const inCheck = board.isInCheck(side);
     const legal = board.legalMoves();
-    if (legal.length === 0) return inCheck ? -MATE : 0;
+    if (legal.length === 0) return inCheck ? -MATE + ply : 0;
     if (inCheck) {
       let best = -INF;
       for (const move of this.orderMoves(board, legal, undefined, 0)) {
-        const score = -this.quiescence(board.makeMove(move), -beta, -alpha);
+        const score = -this.quiescence(board.makeMove(move), -beta, -alpha, ply + 1);
         best = Math.max(best, score); alpha = Math.max(alpha, score);
         if (alpha >= beta) break;
       }
@@ -212,7 +212,7 @@ export class SwiftEngine {
       const child = board.makeMove(move);
       const checking = child.isInCheck(this.sideToMove(child));
       if (!checking && canDeltaPrune(board, move, standPat, alpha)) continue;
-      const score = -this.quiescence(child, -beta, -alpha);
+      const score = -this.quiescence(child, -beta, -alpha, ply + 1);
       if (score >= beta) return beta;
       if (score > alpha) alpha = score;
     }
