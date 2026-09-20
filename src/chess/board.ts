@@ -85,6 +85,10 @@ export class Board {
     return this.state.board[index] ?? null;
   }
 
+  turn(): Color { return this.state.turn; }
+
+  castlingRights(): string { return this.state.castling; }
+
   legalMoves(): Move[] {
     return this.pseudoLegalMoves().filter((move) => {
       const next = this.makeMove(move);
