@@ -125,10 +125,11 @@ export class SwiftEngine {
 
     const key = this.key(board), cached = this.table.get(key), alphaOriginal = alpha;
     if (cached && cached.depth >= effectiveDepth) {
-      if (cached.bound === "exact") return { score: cached.score, pv: cached.move ? [cached.move] : [] };
-      if (cached.bound === "lower") alpha = Math.max(alpha, cached.score);
-      if (cached.bound === "upper") beta = Math.min(beta, cached.score);
-      if (alpha >= beta) return { score: cached.score, pv: cached.move ? [cached.move] : [] };
+      const cachedScore = this.scoreFromTable(cached.score, ply);
+      if (cached.bound === "exact") return { score: cachedScore, pv: cached.move ? [cached.move] : [] };
+      if (cached.bound === "lower") alpha = Math.max(alpha, cachedScore);
+      if (cached.bound === "upper") beta = Math.min(beta, cachedScore);
+      if (alpha >= beta) return { score: cachedScore, pv: cached.move ? [cached.move] : [] };
     }
 
     const legal = board.legalMoves();
@@ -182,7 +183,7 @@ export class SwiftEngine {
       moveIndex++;
     }
     const bound: Bound = best <= alphaOriginal ? "upper" : best >= beta ? "lower" : "exact";
-    this.table.set(key, { depth: effectiveDepth, score: best, bound, move: bestMove });
+    this.table.set(key, { depth: effectiveDepth, score: this.scoreToTable(best, ply), bound, move: bestMove });
     return { score: best, pv: bestPv.slice(0, MAX_PV) };
   }
 
@@ -405,6 +406,18 @@ export class SwiftEngine {
       score += Math.round((7 - centerDistance) * 4);
     }
     return color === "w" ? score : -score;
+  }
+
+  private scoreToTable(score: number, ply: number): number {
+    if (score >= MATE - 1_000) return score + ply;
+    if (score <= -MATE + 1_000) return score - ply;
+    return score;
+  }
+
+  private scoreFromTable(score: number, ply: number): number {
+    if (score >= MATE - 1_000) return score - ply;
+    if (score <= -MATE + 1_000) return score + ply;
+    return score;
   }
 
   private sideToMove(board: Board): Color { return board.turn(); }
