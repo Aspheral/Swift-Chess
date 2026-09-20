@@ -97,7 +97,8 @@ export class HumanSwiftEngine {
         : history.length < 12
           ? Math.max(tacticalMargin, 140)
           : tacticalMargin;
-      const bookSafe = this.isSafeCandidate(board, book.move, baseline, bookMargin, ponderDepth, options.safetyTimeMs);
+      const bookSafe = history.length <= 1 ||
+        this.isSafeCandidate(board, book.move, baseline, bookMargin, ponderDepth, options.safetyTimeMs);
       if (bookSafe) {
         return {
           ...result,
@@ -108,6 +109,14 @@ export class HumanSwiftEngine {
           opening: book.opening,
         };
       }
+    }
+
+    if (options.strictBestPlay) {
+      return {
+        ...result,
+        humanCandidates: [engineCandidate],
+        humanProfile: profile,
+      };
     }
 
     const safetyLimit = Math.max(1, Math.floor(options.safetyCandidateLimit ?? candidateScores.length));
