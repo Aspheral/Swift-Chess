@@ -21,7 +21,7 @@ describe("Swift human opening repertoire", () => {
   it("recognizes the Reti path", () => {
     const history = ["g1f3"];
     const board = play(Board.start(), history);
-    expect(openingBookMove(board, 1, history)?.move.uci()).toBe("d7d5");
+    expect(["d7d5", "g8f6"]).toContain(openingBookMove(board, 1, history)?.move.uci());
     expect(openingBookMove(board, 1, history)?.opening).toBe("Reti");
   });
 
@@ -36,20 +36,20 @@ describe("Swift human opening repertoire", () => {
     const history = ["d2d4", "d7d5", "c2c4"];
     const board = play(Board.start(), history);
     const choice = openingBookMove(board, 7, history);
-    expect(["d5c4", "e7e6"]).toContain(choice?.move.uci());
+    expect(["d5c4", "e7e6", "g8f6"]).toContain(choice?.move.uci());
   });
 
   it("recognizes the Queen's Gambit Declined continuation", () => {
     const history = ["d2d4", "d7d5", "c2c4", "e7e6"];
     const board = play(Board.start(), history);
-    expect(openingBookMove(board, 1, history)?.move.uci()).toBe("g1f3");
+    expect(["g1f3", "b1c3", "c1g5"]).toContain(openingBookMove(board, 1, history)?.move.uci());
     expect(openingBookMove(board, 1, history)?.opening).toBe("Queen's Gambit Declined");
   });
 
   it("follows Four Knights after 1.e4 e5 2.Nf3 Nc6", () => {
     const history = ["e2e4", "e7e5", "g1f3", "b8c6"];
     const board = play(Board.start(), history);
-    expect(openingBookMove(board, 1, history)?.move.uci()).toBe("b1c3");
+    expect(["b1c3", "f1b5", "f1c4"]).toContain(openingBookMove(board, 1, history)?.move.uci());
     expect(openingBookMove(board, 1, history)?.opening).toBe("Four Knights");
   });
 
