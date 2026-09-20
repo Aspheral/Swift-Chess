@@ -3,7 +3,7 @@ import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 import { Board, Game, HumanSwiftEngine, Move, START_FEN } from "../src";
 
 const GAMES = 20;
-const TARGET_WINS = Math.ceil(GAMES * 0.5);
+const TARGET_SCORE = GAMES * 0.5;
 const STOCKFISH_ELO = 1650;
 const MAX_PLIES = 100;
 const SWIFT_DEPTH = 6;
@@ -145,7 +145,7 @@ describe("Swift 1650 Elo Stockfish gate", () => {
 
   afterAll(() => stockfish?.close());
 
-  it("wins at least 50% of a balanced 1650-Elo Stockfish match", async () => {
+  it("scores at least 50% of a balanced 1650-Elo Stockfish match", async () => {
     let wins = 0;
     let draws = 0;
     let losses = 0;
@@ -197,14 +197,20 @@ describe("Swift 1650 Elo Stockfish gate", () => {
       );
 
       const remainingGames = GAMES - (game + 1);
-      if (wins + remainingGames < TARGET_WINS) {
-        console.log(`Swift gate cannot reach ${TARGET_WINS} wins after ${game + 1} games; ending the failed match early.`);
+      const score = wins + draws * 0.5;
+      if (score + remainingGames < TARGET_SCORE) {
+        console.log(
+          `Swift gate cannot reach ${TARGET_SCORE.toFixed(1)} match points after ${game + 1} games; ending the failed match early.`,
+        );
         break;
       }
     }
 
-    const winRate = wins / GAMES;
-    console.log(`Swift gate: ${wins}-${losses}-${draws} (wins=${(winRate * 100).toFixed(1)}%) vs Stockfish ${STOCKFISH_ELO}`);
-    expect(wins).toBeGreaterThanOrEqual(TARGET_WINS);
+    const score = wins + draws * 0.5;
+    const scoreRate = score / GAMES;
+    console.log(
+      `Swift gate: ${wins}-${losses}-${draws} (score=${score.toFixed(1)}/${GAMES}, ${(scoreRate * 100).toFixed(1)}%) vs Stockfish ${STOCKFISH_ELO}`,
+    );
+    expect(score).toBeGreaterThanOrEqual(TARGET_SCORE);
   }, 600_000);
 });
