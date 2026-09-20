@@ -92,7 +92,11 @@ export class HumanSwiftEngine {
 
     const book = openingBookMove(board, options.seed ?? Date.now(), history);
     if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
-      const bookMargin = history.length < 12 ? Math.max(tacticalMargin, 120) : tacticalMargin;
+      const bookMargin = history.length < 8
+        ? Math.max(tacticalMargin, 180)
+        : history.length < 12
+          ? Math.max(tacticalMargin, 140)
+          : tacticalMargin;
       const bookSafe = this.isSafeCandidate(board, book.move, baseline, bookMargin, ponderDepth, options.safetyTimeMs);
       if (bookSafe) {
         return {
