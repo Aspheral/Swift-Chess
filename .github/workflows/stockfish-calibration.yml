@@ -47,7 +47,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: swift-calibration-${{ matrix.mode }}-batch-${{ matrix.batch }}
-          path: calibration-results/${{ matrix.mode }}-batch-${{ matrix.batch }}.json
+          path: calibration-results/${{ matrix.mode }}-elo-1650-batch-${{ matrix.batch }}.json
           if-no-files-found: warn
           retention-days: 30
 
