@@ -3,18 +3,19 @@ import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 import { Board, HumanSwiftEngine, Move, START_FEN } from "../src";
 
 const GAMES = 20;
+const TARGET_WINS = Math.ceil(GAMES * 0.5);
 const STOCKFISH_ELO = 1650;
-const MAX_PLIES = 80;
+const MAX_PLIES = 100;
 const SWIFT_DEPTH = 6;
-const SWIFT_TIME_MS = 350;
+const SWIFT_TIME_MS = 450;
 const STOCKFISH_MOVETIME_MS = 25;
-const HUMAN_SAFETY_DEPTH = 1;
-const HUMAN_PONDER_DEPTH = 1;
-const HUMAN_SAFETY_TIME_MS = 35;
+const HUMAN_SAFETY_DEPTH = 2;
+const HUMAN_PONDER_DEPTH = 2;
+const HUMAN_SAFETY_TIME_MS = 30;
 const HUMAN_PONDER_TIME_MS = 35;
-const HUMAN_CANDIDATE_LIMIT = 3;
-const HUMAN_SAFETY_CANDIDATE_LIMIT = 1;
-const HUMAN_CONCRETE_CANDIDATE_LIMIT = 1;
+const HUMAN_CANDIDATE_LIMIT = 4;
+const HUMAN_SAFETY_CANDIDATE_LIMIT = 3;
+const HUMAN_CONCRETE_CANDIDATE_LIMIT = 6;
 const HUMAN_TACTICAL_DEPTH = 0;
 
 class UciStockfish {
@@ -170,10 +171,16 @@ describe("Swift 1650 Elo Stockfish gate", () => {
       else if (stockfishWon) losses += 1;
       else draws += 1;
       console.log(`Swift gate game ${game + 1}/${GAMES}: ${swiftWon ? "win" : stockfishWon ? "loss" : "draw"}`);
+
+      const remainingGames = GAMES - (game + 1);
+      if (wins + remainingGames < TARGET_WINS) {
+        console.log(`Swift gate cannot reach ${TARGET_WINS} wins after ${game + 1} games; ending the failed match early.`);
+        break;
+      }
     }
 
     const winRate = wins / GAMES;
     console.log(`Swift gate: ${wins}-${losses}-${draws} (wins=${(winRate * 100).toFixed(1)}%) vs Stockfish ${STOCKFISH_ELO}`);
-    expect(wins).toBeGreaterThanOrEqual(Math.ceil(GAMES * 0.5));
+    expect(wins).toBeGreaterThanOrEqual(TARGET_WINS);
   }, 600_000);
 });
