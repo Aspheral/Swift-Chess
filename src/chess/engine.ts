@@ -295,7 +295,7 @@ export class SwiftEngine {
       score += sign * pieceValues[type];
 
       if (type !== "k") {
-        const tableSquare = white ? square : 63 - square;
+        const tableSquare = white ? (square ^ 56) : square;
         score += sign * PST[type as Exclude<PieceType, "k">][tableSquare];
       } else if (white) {
         whiteKing = square;
