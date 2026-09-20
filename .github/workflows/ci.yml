@@ -2,7 +2,7 @@ name: Swift CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, ci-validation-20260920]
   pull_request:
     branches: [main]
 
