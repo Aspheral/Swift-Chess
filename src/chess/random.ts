@@ -28,3 +28,8 @@ export function createSeededRandom(seed: number): () => number {
 export function seededRandom(seed: number): number {
   return createSeededRandom(seed)();
 }
+
+/** Derive a stable but decorrelated child seed, such as one seed per game ply. */
+export function deriveSeed(seed: number, salt: number): number {
+  return mixSeed(seed ^ Math.imul((salt + 1) | 0, 0x9e3779b1));
+}
