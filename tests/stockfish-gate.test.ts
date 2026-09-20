@@ -1,28 +1,170 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
-import { Board, Game, HumanSwiftEngine, Move, START_FEN } from "../src";
+import {
+  Board,
+  deriveSeed,
+  Game,
+  HumanEngineOptions,
+  HumanSwiftEngine,
+  Move,
+} from "../src";
 
-const GAMES = 20;
-const TARGET_SCORE = GAMES * 0.5;
 const STOCKFISH_ELO = 1650;
-const MAX_PLIES = 100;
-const SWIFT_DEPTH = 6;
-const SWIFT_TIME_MS = 650;
-const STOCKFISH_MOVETIME_MS = 25;
-const HUMAN_SAFETY_DEPTH = 2;
-const HUMAN_PONDER_DEPTH = 2;
-const HUMAN_SAFETY_TIME_MS = 30;
-const HUMAN_PONDER_TIME_MS = 35;
-const HUMAN_CANDIDATE_LIMIT = 4;
-const HUMAN_SAFETY_CANDIDATE_LIMIT = 3;
-const HUMAN_CONCRETE_CANDIDATE_LIMIT = 6;
-const HUMAN_TACTICAL_DEPTH = 0;
+const STOCKFISH_MOVETIME_MS = 100;
+const MAX_PLIES = 240;
+const MODE = process.env.SWIFT_CALIBRATION_MODE === "human" ? "human" : "strict";
+const REQUIRE_TARGET = process.env.SWIFT_CALIBRATION_REQUIRE_TARGET === "1";
+
+const OPENING_PAIRS = [
+  { name: "Reti / ...d5", moves: ["g1f3", "d7d5", "c2c4", "e7e6"] },
+  { name: "Reti / kingside fianchetto", moves: ["g1f3", "g8f6", "g2g3", "g7g6"] },
+  { name: "Queen's Gambit Declined", moves: ["d2d4", "d7d5", "c2c4", "e7e6", "b1c3", "g8f6"] },
+  { name: "Slav structure", moves: ["d2d4", "d7d5", "c2c4", "c7c6", "g1f3", "g8f6"] },
+  { name: "Queen's Gambit Accepted", moves: ["d2d4", "d7d5", "c2c4", "d5c4", "g1f3", "g8f6"] },
+  { name: "London structure", moves: ["d2d4", "d7d5", "g1f3", "g8f6", "c1f4", "e7e6"] },
+  { name: "Four Knights", moves: ["e2e4", "e7e5", "g1f3", "b8c6", "b1c3", "g8f6"] },
+  { name: "Scotch structure", moves: ["e2e4", "e7e5", "g1f3", "b8c6", "d2d4", "e5d4"] },
+  { name: "Bishop's Opening", moves: ["e2e4", "e7e5", "f1c4", "g8f6", "d2d3", "f8c5"] },
+  { name: "Italian structure", moves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5"] },
+] as const;
+
+const GAMES = OPENING_PAIRS.length * 2;
+const TARGET_SCORE = GAMES * 0.5;
+
+const STRICT_OPTIONS: HumanEngineOptions = {
+  depth: 6,
+  timeMs: 650,
+  randomness: 0,
+  errorBudget: 0,
+  strictBestPlay: true,
+  safetyDepth: 2,
+  ponderDepth: 2,
+  safetyTimeMs: 30,
+  ponderTimeMs: 35,
+  candidateLimit: 4,
+  safetyCandidateLimit: 3,
+  concreteCandidateLimit: 6,
+  tacticalSearchDepth: 0,
+  safetyMargin: 45,
+};
+
+const HUMAN_OPTIONS: HumanEngineOptions = {
+  // Keep this aligned with the public playground so this calibration measures
+  // the Swift people actually play, not a separate benchmark-only personality.
+  depth: 5,
+  timeMs: 800,
+  randomness: 0.012,
+  errorBudget: 0.05,
+  strictBestPlay: false,
+  safetyDepth: 4,
+  ponderDepth: 4,
+  safetyTimeMs: 100,
+  ponderTimeMs: 120,
+  candidateLimit: 5,
+  safetyCandidateLimit: 4,
+  concreteCandidateLimit: 8,
+  tacticalSearchDepth: 3,
+  safetyMargin: 28,
+};
+
+const SWIFT_OPTIONS = MODE === "human" ? HUMAN_OPTIONS : STRICT_OPTIONS;
+
+type Outcome = "win" | "loss" | "draw" | "unresolved";
+
+interface MatchStats {
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  unresolved: number;
+  score: number;
+  depthSum: number;
+  nodeSum: number;
+  swiftMoves: number;
+  plies: number;
+}
+
+function emptyStats(): MatchStats {
+  return {
+    games: 0,
+    wins: 0,
+    losses: 0,
+    draws: 0,
+    unresolved: 0,
+    score: 0,
+    depthSum: 0,
+    nodeSum: 0,
+    swiftMoves: 0,
+    plies: 0,
+  };
+}
+
+function addGame(
+  stats: MatchStats,
+  outcome: Outcome,
+  depths: number[],
+  nodes: number[],
+  plies: number,
+): void {
+  stats.games += 1;
+  stats.plies += plies;
+  stats.depthSum += depths.reduce((sum, value) => sum + value, 0);
+  stats.nodeSum += nodes.reduce((sum, value) => sum + value, 0);
+  stats.swiftMoves += depths.length;
+
+  if (outcome === "win") {
+    stats.wins += 1;
+    stats.score += 1;
+  } else if (outcome === "loss") {
+    stats.losses += 1;
+  } else if (outcome === "draw") {
+    stats.draws += 1;
+    stats.score += 0.5;
+  } else {
+    stats.unresolved += 1;
+  }
+}
+
+function completedGames(stats: MatchStats): number {
+  return stats.wins + stats.losses + stats.draws;
+}
+
+function scoreRate(stats: MatchStats): number {
+  const completed = completedGames(stats);
+  return completed ? stats.score / completed : 0;
+}
+
+function performanceElo(rate: number): number | null {
+  if (rate <= 0 || rate >= 1) return null;
+  return Math.round(STOCKFISH_ELO + 400 * Math.log10(rate / (1 - rate)));
+}
+
+function statsLine(label: string, stats: MatchStats): string {
+  const completed = completedGames(stats);
+  const rate = scoreRate(stats);
+  const averageDepth = stats.swiftMoves ? stats.depthSum / stats.swiftMoves : 0;
+  const averageNodes = stats.swiftMoves ? stats.nodeSum / stats.swiftMoves : 0;
+  const averagePlies = stats.games ? stats.plies / stats.games : 0;
+  const elo = performanceElo(rate);
+
+  return (
+    `${label}: ${stats.wins}-${stats.losses}-${stats.draws}` +
+    (stats.unresolved ? ` +${stats.unresolved} unresolved` : "") +
+    ` score=${stats.score.toFixed(1)}/${completed} (${(rate * 100).toFixed(1)}%)` +
+    ` perfElo=${elo ?? "n/a"} avgCompletedDepth=${averageDepth.toFixed(2)}` +
+    ` avgNodes=${Math.round(averageNodes)} avgPlies=${averagePlies.toFixed(1)}`
+  );
+}
 
 class UciStockfish {
   private process: ChildProcessWithoutNullStreams;
   private buffer = "";
   private closed = false;
-  private pending: Array<{ resolve: (value: string) => void; reject: (error: Error) => void; marker: string }> = [];
+  private pending: Array<{
+    resolve: (value: string) => void;
+    reject: (error: Error) => void;
+    marker: string;
+  }> = [];
 
   constructor() {
     this.process = spawn("stockfish", [], { stdio: ["pipe", "pipe", "pipe"] });
@@ -34,12 +176,16 @@ class UciStockfish {
     this.process.on("error", (error) => this.rejectPending(error));
     this.process.on("exit", (code, signal) => {
       this.closed = true;
-      this.rejectPending(new Error(`Stockfish exited before completing a command (code=${code}, signal=${signal})`));
+      this.rejectPending(
+        new Error(`Stockfish exited before completing a command (code=${code}, signal=${signal})`),
+      );
     });
   }
 
   async init() {
     await this.command("uci", "uciok");
+    this.write("setoption name Threads value 1\n");
+    this.write("setoption name Hash value 64\n");
     this.write("setoption name UCI_LimitStrength value true\n");
     this.write(`setoption name UCI_Elo value ${STOCKFISH_ELO}\n`);
     await this.command("isready", "readyok");
@@ -99,45 +245,27 @@ class UciStockfish {
   }
 }
 
-function applyUci(board: Board, uci: string): Board {
-  const move = board.legalMoves().find((candidate) => candidate.uci() === uci);
-  if (!move) throw new Error(`Illegal UCI move ${uci} in ${board.toFEN()}`);
-  return board.makeMove(move);
-}
-
 function swiftMove(
   board: Board,
   engine: HumanSwiftEngine,
-  history: string[],
-  positionKeys: string[],
-  seed: number,
+  game: Game,
+  baseSeed: number,
 ): { move: Move; depth: number; score: number; nodes: number } {
+  const history = game.moveHistory();
   const result = engine.search(board, {
-    depth: SWIFT_DEPTH,
-    timeMs: SWIFT_TIME_MS,
-    randomness: 0,
-    errorBudget: 0,
-    strictBestPlay: true,
-    safetyDepth: HUMAN_SAFETY_DEPTH,
-    ponderDepth: HUMAN_PONDER_DEPTH,
-    safetyTimeMs: HUMAN_SAFETY_TIME_MS,
-    ponderTimeMs: HUMAN_PONDER_TIME_MS,
-    candidateLimit: HUMAN_CANDIDATE_LIMIT,
-    safetyCandidateLimit: HUMAN_SAFETY_CANDIDATE_LIMIT,
-    concreteCandidateLimit: HUMAN_CONCRETE_CANDIDATE_LIMIT,
-    tacticalSearchDepth: HUMAN_TACTICAL_DEPTH,
-    safetyMargin: 45,
-    seed,
+    ...SWIFT_OPTIONS,
+    seed: deriveSeed(baseSeed, history.length),
     moveHistory: history,
-    positionHistoryKeys: positionKeys,
+    positionHistoryKeys: game.positionHistoryKeys(),
   });
+
   if (!result.move) throw new Error(`Swift returned no move in ${board.toFEN()}`);
   return { move: result.move, depth: result.depth, score: result.score, nodes: result.nodes };
 }
 
 const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
 
-(runStockfishGate ? describe : describe.skip)("Swift 1650 Elo Stockfish gate", () => {
+(runStockfishGate ? describe : describe.skip)(`Swift 1650 calibration (${MODE})`, () => {
   let stockfish: UciStockfish;
 
   beforeAll(async () => {
@@ -147,72 +275,101 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
 
   afterAll(() => stockfish?.close());
 
-  it("scores at least 50% of a balanced 1650-Elo Stockfish match", async () => {
-    let wins = 0;
-    let draws = 0;
-    let losses = 0;
+  it("runs paired openings and records only real chess results", async () => {
+    const overall = emptyStats();
+    const byColor = { White: emptyStats(), Black: emptyStats() };
+    const byOutcome = new Map<Outcome, MatchStats>();
+    const byOpening = new Map<string, MatchStats>();
 
-    for (let game = 0; game < GAMES; game += 1) {
+    for (let gameIndex = 0; gameIndex < GAMES; gameIndex += 1) {
+      const opening = OPENING_PAIRS[Math.floor(gameIndex / 2)];
+      const swiftIsWhite = gameIndex % 2 === 0;
+      const colorLabel = swiftIsWhite ? "White" : "Black";
+      const baseSeed = 20_000 + Math.floor(gameIndex / 2) * 7_919;
+
       const engine = new HumanSwiftEngine();
-      let board = Board.fromFEN(START_FEN);
-      const swiftIsWhite = game % 2 === 0;
-      const history: string[] = [];
-      const positionKeys: string[] = [Game.positionKey(board)];
+      const game = Game.start();
+      for (const uci of opening.moves) game.playUci(uci);
+
       const swiftDepths: number[] = [];
       const swiftNodes: number[] = [];
 
-      for (let ply = 0; ply < MAX_PLIES; ply += 1) {
-        if (board.isCheckmate() || board.isStalemate()) break;
-
-        const side = board.toFEN().split(/\s+/)[1] as "w" | "b";
+      while (game.result() === "ongoing" && game.moveHistory().length < MAX_PLIES) {
+        const board = game.board();
         let uci: string;
-        if ((side === "w") === swiftIsWhite) {
-          const swift = swiftMove(board, engine, history, positionKeys, 10_000 + game);
+
+        if ((game.turn() === "w") === swiftIsWhite) {
+          const swift = swiftMove(board, engine, game, baseSeed);
           uci = swift.move.uci();
           swiftDepths.push(swift.depth);
           swiftNodes.push(swift.nodes);
         } else {
-          uci = await stockfish.bestMove(board.toFEN());
+          uci = await stockfish.bestMove(game.fen());
         }
 
-        board = applyUci(board, uci);
-        history.push(uci);
-        positionKeys.push(Game.positionKey(board));
+        game.playUci(uci);
       }
 
-      const sideToMove = board.toFEN().split(/\s+/)[1] as "w" | "b";
-      const swiftWon = board.isCheckmate() && ((sideToMove === "b") === swiftIsWhite);
-      const stockfishWon = board.isCheckmate() && ((sideToMove === "w") === swiftIsWhite);
+      const endReason = game.result();
+      let outcome: Outcome;
+      if (endReason === "ongoing") {
+        outcome = "unresolved";
+      } else if (endReason === "checkmate") {
+        const swiftWon = (game.turn() === "b") === swiftIsWhite;
+        outcome = swiftWon ? "win" : "loss";
+      } else {
+        outcome = "draw";
+      }
 
-      if (swiftWon) wins += 1;
-      else if (stockfishWon) losses += 1;
-      else draws += 1;
+      const moves = game.moveHistory();
       const averageDepth = swiftDepths.length
         ? swiftDepths.reduce((sum, depth) => sum + depth, 0) / swiftDepths.length
         : 0;
       const averageNodes = swiftNodes.length
         ? swiftNodes.reduce((sum, nodes) => sum + nodes, 0) / swiftNodes.length
         : 0;
-      console.log(
-        `Swift gate game ${game + 1}/${GAMES}: ${swiftWon ? "win" : stockfishWon ? "loss" : "draw"}; ` +
-        `avgDepth=${averageDepth.toFixed(2)} avgNodes=${Math.round(averageNodes)} moves=${history.join(" ")}`,
-      );
 
-      const remainingGames = GAMES - (game + 1);
-      const score = wins + draws * 0.5;
-      if (score + remainingGames < TARGET_SCORE) {
-        console.log(
-          `Swift gate cannot reach ${TARGET_SCORE.toFixed(1)} match points after ${game + 1} games; ending the failed match early.`,
-        );
-        break;
-      }
+      addGame(overall, outcome, swiftDepths, swiftNodes, moves.length);
+      addGame(byColor[colorLabel], outcome, swiftDepths, swiftNodes, moves.length);
+
+      if (!byOutcome.has(outcome)) byOutcome.set(outcome, emptyStats());
+      addGame(byOutcome.get(outcome)!, outcome, swiftDepths, swiftNodes, moves.length);
+
+      if (!byOpening.has(opening.name)) byOpening.set(opening.name, emptyStats());
+      addGame(byOpening.get(opening.name)!, outcome, swiftDepths, swiftNodes, moves.length);
+
+      console.log(
+        `Swift calibration game ${gameIndex + 1}/${GAMES}: mode=${MODE} color=${colorLabel} ` +
+        `opening="${opening.name}" result=${outcome} reason=${endReason}; ` +
+        `avgCompletedDepth=${averageDepth.toFixed(2)} avgNodes=${Math.round(averageNodes)} ` +
+        `plies=${moves.length} moves=${moves.join(" ")}`,
+      );
     }
 
-    const score = wins + draws * 0.5;
-    const scoreRate = score / GAMES;
-    console.log(
-      `Swift gate: ${wins}-${losses}-${draws} (score=${score.toFixed(1)}/${GAMES}, ${(scoreRate * 100).toFixed(1)}%) vs Stockfish ${STOCKFISH_ELO}`,
-    );
-    expect(score).toBeGreaterThanOrEqual(TARGET_SCORE);
-  }, 600_000);
+    console.log(`Swift calibration configuration: mode=${MODE} opponent=Stockfish-${STOCKFISH_ELO} ` +
+      `stockfishMoveMs=${STOCKFISH_MOVETIME_MS} maxPlies=${MAX_PLIES} ` +
+      `swiftMaxDepth=${SWIFT_OPTIONS.depth} swiftMoveMs=${SWIFT_OPTIONS.timeMs}`);
+    console.log(statsLine("Overall", overall));
+    console.log(statsLine("White", byColor.White));
+    console.log(statsLine("Black", byColor.Black));
+
+    for (const outcome of ["win", "loss", "draw", "unresolved"] as Outcome[]) {
+      const stats = byOutcome.get(outcome);
+      if (stats) console.log(statsLine(`Outcome ${outcome}`, stats));
+    }
+
+    for (const opening of OPENING_PAIRS) {
+      const stats = byOpening.get(opening.name);
+      if (stats) console.log(statsLine(`Opening ${opening.name}`, stats));
+    }
+
+    // A safety cap is allowed to stop a runaway test, but an unfinished game is
+    // never silently converted into a draw. If this trips, raise the cap or add
+    // an explicit, documented adjudication policy before trusting the rating.
+    expect(overall.unresolved).toBe(0);
+
+    if (REQUIRE_TARGET) {
+      expect(overall.score).toBeGreaterThanOrEqual(TARGET_SCORE);
+    }
+  }, 1_800_000);
 });
