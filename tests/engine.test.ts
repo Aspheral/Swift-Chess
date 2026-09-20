@@ -45,6 +45,12 @@ describe("Swift search", () => {
     expect(staticExchange(board, move!)).toBe(-800);
   });
 
+  it("does not cash in a bishop while connected passers are about to reach the seventh", () => {
+    const board = Board.fromFEN("7r/p1p1k1pp/1PP1b3/5p2/1P2B3/P5P1/5P1P/3R2K1 b - - 0 35");
+    const result = new SwiftEngine().search(board, { depth: 4 });
+    expect(result.move?.uci()).not.toBe("f5e4");
+  });
+
   it("PVS preserves mate selection", () => {
     const board = Board.fromFEN("6k1/5ppp/8/8/8/6Q1/5PPP/6K1 w - - 0 1");
     const result = new SwiftEnginePVS().search(board, { depth: 3 });
