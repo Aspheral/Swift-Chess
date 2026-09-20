@@ -135,7 +135,7 @@ export class SwiftEngine {
     if (allowNullMove && effectiveDepth >= 3 && !inCheck && beta < MATE - 1_000 && this.canNullMove(board)) {
       const reduction = effectiveDepth >= 7 ? 3 : 2;
       const nullDepth = Math.max(0, effectiveDepth - 1 - reduction);
-      const nullResult = this.negamax(this.makeNullMove(board), nullDepth, -beta, -beta + 1, ply + 1, false);
+      const nullResult = this.negamax(board.makeNullMove(), nullDepth, -beta, -beta + 1, ply + 1, false);
       const nullScore = -nullResult.score;
       if (nullScore >= beta) {
         if (effectiveDepth >= 6) {
@@ -256,58 +256,50 @@ export class SwiftEngine {
   private isCapture(board: Board, move: Move): boolean { return move.enPassant || board.pieceAt(move.to) !== null; }
 
   private canNullMove(board: Board): boolean {
-    const fenBoard = board.toFEN().split(/\s+/)[0];
     let nonPawnPieces = 0;
     let rooksQueens = 0;
-    for (const char of fenBoard) {
-      if (char === "/" || /\d/.test(char) || char.toLowerCase() === "k" || char.toLowerCase() === "p") continue;
+    for (let square = 0; square < 64; square++) {
+      const piece = board.pieceAt(square);
+      if (!piece || piece[1] === "k" || piece[1] === "p") continue;
       nonPawnPieces++;
-      if (char.toLowerCase() === "r" || char.toLowerCase() === "q") rooksQueens++;
+      if (piece[1] === "r" || piece[1] === "q") rooksQueens++;
     }
     if (nonPawnPieces <= 2) return false;
     if (rooksQueens === 0 && nonPawnPieces <= 4) return false;
     return true;
   }
 
-  private makeNullMove(board: Board): Board {
-    const fields = board.toFEN().split(/\s+/);
-    const side = fields[1];
-    fields[1] = side === "w" ? "b" : "w";
-    fields[3] = "-";
-    fields[4] = String(Number(fields[4]) + 1);
-    if (side === "b") fields[5] = String(Number(fields[5]) + 1);
-    return Board.fromFEN(fields.join(" "));
-  }
-
   private evaluateWhite(board: Board): number {
-    const fields = board.toFEN().split(/\s+/);
-    const fenBoard = fields[0];
-    const castling = fields[2];
-    let score = 0, square = 56;
+    const castling = board.castlingRights();
+    let score = 0;
     const whitePawns: number[] = [], blackPawns: number[] = [];
     const whiteRooks: number[] = [], blackRooks: number[] = [];
     let whiteBishops = 0, blackBishops = 0;
     let whiteKing = -1, blackKing = -1;
     let totalPieces = 0, queens = 0;
 
-    for (const char of fenBoard) {
-      if (char === "/") { square -= 16; continue; }
-      if (/\d/.test(char)) { square += Number(char); continue; }
-      const type = char.toLowerCase() as PieceType;
-      const white = char === char.toUpperCase();
+    for (let square = 0; square < 64; square++) {
+      const piece = board.pieceAt(square);
+      if (!piece) continue;
+      const white = piece[0] === "w";
+      const type = piece[1] as PieceType;
       totalPieces++;
       if (type === "q") queens++;
       const sign = white ? 1 : -1;
       score += sign * pieceValues[type];
+
       if (type !== "k") {
         const tableSquare = white ? square : 63 - square;
         score += sign * PST[type as Exclude<PieceType, "k">][tableSquare];
-      } else if (white) whiteKing = square;
-      else blackKing = square;
+      } else if (white) {
+        whiteKing = square;
+      } else {
+        blackKing = square;
+      }
+
       if (type === "p") (white ? whitePawns : blackPawns).push(square);
       if (type === "r") (white ? whiteRooks : blackRooks).push(square);
       if (type === "b") white ? whiteBishops++ : blackBishops++;
-      square++;
     }
 
     score += this.pawnStructure(whitePawns, "w", blackPawns);
