@@ -119,11 +119,17 @@ export class HumanSwiftEngine {
       const bookSafe = history.length <= 1 ||
         this.isSafeCandidate(board, book.move, baseline, bookMargin, ponderDepth, options.safetyTimeMs);
       if (bookSafe) {
+        const bookCandidate = candidateScores.find((candidate) => candidate.move.uci() === book.move.uci()) ?? {
+          move: book.move,
+          score: result.score,
+          ideaKinds: ["develop"] as CandidateScore["ideaKinds"],
+          reasons: ["Swift's opening repertoire selected this move."],
+        };
         return {
           ...result,
           move: book.move,
           pv: result.pv?.length ? [book.move, ...result.pv.slice(1)] : [book.move],
-          humanCandidates: candidateScores.filter((candidate) => candidate.move.uci() === book.move.uci()),
+          humanCandidates: [bookCandidate],
           humanProfile: profile,
           opening: book.opening,
         };
