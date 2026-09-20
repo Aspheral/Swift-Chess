@@ -260,8 +260,8 @@ export class SwiftEngine {
       square++;
     }
 
-    score += this.pawnStructure(whitePawns, "w");
-    score -= this.pawnStructure(blackPawns, "b");
+    score += this.pawnStructure(whitePawns, "w", blackPawns);
+    score -= this.pawnStructure(blackPawns, "b", whitePawns);
     if (whiteBishops >= 2) score += 28;
     if (blackBishops >= 2) score -= 28;
     score += this.kingSafetyFromSquare(whiteKing, "w", castling);
@@ -269,17 +269,32 @@ export class SwiftEngine {
     return score;
   }
 
-  private pawnStructure(pawns: number[], color: Color): number {
+  private pawnStructure(pawns: number[], color: Color, enemyPawns: number[]): number {
     const files = new Array<number>(8).fill(0);
     for (const square of pawns) files[square & 7]++;
     let score = 0;
     for (const count of files) if (count > 1) score -= 14 * (count - 1);
+
+    const passedBonus = [0, 8, 20, 45, 100, 180, 0];
     for (const square of pawns) {
       const file = square & 7;
       const rank = Math.floor(square / 8);
-      if ((file > 0 && files[file - 1] > 0) || (file < 7 && files[file + 1] > 0)) score += 5;
-      const advance = color === "w" ? Math.max(0, rank - 3) : Math.max(0, 4 - rank);
-      if (advance > 0) score += advance * 4;
+      const connected = (file > 0 && files[file - 1] > 0) || (file < 7 && files[file + 1] > 0);
+      if (connected) score += 6;
+
+      const advance = color === "w" ? Math.max(0, rank - 1) : Math.max(0, 6 - rank);
+      if (advance > 2) score += (advance - 2) * 4;
+
+      const passed = !enemyPawns.some((enemySquare) => {
+        const enemyFile = enemySquare & 7;
+        if (Math.abs(enemyFile - file) > 1) return false;
+        const enemyRank = Math.floor(enemySquare / 8);
+        return color === "w" ? enemyRank > rank : enemyRank < rank;
+      });
+      if (passed) {
+        score += passedBonus[Math.min(6, advance)] ?? 0;
+        if (connected && advance >= 3) score += 18;
+      }
     }
     return score;
   }
