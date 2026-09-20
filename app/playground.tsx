@@ -96,7 +96,24 @@ export default function Playground() {
     setTimeout(() => {
       if (version !== gameVersion.current || gameRef.current !== game) return;
       const current = game.board();
-      const engineResult = engine.search(current, { depth: 3, randomness: 0.035, errorBudget: 0.18, safetyDepth: 3, safetyMargin: 45, seed: openingSeed.current, moveHistory: game.moveHistory(), positionHistoryKeys: game.positionHistoryKeys() });
+      const engineResult = engine.search(current, {
+        depth: 5,
+        timeMs: 800,
+        randomness: 0.012,
+        errorBudget: 0.05,
+        safetyDepth: 4,
+        ponderDepth: 4,
+        safetyMargin: 28,
+        safetyTimeMs: 100,
+        ponderTimeMs: 120,
+        candidateLimit: 5,
+        safetyCandidateLimit: 4,
+        concreteCandidateLimit: 8,
+        tacticalSearchDepth: 3,
+        seed: openingSeed.current,
+        moveHistory: game.moveHistory(),
+        positionHistoryKeys: game.positionHistoryKeys(),
+      });
       if (version !== gameVersion.current || gameRef.current !== game) return;
       setThoughtArrows((engineResult.pv ?? []).slice(0, 4).map((move) => ({ from: move.from, to: move.to })));
       if (engineResult.opening) setOpening(engineResult.opening);
