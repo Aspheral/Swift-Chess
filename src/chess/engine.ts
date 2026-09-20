@@ -406,7 +406,7 @@ export class SwiftEngine {
   }
 
   private sideToMove(board: Board): Color { return board.turn(); }
-  private key(board: Board): string { return board.toFEN().split(/\s+/).slice(0, 4).join(" "); }
+  private key(board: Board): string { return board.searchKey(); }
   private checkTime(): void { if (Date.now() > this.deadline) throw TIMEOUT; }
 }
 
