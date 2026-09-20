@@ -21,7 +21,7 @@ describe("Swift browser play timing", () => {
   });
 
   it("uses an endgame budget instead of the full tactical budget in quiet endings", () => {
-    const board = Board.fromFEN("4k3/8/8/8/8/8/8/4K1N1 w - - 0 1");
+    const board = Board.fromFEN("7k/8/8/8/8/8/8/K7 w - - 0 1");
     const profile = swiftPlayProfile(board, Array(30).fill("h1h2"));
 
     expect(profile.kind).toBe("endgame");
