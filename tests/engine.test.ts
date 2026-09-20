@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Board, SwiftEngine, SwiftEnginePVS, staticExchange } from "../src";
+import { Board, HumanSwiftEngine, SwiftEngine, SwiftEnginePVS, staticExchange } from "../src";
 
 describe("Swift search", () => {
   it("finds a mate in one", () => {
@@ -47,7 +47,24 @@ describe("Swift search", () => {
 
   it("does not burn castling rights with the rook in a live opening", () => {
     const board = Board.fromFEN("r1bqk2r/pppp1ppp/1b3n2/4p3/1P1nP3/P1NQ4/1BPP1PPP/R3KBNR b KQkq - 2 8");
-    const result = new SwiftEngine().search(board, { depth: 4 });
+    const history = [
+      "e2e3", "b8c6", "d1f3", "g8f6", "e3e4", "c6d4", "f3d3", "e7e5",
+      "b1c3", "f8b4", "a2a3", "b4a5", "b2b4", "a5b6", "c1b2",
+    ];
+    const result = new HumanSwiftEngine().search(board, {
+      depth: 3,
+      timeMs: 250,
+      randomness: 0,
+      errorBudget: 0,
+      safetyDepth: 2,
+      ponderDepth: 2,
+      safetyTimeMs: 30,
+      ponderTimeMs: 30,
+      safetyCandidateLimit: 4,
+      concreteCandidateLimit: 8,
+      tacticalSearchDepth: 0,
+      moveHistory: history,
+    });
     expect(result.move?.uci()).not.toBe("h8g8");
   });
 
