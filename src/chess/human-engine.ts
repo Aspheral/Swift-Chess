@@ -172,7 +172,7 @@ export class HumanSwiftEngine {
     const pieces = board.toFEN().split(/\s+/)[0].replace(/[1-8/]/g, "").length;
     if (pieces <= 6) return Math.max(5, Math.floor(requested));
     if (queenUnderAttack) return Math.max(5, Math.floor(requested) + 2);
-    if (board.isInCheck(board.toFEN().split(/\s+/)[1] as "w" | "b")) return Math.max(4, Math.floor(requested));
+    if (board.isInCheck(board.turn())) return Math.max(4, Math.floor(requested));
     return Math.max(1, Math.floor(requested));
   }
 
@@ -209,7 +209,7 @@ export class HumanSwiftEngine {
   ): CandidateScore | null {
     const child = board.makeMove(candidate.move);
     if (!child.isCheckmate()) {
-      const opponent = child.toFEN().split(/\s+/)[1] as "w" | "b";
+      const opponent = child.turn();
       const replies = child.legalMoves();
       if (replies.some((reply) => child.makeMove(reply).isCheckmate())) return null;
       if (child.isInCheck(opponent) && replies.length === 0) return null;
@@ -231,7 +231,7 @@ export class HumanSwiftEngine {
   private isSafeCandidate(board: Board, move: Move, baseline: number, margin: number, depth: number, timeMs?: number): boolean {
     const child = board.makeMove(move);
     if (!child.isCheckmate()) {
-      const opponent = child.toFEN().split(/\s+/)[1] as "w" | "b";
+      const opponent = child.turn();
       if (child.legalMoves().some((reply) => child.makeMove(reply).isCheckmate())) return false;
       if (child.isInCheck(opponent) && child.legalMoves().length === 0) return false;
     }
