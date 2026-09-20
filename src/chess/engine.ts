@@ -184,7 +184,6 @@ export class SwiftEngine {
     const moving = board.pieceAt(move.from), captured = board.pieceAt(move.to);
     const tactical = !!captured || move.enPassant || !!move.promotion;
     if (tactical) score += tacticalMoveScore(board, move);
-    else if (this.givesCheck(board, move)) score += 250_000;
     if (move.castle) score += 100;
     if (!this.isCapture(board, move) && !move.promotion) {
       const key = move.uci();
