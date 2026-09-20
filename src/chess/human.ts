@@ -279,7 +279,7 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
     const riskKinds = candidate.ideaKinds.filter(
       (kind) => kind === "complicate" || kind === "attack" || kind === "create-threat",
     ).length;
-    const practicalRisk = riskKinds * 3 * riskTolerance * (1 - profile.tacticalPressure * 0.5);
+    const practicalRisk = riskKinds * 3 * riskTolerance * initiative * (1 - profile.tacticalPressure * 0.5);
     const value = candidate.score - rankPenalty + practicalRisk + styleValue(board, candidate, profile, options);
     return { candidate, value };
   });
