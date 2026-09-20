@@ -3,7 +3,6 @@ import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import {
   Board,
-  deriveSeed,
   Game,
   HumanEngineOptions,
   HumanSwiftEngine,
@@ -276,7 +275,7 @@ function swiftMove(
   const history = game.moveHistory();
   const result = engine.search(board, {
     ...SWIFT_OPTIONS,
-    seed: deriveSeed(baseSeed, history.length),
+    seed: baseSeed,
     moveHistory: history,
     positionHistoryKeys: game.positionHistoryKeys(),
   });
