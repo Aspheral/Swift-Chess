@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 import {
   Board,
-  deriveSeed,
   Game,
   HumanEngineOptions,
   HumanSwiftEngine,
@@ -254,7 +253,7 @@ function swiftMove(
   const history = game.moveHistory();
   const result = engine.search(board, {
     ...SWIFT_OPTIONS,
-    seed: deriveSeed(baseSeed, history.length),
+    seed: baseSeed,
     moveHistory: history,
     positionHistoryKeys: game.positionHistoryKeys(),
   });
