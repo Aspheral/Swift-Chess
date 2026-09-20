@@ -50,10 +50,10 @@ function moveForReti(board: Board, history: string[], seed: number): Move | null
     if (last === "b1c3") return legalChoice(board, ["g8f6", "e7e6"], seed + 29);
     return legalChoice(board, ["g8f6", "f8e7", "e7e6", "c7c5"], seed + history.length);
   }
-  if (last === "d7d5") return legalChoice(board, ["c2c4", "g2g3", "d2d4"], seed + 3);
-  if (last === "e7e6" || last === "c7c6") return legalChoice(board, ["g2g3", "c2c4", "d2d4"], seed + 5);
-  if (last === "g8f6") return legalChoice(board, ["g2g3", "c2c4", "d2d4"], seed + 7);
-  return legalChoice(board, ["c2c4", "g2g3", "d2d4", "b1c3"], seed + history.length);
+  if (last === "d7d5") return legalChoice(board, ["c2c4", "g2g3", "d2d4", "f1g2"], seed + 3);
+  if (last === "e7e6" || last === "c7c6") return legalChoice(board, ["g2g3", "c2c4", "d2d4", "f1g2"], seed + 5);
+  if (last === "g8f6") return legalChoice(board, ["g2g3", "c2c4", "d2d4", "f1g2"], seed + 7);
+  return legalChoice(board, ["f1g2", "c2c4", "g2g3", "d2d4", "b1c3"], seed + history.length);
 }
 
 function moveForQueensGambit(board: Board, history: string[], seed: number): Move | null {
