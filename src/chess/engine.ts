@@ -34,7 +34,12 @@ export class SwiftEngine {
     let bestMove = legal[0], bestScore = -INF, completedDepth = 0, bestPv: Move[] = [bestMove];
     for (let depth = 1; depth <= maxDepth; depth++) {
       try {
-        const result = this.root(board, depth, completedDepth > 0 ? bestScore : undefined);
+        const result = this.root(
+          board,
+          depth,
+          completedDepth > 0 ? bestScore : undefined,
+          completedDepth > 0 ? bestMove : undefined,
+        );
         if (result.move) bestMove = result.move;
         bestScore = result.score;
         bestPv = result.pv;
@@ -49,26 +54,63 @@ export class SwiftEngine {
 
   evaluate(board: Board): number { return this.evaluateWhite(board) * (this.sideToMove(board) === "w" ? 1 : -1); }
 
-  private root(board: Board, depth: number, previousScore?: number): { move: Move | null; score: number; pv: Move[] } {
+  private root(
+    board: Board,
+    depth: number,
+    previousScore?: number,
+    previousMove?: Move,
+  ): { move: Move | null; score: number; pv: Move[] } {
     this.checkTime();
     let alpha = -INF, beta = INF;
-    if (previousScore !== undefined && depth >= 4) { const window = 40; alpha = previousScore - window; beta = previousScore + window; }
-    let result = this.rootWindow(board, depth, alpha, beta);
-    if (result.score <= alpha || result.score >= beta) result = this.rootWindow(board, depth, -INF, INF);
+    if (previousScore !== undefined && depth >= 4) {
+      const window = 40;
+      alpha = previousScore - window;
+      beta = previousScore + window;
+    }
+    let result = this.rootWindow(board, depth, alpha, beta, previousMove);
+    if (result.score <= alpha || result.score >= beta) {
+      result = this.rootWindow(board, depth, -INF, INF, previousMove);
+    }
     return result;
   }
 
-  private rootWindow(board: Board, depth: number, alpha: number, beta: number): { move: Move | null; score: number; pv: Move[] } {
-    const moves = this.orderMoves(board, board.legalMoves(), undefined, 0);
+  private rootWindow(
+    board: Board,
+    depth: number,
+    alpha: number,
+    beta: number,
+    hashMove?: Move,
+  ): { move: Move | null; score: number; pv: Move[] } {
+    const moves = this.orderMoves(board, board.legalMoves(), hashMove, 0);
     let bestScore = -INF, bestMove: Move | null = null, bestPv: Move[] = [];
-    for (const move of moves) {
+
+    for (let index = 0; index < moves.length; index++) {
       this.checkTime();
-      const childResult = this.negamax(board.makeMove(move), depth - 1, -beta, -alpha, 1);
-      const score = -childResult.score;
-      if (score > bestScore) { bestScore = score; bestMove = move; bestPv = [move, ...childResult.pv]; }
+      const move = moves[index];
+      const child = board.makeMove(move);
+      let childResult: { score: number; pv: Move[] };
+
+      if (index === 0) {
+        childResult = this.negamax(child, depth - 1, -beta, -alpha, 1);
+      } else {
+        childResult = this.negamax(child, depth - 1, -alpha - 1, -alpha, 1);
+      }
+      let score = -childResult.score;
+
+      if (index > 0 && score > alpha && score < beta) {
+        childResult = this.negamax(child, depth - 1, -beta, -alpha, 1);
+        score = -childResult.score;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = move;
+        bestPv = [move, ...childResult.pv];
+      }
       if (score > alpha) alpha = score;
       if (alpha >= beta) break;
     }
+
     return { move: bestMove, score: bestScore, pv: bestPv.slice(0, MAX_PV) };
   }
 
