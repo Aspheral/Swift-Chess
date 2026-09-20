@@ -15,6 +15,7 @@ const STOCKFISH_MOVETIME_MS = 100;
 const MAX_PLIES = 240;
 const MODE = process.env.SWIFT_CALIBRATION_MODE === "human" ? "human" : "strict";
 const REQUIRE_TARGET = process.env.SWIFT_CALIBRATION_REQUIRE_TARGET === "1";
+const BATCH = Math.max(0, Number.parseInt(process.env.SWIFT_CALIBRATION_BATCH ?? "0", 10) || 0);
 
 const OPENING_PAIRS = [
   { name: "Reti / ...d5", moves: ["g1f3", "d7d5", "c2c4", "e7e6"] },
@@ -308,7 +309,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
       const opening = OPENING_PAIRS[Math.floor(gameIndex / 2)];
       const swiftIsWhite = gameIndex % 2 === 0;
       const colorLabel = swiftIsWhite ? "White" : "Black";
-      const baseSeed = 20_000 + Math.floor(gameIndex / 2) * 7_919;
+      const baseSeed = 20_000 + BATCH * 1_000_003 + Math.floor(gameIndex / 2) * 7_919;
 
       await stockfish.newGame();
 
@@ -386,7 +387,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
       );
     }
 
-    console.log(`Swift calibration configuration: mode=${MODE} opponent=Stockfish-${STOCKFISH_ELO} ` +
+    console.log(`Swift calibration configuration: mode=${MODE} batch=${BATCH} opponent=Stockfish-${STOCKFISH_ELO} ` +
       `stockfishMoveMs=${STOCKFISH_MOVETIME_MS} maxPlies=${MAX_PLIES} ` +
       `swiftMaxDepth=${SWIFT_OPTIONS.depth} swiftMoveMs=${SWIFT_OPTIONS.timeMs}`);
     console.log(statsLine("Overall", overall));
@@ -405,11 +406,12 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
 
     mkdirSync("calibration-results", { recursive: true });
     writeFileSync(
-      `calibration-results/${MODE}.json`,
+      `calibration-results/${MODE}-batch-${BATCH}.json`,
       JSON.stringify({
         generatedAt: new Date().toISOString(),
         configuration: {
           mode: MODE,
+          batch: BATCH,
           opponent: `Stockfish-${STOCKFISH_ELO}`,
           stockfishMoveMs: STOCKFISH_MOVETIME_MS,
           maxPlies: MAX_PLIES,
