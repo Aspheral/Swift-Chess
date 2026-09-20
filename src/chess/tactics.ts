@@ -41,7 +41,11 @@ export function canDeltaPrune(board: Board, move: Move, standPat: number, alpha:
   if (move.promotion || move.enPassant) return false;
   const captured = board.pieceAt(move.to);
   if (!captured) return true;
-  const see = staticExchange(board, move);
-  const optimisticGain = Math.max(0, see);
-  return standPat + optimisticGain + 50 < alpha;
+
+  // Delta pruning only needs an optimistic upper bound. Using the full victim
+  // value is deliberately conservative and avoids running legality-aware SEE
+  // on every quiescence capture. The quiescence search itself still resolves
+  // recaptures, while SEE remains available for explicit tactical decisions.
+  const optimisticGain = PIECE_VALUES[captured[1] as PieceType];
+  return standPat + optimisticGain + 80 < alpha;
 }
