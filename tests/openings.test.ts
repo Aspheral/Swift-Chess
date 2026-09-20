@@ -10,6 +10,14 @@ function play(board: Board, moves: string[]): Board {
 }
 
 describe("Swift human opening repertoire", () => {
+  it("starts from Swift's intended repertoire instead of a random first move", () => {
+    const choices = [1, 7, 17].map((seed) => openingBookMove(Board.start(), seed, []));
+    for (const choice of choices) {
+      expect(choice).not.toBeNull();
+      expect(["g1f3", "d2d4", "e2e4"]).toContain(choice?.move.uci());
+    }
+  });
+
   it("recognizes the Reti path", () => {
     const history = ["g1f3"];
     const board = play(Board.start(), history);
