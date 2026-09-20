@@ -17,6 +17,8 @@ export interface HumanStyleOptions {
 
 export interface HumanSelectionOptions extends HumanStyleOptions {
   candidateLimit?: number;
+  /** Choose strictly by verified score instead of applying human style preferences. */
+  strictBestPlay?: boolean;
   randomness?: number;
   riskTolerance?: number;
   /** How much quality loss a human is willing to tolerate before position modifiers. */
@@ -261,7 +263,7 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
   if (!ranked.length) return { move: null, candidates: [], selectedScore: -Infinity };
 
   const profile = humanErrorProfile(board, baseBudget);
-  if (randomness === 0 && profile.effectiveBudget === 0) {
+  if (options.strictBestPlay) {
     const strongest = ranked.reduce((best, candidate) => candidate.score > best.score ? candidate : best);
     return { move: strongest.move, candidates: ranked, selectedScore: strongest.score, profile };
   }
