@@ -84,9 +84,16 @@ describe("Swift search", () => {
   it("PVS preserves mate selection", () => {
     const board = Board.fromFEN("6k1/5ppp/8/8/8/6Q1/5PPP/6K1 w - - 0 1");
     const result = new SwiftEnginePVS().search(board, { depth: 3 });
-    expect(result.move?.uci()).toBe("g3b8");
+    expect({
+      move: result.move?.uci(),
+      score: result.score,
+      pv: result.pv?.map((move) => move.uci()),
+    }).toMatchObject({
+      move: "g3b8",
+      score: expect.any(Number),
+      pv: ["g3b8"],
+    });
     expect(result.score).toBeGreaterThan(90000);
-    expect(result.pv?.[0].uci()).toBe("g3b8");
   });
 
   it("PVS returns a legal principal variation", () => {
