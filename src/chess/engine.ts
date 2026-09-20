@@ -110,7 +110,8 @@ export class SwiftEngine {
     for (const move of this.orderMoves(board, legal, cached?.move, ply)) {
       this.checkTime();
       const child = board.makeMove(move);
-      const forcing = this.isCapture(board, move) || !!move.promotion || this.givesCheck(board, move);
+      const opponent = this.sideToMove(child);
+      const forcing = this.isCapture(board, move) || !!move.promotion || child.isInCheck(opponent);
       const quiet = !forcing;
       const canReduce = effectiveDepth >= 3 && moveIndex >= 3 && quiet && !inCheck;
       let score: number;
@@ -161,8 +162,10 @@ export class SwiftEngine {
     const captures = this.orderMoves(board, tactical, undefined, 0);
     for (const move of captures) {
       this.checkTime();
-      if (!this.givesCheck(board, move) && canDeltaPrune(board, move, standPat, alpha)) continue;
-      const score = -this.quiescence(board.makeMove(move), -beta, -alpha);
+      const child = board.makeMove(move);
+      const checking = child.isInCheck(this.sideToMove(child));
+      if (!checking && canDeltaPrune(board, move, standPat, alpha)) continue;
+      const score = -this.quiescence(child, -beta, -alpha);
       if (score >= beta) return beta;
       if (score > alpha) alpha = score;
     }
@@ -181,7 +184,6 @@ export class SwiftEngine {
     const moving = board.pieceAt(move.from), captured = board.pieceAt(move.to);
     const tactical = !!captured || move.enPassant || !!move.promotion;
     if (tactical) score += tacticalMoveScore(board, move);
-    else if (this.givesCheck(board, move)) score += 250_000;
     if (move.castle) score += 100;
     if (!this.isCapture(board, move) && !move.promotion) {
       const key = move.uci();
@@ -233,52 +235,59 @@ export class SwiftEngine {
   }
 
   private evaluateWhite(board: Board): number {
-    const fenBoard = board.toFEN().split(/\s+/)[0];
+    const fields = board.toFEN().split(/\s+/);
+    const fenBoard = fields[0];
+    const castling = fields[2];
     let score = 0, square = 56;
     const whitePawns: number[] = [], blackPawns: number[] = [];
     let whiteBishops = 0, blackBishops = 0;
+    let whiteKing = -1, blackKing = -1;
+
     for (const char of fenBoard) {
       if (char === "/") { square -= 16; continue; }
       if (/\d/.test(char)) { square += Number(char); continue; }
       const type = char.toLowerCase() as PieceType;
-      const white = char === char.toUpperCase(); const sign = white ? 1 : -1;
+      const white = char === char.toUpperCase();
+      const sign = white ? 1 : -1;
       score += sign * pieceValues[type];
-      if (type !== "k") { const tableSquare = white ? square : 63 - square; score += sign * PST[type as Exclude<PieceType, "k">][tableSquare]; }
+      if (type !== "k") {
+        const tableSquare = white ? square : 63 - square;
+        score += sign * PST[type as Exclude<PieceType, "k">][tableSquare];
+      } else if (white) whiteKing = square;
+      else blackKing = square;
       if (type === "p") (white ? whitePawns : blackPawns).push(square);
       if (type === "b") white ? whiteBishops++ : blackBishops++;
       square++;
     }
-    score += this.pawnStructure(whitePawns); score -= this.pawnStructure(blackPawns);
-    if (whiteBishops >= 2) score += 28; if (blackBishops >= 2) score -= 28;
-    const fields = board.toFEN().split(/\s+/); const mobility = board.legalMoves().length;
-    score += (fields[1] === "w" ? mobility : -mobility) * 2;
-    score += this.kingSafety(board, "w"); score += this.kingSafety(board, "b");
+
+    score += this.pawnStructure(whitePawns, "w");
+    score -= this.pawnStructure(blackPawns, "b");
+    if (whiteBishops >= 2) score += 28;
+    if (blackBishops >= 2) score -= 28;
+    score += this.kingSafetyFromSquare(whiteKing, "w", castling);
+    score += this.kingSafetyFromSquare(blackKing, "b", castling);
     return score;
   }
 
-  private pawnStructure(pawns: number[]): number {
-    const files = new Array<number>(8).fill(0); for (const square of pawns) files[square & 7]++;
+  private pawnStructure(pawns: number[], color: Color): number {
+    const files = new Array<number>(8).fill(0);
+    for (const square of pawns) files[square & 7]++;
     let score = 0;
     for (const count of files) if (count > 1) score -= 14 * (count - 1);
     for (const square of pawns) {
-      const file = square & 7, rank = Math.floor(square / 8);
+      const file = square & 7;
+      const rank = Math.floor(square / 8);
       if ((file > 0 && files[file - 1] > 0) || (file < 7 && files[file + 1] > 0)) score += 5;
-      const advance = rank >= 4 ? rank - 3 : 0; if (advance > 0) score += advance * 4;
+      const advance = color === "w" ? Math.max(0, rank - 3) : Math.max(0, 4 - rank);
+      if (advance > 0) score += advance * 4;
     }
     return score;
   }
 
-  private kingSafety(board: Board, color: Color): number {
-    const fen = board.toFEN().split(/\s+/)[0]; const target = color === "w" ? "K" : "k";
-    let kingSquare = -1, square = 56;
-    for (const char of fen) {
-      if (char === "/") { square -= 16; continue; }
-      if (/\d/.test(char)) { square += Number(char); continue; }
-      if (char === target) kingSquare = square; square++;
-    }
+  private kingSafetyFromSquare(kingSquare: number, color: Color, castling: string): number {
     if (kingSquare < 0) return 0;
-    const file = kingSquare & 7, rank = Math.floor(kingSquare / 8);
-    const castling = board.toFEN().split(/\s+/)[2];
+    const file = kingSquare & 7;
+    const rank = Math.floor(kingSquare / 8);
     const hasRights = color === "w" ? /K|Q/.test(castling) : /k|q/.test(castling);
     let score = hasRights ? 8 : 0;
     score -= (file === 0 || file === 7 ? 3 : 0) + (rank === 0 || rank === 7 ? 3 : 0);
