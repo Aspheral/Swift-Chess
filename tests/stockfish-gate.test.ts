@@ -397,6 +397,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
           mode: MODE,
           batch: BATCH,
           opponent: `Stockfish-${STOCKFISH_ELO}`,
+          opponentElo: STOCKFISH_ELO,
           stockfishMoveMs: STOCKFISH_MOVETIME_MS,
           maxPlies: MAX_PLIES,
           swift: MODE === "human" ? { profile: HUMAN_PROFILE } : STRICT_OPTIONS,
