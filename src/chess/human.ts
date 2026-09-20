@@ -285,6 +285,10 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
   });
 
   const best = adjusted.reduce((a, b) => (a.value >= b.value ? a : b));
+  if (randomness === 0) {
+    return { move: best.candidate.move, candidates: ranked, selectedScore: best.candidate.score, profile };
+  }
+
   const weights = adjusted.map(({ value }) => Math.exp((value - best.value) / (10 * temperature)));
   const total = weights.reduce((sum, weight) => sum + weight, 0);
   let roll = rng() * total;
