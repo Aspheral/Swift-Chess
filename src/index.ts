@@ -12,3 +12,4 @@ export * from "./chess/scoring";
 export * from "./chess/human";
 export * from "./chess/human-engine";
 export * from "./chess/openings";
+export * from "./chess/random";
