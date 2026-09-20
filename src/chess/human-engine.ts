@@ -92,7 +92,8 @@ export class HumanSwiftEngine {
 
     const book = openingBookMove(board, options.seed ?? Date.now(), history);
     if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
-      const bookSafe = this.isSafeCandidate(board, book.move, baseline, tacticalMargin, ponderDepth, options.safetyTimeMs);
+      const bookMargin = history.length < 12 ? Math.max(tacticalMargin, 120) : tacticalMargin;
+      const bookSafe = this.isSafeCandidate(board, book.move, baseline, bookMargin, ponderDepth, options.safetyTimeMs);
       if (bookSafe) {
         return {
           ...result,
@@ -145,6 +146,7 @@ export class HumanSwiftEngine {
       pawnBreaks: options.pawnBreaks,
       history,
       candidates: movementSafe,
+      strictBestPlay: options.strictBestPlay,
     });
     const selectedMove = selected.move;
     const safeKeys = new Set(movementSafe.map((candidate) => candidate.move.uci()));
@@ -265,7 +267,7 @@ export class HumanSwiftEngine {
     const piece = board.pieceAt(move.from);
     if (!piece || piece[1] === "p") return false;
     const from = move.uci().slice(0, 2);
-    for (let index = history.length - 3; index >= Math.max(0, history.length - 12); index -= 2) {
+    for (let index = history.length - 2; index >= Math.max(0, history.length - 12); index -= 2) {
       const previous = history[index];
       if (!previous) continue;
       if (previous.slice(2, 4) === from) return true;
