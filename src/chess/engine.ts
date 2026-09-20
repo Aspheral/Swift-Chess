@@ -146,9 +146,12 @@ export class SwiftEngine {
     this.checkTime();
     this.nodes++;
     const side = this.sideToMove(board);
-    if (board.isInCheck(side)) {
+    const inCheck = board.isInCheck(side);
+    const legal = board.legalMoves();
+    if (legal.length === 0) return inCheck ? -MATE : 0;
+    if (inCheck) {
       let best = -INF;
-      for (const move of this.orderMoves(board, board.legalMoves(), undefined, 0)) {
+      for (const move of this.orderMoves(board, legal, undefined, 0)) {
         const score = -this.quiescence(board.makeMove(move), -beta, -alpha);
         best = Math.max(best, score); alpha = Math.max(alpha, score);
         if (alpha >= beta) break;
@@ -158,7 +161,7 @@ export class SwiftEngine {
     const standPat = this.evaluate(board);
     if (standPat >= beta) return beta;
     if (standPat > alpha) alpha = standPat;
-    const tactical = board.legalMoves().filter((move) => this.isCapture(board, move) || !!move.promotion);
+    const tactical = legal.filter((move) => this.isCapture(board, move) || !!move.promotion);
     const captures = this.orderMoves(board, tactical, undefined, 0);
     for (const move of captures) {
       this.checkTime();
