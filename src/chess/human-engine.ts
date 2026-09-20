@@ -5,6 +5,7 @@ import { CandidateScore, scoreCandidates } from "./scoring";
 import { HumanErrorProfile, humanErrorProfile, selectHumanMove, HumanSelectionOptions } from "./human";
 import { SwiftOpening, openingBookMove } from "./openings";
 import { findTacticalPriority, isOwnQueenUnderAttack } from "./fast-tactics";
+import { deriveSeed } from "./random";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   safetyMargin?: number;
@@ -169,7 +170,7 @@ export class HumanSwiftEngine {
       randomness: technicalEndgame ? 0 : options.randomness,
       riskTolerance: technicalEndgame ? 0.2 : options.riskTolerance,
       errorBudget: baseErrorBudget,
-      seed: options.seed,
+      seed: options.seed === undefined ? undefined : deriveSeed(options.seed, history.length),
       initiative: options.initiative,
       simplification: options.simplification,
       development: options.development,
