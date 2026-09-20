@@ -4,6 +4,7 @@ import { join } from "node:path";
 const ROOT = process.argv[2] ?? "calibration-downloads";
 const OUT = process.argv[3] ?? "calibration-results/summary.json";
 const STOCKFISH_ELO = 1650;
+const EXPECTED_BATCHES = Math.max(1, Number.parseInt(process.env.SWIFT_EXPECTED_BATCHES ?? "3", 10) || 3);
 
 function walk(dir) {
   const files = [];
@@ -44,7 +45,11 @@ const summary = {
   modes: {},
 };
 
-for (const [mode, modeReports] of grouped) {
+for (const mode of ["strict", "human"]) {
+  const modeReports = grouped.get(mode) ?? [];
+  if (modeReports.length !== EXPECTED_BATCHES) {
+    throw new Error(`Expected ${EXPECTED_BATCHES} ${mode} calibration batches, found ${modeReports.length}`);
+  }
   const games = modeReports.flatMap((report) => report.games ?? []);
   const completed = games.filter((game) => game.result !== "unresolved");
   const points = completed.map((game) => game.result === "win" ? 1 : game.result === "draw" ? 0.5 : 0);
