@@ -132,7 +132,7 @@ function backtrackPenalty(move: Move, history: string[]): number {
 }
 
 function openingNaturalness(board: Board, candidate: CandidateScore, history: string[]): number {
-  if (history.length > 10) return 0;
+  if (history.length > 20) return 0;
   const moving = board.pieceAt(candidate.move.from);
   if (!moving) return 0;
 
@@ -150,8 +150,8 @@ function openingNaturalness(board: Board, candidate: CandidateScore, history: st
 
   // Rooks moving before a useful castling decision are especially suspicious
   // in a normal opening. This directly addresses the rook shuffling pattern.
-  if (moving[1] === "r" && history.length < 10) value -= 8;
-  if (moving[1] === "q" && history.length < 8) value -= 3;
+  if (moving[1] === "r" && history.length < 20) value -= 10;
+  if (moving[1] === "q" && history.length < 12) value -= 3;
 
   value -= backtrackPenalty(candidate.move, history);
   return value;
