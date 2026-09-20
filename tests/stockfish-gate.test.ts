@@ -12,7 +12,7 @@ import {
 
 const STOCKFISH_ELO = Math.max(1320, Number.parseInt(process.env.SWIFT_STOCKFISH_ELO ?? "1650", 10) || 1650);
 const STOCKFISH_MOVETIME_MS = 100;
-const MAX_PLIES = 240;
+const MAX_PLIES = Math.max(120, Number.parseInt(process.env.SWIFT_MAX_PLIES ?? "240", 10) || 240);
 const MODE = process.env.SWIFT_CALIBRATION_MODE === "human" ? "human" : "strict";
 const REQUIRE_TARGET = process.env.SWIFT_CALIBRATION_REQUIRE_TARGET === "1";
 const BATCH = Math.max(0, Number.parseInt(process.env.SWIFT_CALIBRATION_BATCH ?? "0", 10) || 0);
