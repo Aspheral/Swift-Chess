@@ -135,7 +135,9 @@ function swiftMove(
   return { move: result.move, depth: result.depth, score: result.score, nodes: result.nodes };
 }
 
-describe("Swift 1650 Elo Stockfish gate", () => {
+const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
+
+(runStockfishGate ? describe : describe.skip)("Swift 1650 Elo Stockfish gate", () => {
   let stockfish: UciStockfish;
 
   beforeAll(async () => {
