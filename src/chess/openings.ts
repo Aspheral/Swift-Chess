@@ -24,7 +24,7 @@ function sideToMove(board: Board): "w" | "b" {
 
 function openingFamily(history: string[], seed: number): SwiftOpening | null {
   const first = history[0];
-  if (first === "g1f3") return "Reti";
+  if (first === "g1f3" || first === "c2c4") return "Reti";
   if (first === "d2d4") {
     return seededRandom(seed) < 0.62 ? "Queen's Gambit Declined" : "Queen's Gambit";
   }
@@ -129,7 +129,21 @@ export function openingBookMove(
   seed = Date.now(),
   history: string[] = [],
 ): { move: Move; opening: SwiftOpening } | null {
-  if (history.length >= 12 || !history.length) return null;
+  if (history.length >= 12) return null;
+
+  if (!history.length && sideToMove(board) === "w") {
+    const roll = seededRandom(seed);
+    if (roll < 0.4) {
+      const move = legalChoice(board, ["g1f3"], seed);
+      return move ? { move, opening: "Reti" } : null;
+    }
+    if (roll < 0.75) {
+      const move = legalChoice(board, ["d2d4"], seed);
+      return move ? { move, opening: roll < 0.62 ? "Queen's Gambit Declined" : "Queen's Gambit" } : null;
+    }
+    const move = legalChoice(board, ["e2e4"], seed);
+    return move ? { move, opening: roll < 0.88 ? "Four Knights" : "Bishop's Opening" } : null;
+  }
 
   const opening = openingFamily(history, seed);
   if (!opening) return null;
