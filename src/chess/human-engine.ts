@@ -63,6 +63,25 @@ export class HumanSwiftEngine {
     }
 
     const history = options.moveHistory ?? options.history ?? [];
+
+    if (options.strictBestPlay) {
+      const strictBook = openingBookMove(board, options.seed ?? Date.now(), history);
+      if (
+        strictBook &&
+        history.length <= 5 &&
+        !this.wouldRepeatPosition(board, strictBook.move, options.positionHistoryKeys ?? [])
+      ) {
+        return {
+          ...result,
+          move: strictBook.move,
+          pv: result.pv?.length ? [strictBook.move, ...result.pv.slice(1)] : [strictBook.move],
+          humanCandidates: [],
+          opening: strictBook.opening,
+        };
+      }
+      return { ...result, humanCandidates: [] };
+    }
+
     const safetyMargin = Math.max(0, options.safetyMargin ?? (technicalEndgame ? 25 : 60));
     const safetyDepth = Math.max(1, Math.min(4, Math.floor(options.safetyDepth ?? (technicalEndgame ? 4 : 3))));
     const generated = scoreCandidates(board, options.concreteCandidateLimit);
@@ -109,14 +128,6 @@ export class HumanSwiftEngine {
           opening: book.opening,
         };
       }
-    }
-
-    if (options.strictBestPlay) {
-      return {
-        ...result,
-        humanCandidates: [engineCandidate],
-        humanProfile: profile,
-      };
     }
 
     const safetyLimit = Math.max(1, Math.floor(options.safetyCandidateLimit ?? candidateScores.length));
