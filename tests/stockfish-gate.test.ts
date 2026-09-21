@@ -7,6 +7,8 @@ import {
   HumanEngineOptions,
   HumanSwiftEngine,
   Move,
+  HumanityObservation,
+  summarizeHumanity,
   SWIFT_PLAY_PROFILE,
   swiftPlayProfile,
 } from "../src";
@@ -67,6 +69,7 @@ interface CalibrationGame {
   averageNodes: number;
   moves: string[];
   finalFen: string;
+  humanity: ReturnType<typeof summarizeHumanity>;
 }
 
 interface MatchStats {
@@ -254,7 +257,7 @@ function swiftMove(
   engine: HumanSwiftEngine,
   game: Game,
   baseSeed: number,
-): { move: Move; depth: number; score: number; nodes: number } {
+): { move: Move; depth: number; score: number; nodes: number; humanity: HumanityObservation } {
   const history = game.moveHistory();
   const searchOptions = MODE === "human"
     ? swiftPlayProfile(board, history).options
@@ -267,7 +270,13 @@ function swiftMove(
   });
 
   if (!result.move) throw new Error(`Swift returned no move in ${board.toFEN()}`);
-  return { move: result.move, depth: result.depth, score: result.score, nodes: result.nodes };
+  return {
+    move: result.move,
+    depth: result.depth,
+    score: result.score,
+    nodes: result.nodes,
+    humanity: { decision: result.decision, mind: result.mind },
+  };
 }
 
 const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
@@ -288,6 +297,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
     const byOutcome = new Map<Outcome, MatchStats>();
     const byOpening = new Map<string, MatchStats>();
     const gameRecords: CalibrationGame[] = [];
+    const allHumanity: HumanityObservation[] = [];
 
     for (let gameIndex = 0; gameIndex < GAMES; gameIndex += 1) {
       const opening = OPENING_PAIRS[Math.floor(gameIndex / 2)];
@@ -303,6 +313,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
 
       const swiftDepths: number[] = [];
       const swiftNodes: number[] = [];
+      const swiftHumanity: HumanityObservation[] = [];
 
       while (game.result() === "ongoing" && game.moveHistory().length < MAX_PLIES) {
         const board = game.board();
@@ -313,6 +324,8 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
           uci = swift.move.uci();
           swiftDepths.push(swift.depth);
           swiftNodes.push(swift.nodes);
+          swiftHumanity.push(swift.humanity);
+          allHumanity.push(swift.humanity);
         } else {
           uci = await stockfish.bestMove(game.fen());
         }
@@ -361,6 +374,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
         averageNodes,
         moves,
         finalFen: game.fen(),
+        humanity: summarizeHumanity(swiftHumanity),
       });
 
       console.log(
@@ -377,6 +391,13 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
     console.log(statsLine("Overall", overall));
     console.log(statsLine("White", byColor.White));
     console.log(statsLine("Black", byColor.Black));
+    const humanity = summarizeHumanity(allHumanity);
+    console.log(
+      `Humanity: decisions=${humanity.decisions} engineAgreement=${(humanity.engineAgreementRate * 100).toFixed(1)}% ` +
+      `humanPlan=${(humanity.humanPlanRate * 100).toFixed(1)}% fallback=${(humanity.engineFallbackRate * 100).toFixed(1)}% ` +
+      `planContinuation=${(humanity.planContinuationRate * 100).toFixed(1)}% avgPlanAge=${humanity.averagePlanAge.toFixed(2)} ` +
+      `plans=${humanity.distinctPlans.join(",")}`,
+    );
 
     for (const outcome of ["win", "loss", "draw", "unresolved"] as Outcome[]) {
       const stats = byOutcome.get(outcome);
@@ -407,6 +428,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
         byOutcome: Object.fromEntries(byOutcome),
         byOpening: Object.fromEntries(byOpening),
         performanceElo: performanceElo(scoreRate(overall)),
+        humanity,
         games: gameRecords,
       }, null, 2),
       "utf8",
