@@ -1,5 +1,5 @@
 import { Board, Color, Move } from "./board";
-import { ChessIdea, generateIdeas } from "./ideas";
+import { ChessIdea, generateIdeas, IdeaGeneration } from "./ideas";
 
 export interface CandidateScore {
   move: Move;
@@ -82,8 +82,12 @@ interface MoveEvidence {
   priority: number;
 }
 
-export function scoreCandidates(board: Board, concreteLimit?: number): CandidateGeneration {
-  const generated = generateIdeas(board);
+export function scoreCandidates(
+  board: Board,
+  concreteLimit?: number,
+  generation?: IdeaGeneration,
+): CandidateGeneration {
+  const generated = generation ?? generateIdeas(board);
   const side = generated.understanding.sideToMove;
   const legal = board.legalMoves();
   const beforeOpponentMobility = boardWithTurn(board, side === "w" ? "b" : "w").legalMoves().length;

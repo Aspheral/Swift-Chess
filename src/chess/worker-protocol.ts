@@ -1,5 +1,7 @@
 import { SwiftOpening } from "./openings";
 import { SwiftThinkKind } from "./play-profile";
+import type { SwiftMindSnapshot } from "./mind";
+import type { SwiftDecisionTrace } from "./human-engine";
 
 export interface SwiftWorkerSearchRequest {
   type: "search";
@@ -27,6 +29,8 @@ export interface SwiftWorkerSearchResponse {
   nodes: number;
   thinkKind: SwiftThinkKind;
   minimumThinkMs: number;
+  mind?: SwiftMindSnapshot;
+  decision?: SwiftDecisionTrace;
 }
 
 export interface SwiftWorkerErrorResponse {

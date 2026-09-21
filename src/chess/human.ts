@@ -2,6 +2,7 @@ import { Board, Move } from "./board";
 import { CandidateScore, scoreCandidates } from "./scoring";
 import { understandPosition } from "./understanding";
 import { createSeededRandom } from "./random";
+import type { SwiftMindSnapshot } from "./mind";
 
 export interface HumanStyleOptions {
   /** Preference for active, forcing play over quiet choices. */
@@ -14,6 +15,8 @@ export interface HumanStyleOptions {
   pawnBreaks?: number;
   /** Recent game moves used to recognize mechanical backtracking. */
   history?: string[];
+  /** Persistent plan and opponent context carried across the game. */
+  mind?: SwiftMindSnapshot;
 }
 
 export interface HumanSelectionOptions extends HumanStyleOptions {
@@ -191,6 +194,13 @@ function styleValue(
 
   let value = gameFlowValue(board, candidate, profile);
   value += openingNaturalness(board, candidate, options.history ?? []);
+  if (options.mind?.plan && candidate.ideaKinds.includes(options.mind.plan)) {
+    const continuity = 5 + options.mind.confidence * 8 + Math.min(4, options.mind.planAge) * 0.75;
+    value += continuity * (1 - profile.tacticalPressure * 0.7);
+  }
+  if (options.mind?.opponent.aggression && has("defend")) {
+    value += Math.min(2.5, options.mind.opponent.aggression * 3);
+  }
   if (has("attack") || has("create-threat") || has("complicate")) {
     value += initiative * (4 + profile.complexity * 2) * (1 - profile.tacticalPressure * 0.35);
   }

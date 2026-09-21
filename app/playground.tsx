@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Game, Move, Piece, SwiftOpening } from "../src";
+import type { SwiftMindSnapshot } from "../src";
 import type { SwiftWorkerResponse } from "../src/chess/worker-protocol";
 
 const files = "abcdefgh";
@@ -21,6 +22,10 @@ function squareName(index: number) {
 function squareIndex(square: string): number | null {
   if (!/^[a-h][1-8]$/.test(square)) return null;
   return (Number(square[1]) - 1) * 8 + square.charCodeAt(0) - 97;
+}
+
+function planLabel(plan: string): string {
+  return plan.split("-").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
 }
 
 function arrowFromUci(uci: string): Arrow | null {
@@ -96,6 +101,7 @@ export default function Playground() {
   const [playerSide, setPlayerSide] = useState<Side>("w");
   const [flipped, setFlipped] = useState(false);
   const [thoughtArrows, setThoughtArrows] = useState<Arrow[]>([]);
+  const [mind, setMind] = useState<SwiftMindSnapshot | null>(null);
   const gameVersion = useRef(0);
 
   const legalMoves = board.legalMoves();
@@ -145,6 +151,7 @@ export default function Playground() {
             .filter((arrow): arrow is Arrow => arrow !== null),
         );
         if (response.opening) setOpening(response.opening);
+        setMind(response.mind ?? null);
 
         if (move && game.turn() !== playerSideRef.current) {
           game.play(move);
@@ -197,7 +204,7 @@ export default function Playground() {
     gameRef.current = Game.start();
     openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
     playerSideRef.current = side;
-    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setPromotion(null); setOpening(null); setThoughtArrows([]); setPlayerSide(side); setFlipped(side === "b");
+    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlayerSide(side); setFlipped(side === "b");
   }
 
   function undoPlayerMove() {
@@ -225,6 +232,7 @@ export default function Playground() {
     setThinking(false);
     setOpening(null);
     setThoughtArrows([]);
+    setMind(null);
   }
 
   function applyHumanMove(move: Move) {
@@ -311,7 +319,11 @@ export default function Playground() {
         </div>
         <aside className="game-info">
           <div className="game-status"><span className={thinking ? "pulse" : "dot"} />{status}</div>
-          <div className="thought-card"><span>Swift's board</span><strong>{thoughtArrows.length ? `${thoughtArrows.length} moves in view` : "Thinking from here"}</strong><p>Arrows stay on the board to show the line Swift is considering.</p></div>
+          <div className="thought-card">
+            <span>Swift's current plan</span>
+            <strong>{mind?.plan ? planLabel(mind.plan) : (thoughtArrows.length ? `${thoughtArrows.length} moves in view` : "Reading the position")}</strong>
+            <p>{mind ? `${mind.concern} Confidence ${Math.round(mind.confidence * 100)}% · held for ${mind.planAge} Swift turn${mind.planAge === 1 ? "" : "s"}.` : "Swift carries plans forward when the position still supports them."}</p>
+          </div>
           {opening && <div className="opening-card"><span>Opening</span><strong>{opening}</strong></div>}
           <div className="history-head"><span>Moves</span><span>{history.length}</span></div>
           <div className="history">{history.length === 0 ? <span className="muted">The first move is yours.</span> : history.map((move, index) => <div className="move" key={`${move}-${index}`}><span>{Math.floor(index / 2) + 1}{index % 2 === 0 ? "." : "…"}</span><code>{move}</code></div>)}</div>
