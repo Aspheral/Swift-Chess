@@ -55,7 +55,7 @@ export function summarizeHumanity(observations: HumanityObservation[]): Humanity
     if (previous === current) planContinuations += 1;
   }
 
-  const distinctPlans = [...new Set(minds.map((mind) => mind.plan).filter((plan): plan is string => !!plan))].sort();
+  const distinctPlans = [...new Set(minds.flatMap((mind) => mind.plan ? [mind.plan] : []))].sort();
 
   return {
     decisions,
