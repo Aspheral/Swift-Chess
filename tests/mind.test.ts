@@ -31,6 +31,7 @@ function snapshot(plan: SwiftMindSnapshot["plan"], confidence = 0.8, planAge = 3
     plan,
     planAge,
     confidence,
+    setbacks: 0,
     concern: "No urgent defect dominates the position.",
     opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 0 },
     observedHistoryLength: 0,
@@ -119,6 +120,22 @@ describe("Swift persistent mind", () => {
     expect(state.opponent.observedMoves).toBe(3);
     expect(state.opponent.pawnActivity).toBeGreaterThan(0.5);
     expect(state.opponent.aggression).toBe(0);
+  });
+
+
+  it("loses confidence when a plan repeatedly fails verification", () => {
+    const board = Board.start();
+    const mind = new SwiftMind();
+    const initial = mind.observe(board, ideas(board, [["develop", 60], ["attack", 50]]), quietProfile, []);
+
+    const first = mind.recordSetback("No safe developing move survived.");
+    const second = mind.recordSetback("The plan failed again.");
+    const third = mind.recordSetback("The plan is no longer convincing.");
+
+    expect(first.confidence).toBeLessThan(initial.confidence);
+    expect(second.confidence).toBeLessThan(first.confidence);
+    expect(third.plan).toBeNull();
+    expect(third.setbacks).toBe(3);
   });
 
   it("remembers the reason for the move it chose", () => {

@@ -250,6 +250,7 @@ export class HumanSwiftEngine {
       .filter((candidate): candidate is CandidateScore => candidate !== null);
 
     if (!safe.length) {
+      this.mind.recordSetback("The current plan produced no candidate that survived concrete verification.");
       return decision(
         result.move,
         "engine-fallback",
@@ -284,6 +285,7 @@ export class HumanSwiftEngine {
     const selectedMove = selected.move;
     const safeKeys = new Set(movementSafe.map((candidate) => candidate.move.uci()));
     if (!selectedMove || !safeKeys.has(selectedMove.uci())) {
+      this.mind.recordSetback("The human decision layer could not produce a verified continuation.");
       return decision(
         result.move,
         "engine-fallback",
@@ -293,6 +295,15 @@ export class HumanSwiftEngine {
     }
 
     const selectedCandidate = movementSafe.find((candidate) => candidate.move.uci() === selectedMove.uci());
+    if (
+      observedMind.plan &&
+      selectedCandidate &&
+      !selectedCandidate.ideaKinds.includes(observedMind.plan)
+    ) {
+      this.mind.recordSetback(
+        "The current plan had no convincing continuation, so Swift changed course for this move.",
+      );
+    }
     const reasons = selectedCandidate?.reasons.length
       ? selectedCandidate.reasons
       : [`This move supports Swift's continuing plan to ${this.mind.planDescription()}.`];

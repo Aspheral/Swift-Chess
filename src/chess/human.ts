@@ -201,6 +201,19 @@ function styleValue(
   if (options.mind?.opponent.aggression && has("defend")) {
     value += Math.min(2.5, options.mind.opponent.aggression * 3);
   }
+  if (options.mind) {
+    const sideMaterial = board.turn() === "w" ? board.material() : -board.material();
+    if (options.mind.opponent.exchangeSeeking >= 0.45) {
+      if (sideMaterial >= 120 && has("simplify")) {
+        value += options.mind.opponent.exchangeSeeking * 3;
+      } else if (sideMaterial <= -120 && has("complicate")) {
+        value += options.mind.opponent.exchangeSeeking * 3.5;
+      }
+    }
+    if (options.mind.opponent.pawnActivity >= 0.6 && has("pawn-break")) {
+      value += options.mind.opponent.pawnActivity * 1.75;
+    }
+  }
   if (has("attack") || has("create-threat") || has("complicate")) {
     value += initiative * (4 + profile.complexity * 2) * (1 - profile.tacticalPressure * 0.35);
   }
