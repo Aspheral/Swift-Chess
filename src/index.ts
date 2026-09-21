@@ -15,3 +15,4 @@ export * from "./chess/openings";
 export * from "./chess/random";
 export * from "./chess/play-profile";
 export * from "./chess/mind";
+export * from "./chess/humanity";
