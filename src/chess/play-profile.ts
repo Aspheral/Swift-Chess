@@ -2,7 +2,7 @@ import { Board } from "./board";
 import { HumanEngineOptions } from "./human-engine";
 import { humanErrorProfile } from "./human";
 
-export const SWIFT_PLAY_PROFILE = "adaptive-human-v2";
+export const SWIFT_PLAY_PROFILE = "adaptive-human-v3";
 
 export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 
