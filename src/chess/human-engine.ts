@@ -2,10 +2,12 @@ import { Board, Move } from "./board";
 import { Game } from "./game";
 import { SearchOptions, SearchResult, SwiftEngine } from "./engine";
 import { CandidateScore, scoreCandidates } from "./scoring";
+import { generateIdeas } from "./ideas";
 import { HumanErrorProfile, humanErrorProfile, selectHumanMove, HumanSelectionOptions } from "./human";
 import { SwiftOpening, openingBookMove } from "./openings";
 import { findTacticalPriority, isOwnQueenUnderAttack } from "./fast-tactics";
 import { deriveSeed } from "./random";
+import { SwiftMind, SwiftMindSnapshot } from "./mind";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   safetyMargin?: number;
@@ -26,27 +28,98 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
   positionHistoryKeys?: string[];
 }
 
+export type SwiftDecisionSource = "tactical" | "opening-book" | "human-plan" | "engine-fallback" | "strict";
+
+export interface SwiftDecisionTrace {
+  source: SwiftDecisionSource;
+  engineMove: string | null;
+  selectedMove: string | null;
+  engineAgreement: boolean;
+  reasons: string[];
+}
+
 export interface HumanSearchResult extends SearchResult {
   humanCandidates: CandidateScore[];
   humanProfile?: HumanErrorProfile;
   opening?: SwiftOpening;
+  mind?: SwiftMindSnapshot;
+  decision?: SwiftDecisionTrace;
 }
 
 export class HumanSwiftEngine {
   private readonly engine: SwiftEngine;
   private readonly safetyEngine: SwiftEngine;
+  private readonly mind: SwiftMind;
 
   constructor(engine = new SwiftEngine()) {
     this.engine = engine;
     this.safetyEngine = new SwiftEngine();
+    this.mind = new SwiftMind();
   }
 
   search(board: Board, options: HumanEngineOptions = {}): HumanSearchResult {
+    const history = options.moveHistory ?? options.history ?? [];
     const technicalEndgame = this.isTechnicalEndgame(board);
     const queenUnderAttack = isOwnQueenUnderAttack(board);
+    const baseErrorBudget = technicalEndgame
+      ? Math.min(options.errorBudget ?? 0.35, 0.08)
+      : (options.errorBudget ?? 0.35);
+    const profile = humanErrorProfile(board, baseErrorBudget);
+
+    // Swift forms a position-level view and a continuing plan before concrete
+    // search gets to veto unsafe ideas. This is the core human-first ordering.
+    const ideaGeneration = generateIdeas(board);
+    const observedMind = this.mind.observe(board, ideaGeneration, profile, history);
+    const generated = scoreCandidates(board, options.concreteCandidateLimit, ideaGeneration);
+
     const searchDepth = this.positionSearchDepth(board, options.depth ?? 4, queenUnderAttack);
     const result = this.engine.search(board, { ...options, depth: searchDepth });
-    if (!result.move) return { ...result, humanCandidates: [] };
+    if (!result.move) {
+      return {
+        ...result,
+        humanCandidates: [],
+        humanProfile: profile,
+        mind: observedMind,
+        decision: {
+          source: "engine-fallback",
+          engineMove: null,
+          selectedMove: null,
+          engineAgreement: true,
+          reasons: ["No legal move was available."],
+        },
+      };
+    }
+
+    const engineMoveUci = result.move.uci();
+    const decision = (
+      move: Move,
+      source: SwiftDecisionSource,
+      reasons: string[],
+      humanCandidates: CandidateScore[],
+      extra: Partial<HumanSearchResult> = {},
+    ): HumanSearchResult => {
+      const mind = this.mind.recordDecision(
+        move.uci(),
+        reasons[0] ?? `Continue the plan to ${this.mind.planDescription()}.`,
+      );
+      const pv = result.pv ?? [];
+      return {
+        ...result,
+        ...extra,
+        move,
+        pv: pv.length ? [move, ...pv.slice(1)] : [move],
+        humanCandidates,
+        humanProfile: profile,
+        mind,
+        decision: {
+          source,
+          engineMove: engineMoveUci,
+          selectedMove: move.uci(),
+          engineAgreement: move.uci() === engineMoveUci,
+          reasons,
+        },
+      };
+    };
 
     const tacticalPriority = findTacticalPriority(
       board,
@@ -55,15 +128,13 @@ export class HumanSwiftEngine {
       options.tacticalSearchDepth ?? 5,
     );
     if (tacticalPriority) {
-      return {
-        ...result,
-        move: tacticalPriority.move,
-        pv: result.pv?.length ? [tacticalPriority.move, ...result.pv.slice(1)] : [tacticalPriority.move],
-        humanCandidates: [],
-      };
+      return decision(
+        tacticalPriority.move,
+        "tactical",
+        ["A forcing tactical priority overrides the longer-term plan."],
+        [],
+      );
     }
-
-    const history = options.moveHistory ?? options.history ?? [];
 
     if (options.strictBestPlay) {
       const strictBook = openingBookMove(board, options.seed ?? Date.now(), history);
@@ -72,36 +143,57 @@ export class HumanSwiftEngine {
         history.length <= 5 &&
         !this.wouldRepeatPosition(board, strictBook.move, options.positionHistoryKeys ?? [])
       ) {
-        return {
-          ...result,
-          move: strictBook.move,
-          pv: result.pv?.length ? [strictBook.move, ...result.pv.slice(1)] : [strictBook.move],
-          humanCandidates: [],
-          opening: strictBook.opening,
-        };
+        return decision(
+          strictBook.move,
+          "strict",
+          ["The strict opening repertoire selected this move."],
+          [],
+          { opening: strictBook.opening },
+        );
       }
-      return { ...result, humanCandidates: [] };
+      return decision(
+        result.move,
+        "strict",
+        ["Strict mode follows the concrete principal move."],
+        [],
+      );
     }
 
     const safetyMargin = Math.max(0, options.safetyMargin ?? (technicalEndgame ? 25 : 60));
     const safetyDepth = Math.max(1, Math.min(4, Math.floor(options.safetyDepth ?? (technicalEndgame ? 4 : 3))));
-    const generated = scoreCandidates(board, options.concreteCandidateLimit);
-    const engineCandidate: CandidateScore = {
-      move: result.move,
-      // The engine's concrete search score is the strongest evidence available
-      // for its principal move. Keep it in the human menu so the human layer
-      // chooses among real engine ideas instead of accidentally excluding the
-      // searched move during strategic candidate generation.
-      score: result.score,
-      ideaKinds: ["tactical"],
-      reasons: ["Swift's concrete search selected this move as its principal variation."],
-    };
-    const candidateScores = [
-      engineCandidate,
-      ...generated.scores.filter((candidate) => candidate.move.uci() !== result.move?.uci()),
-    ];
-    const baseErrorBudget = technicalEndgame ? Math.min(options.errorBudget ?? 0.35, 0.08) : (options.errorBudget ?? 0.35);
-    const profile = humanErrorProfile(board, baseErrorBudget);
+
+    const generatedEngineCandidate = generated.scores.find(
+      (candidate) => candidate.move.uci() === engineMoveUci,
+    );
+    const engineCandidate: CandidateScore = generatedEngineCandidate
+      ? {
+          ...generatedEngineCandidate,
+          score: result.score,
+          reasons: [
+            ...generatedEngineCandidate.reasons,
+            "Concrete search also selected this move as its principal variation.",
+          ],
+        }
+      : {
+          move: result.move,
+          score: result.score,
+          ideaKinds: ["tactical"],
+          reasons: ["Concrete search selected this move as its principal variation."],
+        };
+
+    // Human plans choose which ideas deserve calculation time. The raw engine
+    // move is guaranteed a seat at the table, but no longer automatically sits
+    // at the head of it.
+    const planned = [...generated.scores]
+      .sort((a, b) =>
+        (b.score + this.mind.planBias(b.ideaKinds)) -
+        (a.score + this.mind.planBias(a.ideaKinds)),
+      )
+      .map((candidate) => candidate.move.uci() === engineMoveUci ? engineCandidate : candidate);
+    if (!planned.some((candidate) => candidate.move.uci() === engineMoveUci)) {
+      planned.push(engineCandidate);
+    }
+    const candidateScores = planned;
 
     const ponderDepth = Math.max(
       safetyDepth,
@@ -126,21 +218,25 @@ export class HumanSwiftEngine {
           ideaKinds: ["develop"] as CandidateScore["ideaKinds"],
           reasons: ["Swift's opening repertoire selected this move."],
         };
-        return {
-          ...result,
-          move: book.move,
-          pv: result.pv?.length ? [book.move, ...result.pv.slice(1)] : [book.move],
-          humanCandidates: [bookCandidate],
-          humanProfile: profile,
-          opening: book.opening,
-        };
+        return decision(
+          book.move,
+          "opening-book",
+          bookCandidate.reasons,
+          [bookCandidate],
+          { opening: book.opening },
+        );
       }
     }
 
     const safetyLimit = Math.max(1, Math.floor(options.safetyCandidateLimit ?? candidateScores.length));
     const safetyCandidates = candidateScores.slice(0, safetyLimit);
+    if (!safetyCandidates.some((candidate) => candidate.move.uci() === engineMoveUci)) {
+      if (safetyCandidates.length >= safetyLimit) safetyCandidates[safetyCandidates.length - 1] = engineCandidate;
+      else safetyCandidates.push(engineCandidate);
+    }
+
     const safe = safetyCandidates
-      .map((candidate, index) =>
+      .map((candidate) =>
         this.assessCandidate(
           board,
           candidate,
@@ -148,13 +244,18 @@ export class HumanSwiftEngine {
           tacticalMargin,
           ponderDepth,
           options.safetyTimeMs,
-          index === 0,
+          candidate.move.uci() === engineMoveUci,
         ),
       )
       .filter((candidate): candidate is CandidateScore => candidate !== null);
 
     if (!safe.length) {
-      return { ...result, humanCandidates: candidateScores.slice(0, options.candidateLimit ?? 6), humanProfile: profile };
+      return decision(
+        result.move,
+        "engine-fallback",
+        ["No human-plan candidate survived the concrete safety check."],
+        candidateScores.slice(0, options.candidateLimit ?? 6),
+      );
     }
 
     const historyKeys = options.positionHistoryKeys ?? [];
@@ -176,23 +277,32 @@ export class HumanSwiftEngine {
       development: options.development,
       pawnBreaks: options.pawnBreaks,
       history,
+      mind: observedMind,
       candidates: movementSafe,
       strictBestPlay: options.strictBestPlay,
     });
     const selectedMove = selected.move;
     const safeKeys = new Set(movementSafe.map((candidate) => candidate.move.uci()));
     if (!selectedMove || !safeKeys.has(selectedMove.uci())) {
-      return { ...result, humanCandidates: movementSafe, humanProfile: selected.profile ?? profile };
+      return decision(
+        result.move,
+        "engine-fallback",
+        ["Human selection did not return a verified candidate."],
+        movementSafe,
+      );
     }
 
-    const pv = result.pv ?? [];
-    return {
-      ...result,
-      move: selectedMove,
-      pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove, ...pv.slice(1)],
-      humanCandidates: movementSafe,
-      humanProfile: selected.profile ?? profile,
-    };
+    const selectedCandidate = movementSafe.find((candidate) => candidate.move.uci() === selectedMove.uci());
+    const reasons = selectedCandidate?.reasons.length
+      ? selectedCandidate.reasons
+      : [`This move supports Swift's continuing plan to ${this.mind.planDescription()}.`];
+
+    return decision(
+      selectedMove,
+      "human-plan",
+      reasons,
+      movementSafe,
+    );
   }
 
   evaluate(board: Board): number {
