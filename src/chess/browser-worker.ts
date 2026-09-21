@@ -40,6 +40,8 @@ context.onmessage = (event) => {
       nodes: result.nodes,
       thinkKind: profile.kind,
       minimumThinkMs: profile.minimumThinkMs,
+      mind: result.mind,
+      decision: result.decision,
     });
   } catch (error) {
     context.postMessage({
