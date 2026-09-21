@@ -322,7 +322,8 @@ export default function Playground() {
           <div className="thought-card">
             <span>Swift's current plan</span>
             <strong>{mind?.plan ? planLabel(mind.plan) : (thoughtArrows.length ? `${thoughtArrows.length} moves in view` : "Reading the position")}</strong>
-            <p>{mind ? `${mind.concern} Confidence ${Math.round(mind.confidence * 100)}% · held for ${mind.planAge} Swift turn${mind.planAge === 1 ? "" : "s"}.` : "Swift carries plans forward when the position still supports them."}</p>
+            <p>{mind?.planReason ?? "Swift carries plans forward when the position still supports them."}</p>
+            {mind && <p className="mind-detail">Watching: {mind.concern} Confidence {Math.round(mind.confidence * 100)}% · held for {mind.planAge} Swift turn{mind.planAge === 1 ? "" : "s"}{mind.setbacks ? ` · ${mind.setbacks} setback${mind.setbacks === 1 ? "" : "s"}` : ""}.</p>}
           </div>
           {opening && <div className="opening-card"><span>Opening</span><strong>{opening}</strong></div>}
           <div className="history-head"><span>Moves</span><span>{history.length}</span></div>
