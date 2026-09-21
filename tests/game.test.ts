@@ -42,6 +42,47 @@ describe("Swift game state and draw rules", () => {
     expect(Game.positionKey(withEp)).not.toBe(Game.positionKey(withoutEp));
   });
 
+
+  it("undo restores board, history, and repetition tracking", () => {
+    const game = Game.start();
+    const startFen = game.fen();
+
+    game.playUci("g1f3");
+    game.playUci("g8f6");
+    game.playUci("f3g1");
+    const beforeUndoKeys = game.positionHistoryKeys();
+
+    expect(game.canUndo()).toBe(true);
+    expect(game.undo()).not.toBeNull();
+    expect(game.moveHistory()).toEqual(["g1f3", "g8f6"]);
+    expect(game.positionHistoryKeys()).toEqual(beforeUndoKeys.slice(0, -1));
+    expect(game.fen()).toBe(Board.start().makeMove(Board.start().legalMoves().find((move) => move.uci() === "g1f3")!).makeMove(
+      Board.start().makeMove(Board.start().legalMoves().find((move) => move.uci() === "g1f3")!).legalMoves().find((move) => move.uci() === "g8f6")!,
+    ).toFEN());
+
+    game.undo();
+    game.undo();
+    expect(game.fen()).toBe(startFen);
+    expect(game.moveHistory()).toEqual([]);
+    expect(game.positionHistoryKeys()).toHaveLength(1);
+    expect(game.canUndo()).toBe(false);
+    expect(game.undo()).toBeNull();
+  });
+
+  it("undo restores castling and en-passant state exactly", () => {
+    const game = Game.start();
+    game.playUci("e2e4");
+    const afterE4 = game.fen();
+    game.playUci("a7a6");
+    game.playUci("e1e2");
+
+    game.undo();
+    game.undo();
+    expect(game.fen()).toBe(afterE4);
+    expect(game.fen().split(/\s+/)[2]).toContain("K");
+    expect(game.fen().split(/\s+/)[3]).toBe("e3");
+  });
+
   it("rejects an illegal UCI move", () => {
     const game = new Game(Board.start());
     expect(() => game.playUci("e2e5")).toThrow("Illegal UCI move");
