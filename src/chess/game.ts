@@ -12,6 +12,7 @@ export class Game {
   private readonly positionHistory: Map<string, number>;
   private readonly positionKeysState: string[];
   private readonly movesState: string[];
+  private readonly boardHistoryState: Board[];
 
   constructor(board: Board = Board.start()) {
     const initialKey = Game.positionKey(board);
@@ -19,6 +20,7 @@ export class Game {
     this.positionHistory = new Map([[initialKey, 1]]);
     this.positionKeysState = [initialKey];
     this.movesState = [];
+    this.boardHistoryState = [board];
   }
 
   static start(): Game {
@@ -50,7 +52,29 @@ export class Game {
     this.positionHistory.set(key, (this.positionHistory.get(key) ?? 0) + 1);
     this.positionKeysState.push(key);
     this.movesState.push(legal.uci());
+    this.boardHistoryState.push(this.boardState);
     return this.boardState;
+  }
+
+  /** Rewind one ply, restoring all tracked game state. */
+  undo(): Board | null {
+    if (this.movesState.length === 0 || this.boardHistoryState.length <= 1) return null;
+
+    const currentKey = this.positionKeysState.pop();
+    if (currentKey) {
+      const count = this.positionHistory.get(currentKey) ?? 0;
+      if (count <= 1) this.positionHistory.delete(currentKey);
+      else this.positionHistory.set(currentKey, count - 1);
+    }
+
+    this.movesState.pop();
+    this.boardHistoryState.pop();
+    this.boardState = this.boardHistoryState[this.boardHistoryState.length - 1];
+    return this.boardState;
+  }
+
+  canUndo(): boolean {
+    return this.movesState.length > 0;
   }
 
   /** Apply a UCI move such as e2e4 or e7e8q. */
