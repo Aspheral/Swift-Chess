@@ -12,6 +12,8 @@ export interface SwiftMindSnapshot {
   plan: IdeaKind | null;
   planAge: number;
   confidence: number;
+  planReason?: string;
+  setbacks: number;
   concern: string;
   opponent: SwiftOpponentModel;
   lastMove?: string;
@@ -50,10 +52,14 @@ function strategicIdeas(ideas: ChessIdea[]): ChessIdea[] {
   return ideas.filter((idea) => idea.kind !== "tactical");
 }
 
-function planPriority(ideas: ChessIdea[], kind: IdeaKind): number {
+function bestIdeaForPlan(ideas: ChessIdea[], kind: IdeaKind): ChessIdea | undefined {
   return ideas
     .filter((idea) => idea.kind === kind)
-    .reduce((best, idea) => Math.max(best, idea.priority), -Infinity);
+    .sort((a, b) => b.priority - a.priority)[0];
+}
+
+function planPriority(ideas: ChessIdea[], kind: IdeaKind): number {
+  return bestIdeaForPlan(ideas, kind)?.priority ?? -Infinity;
 }
 
 function describeConcern(
@@ -146,6 +152,7 @@ export class SwiftMind {
     plan: null,
     planAge: 0,
     confidence: 0,
+    setbacks: 0,
     concern: "No urgent defect dominates the position.",
     opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 0 },
     observedHistoryLength: 0,
@@ -169,22 +176,35 @@ export class SwiftMind {
     if (!best) {
       this.state.plan = null;
       this.state.planAge = 0;
+      this.state.planReason = undefined;
       this.state.confidence *= 0.75;
-    } else if (!current || currentPriority === -Infinity || tacticalEmergency) {
+    } else if (tacticalEmergency && current && currentPriority !== -Infinity) {
+      // A forcing interruption should not erase the strategic thread of the
+      // game. Humans often solve the immediate problem, then return to the plan.
+      this.state.planReason = bestIdeaForPlan(ideas, current)?.reason ?? this.state.planReason;
+      this.state.confidence = clamp(this.state.confidence - 0.04);
+    } else if (!current || currentPriority === -Infinity) {
       this.state.plan = best.kind;
       this.state.planAge = 1;
+      this.state.planReason = best.reason;
+      this.state.setbacks = 0;
       this.state.confidence = clamp(0.42 + bestPriority / 180);
     } else if (best.kind === current) {
+      const currentIdea = bestIdeaForPlan(ideas, current);
       this.state.planAge += 1;
-      this.state.confidence = clamp(this.state.confidence + 0.08);
+      this.state.planReason = currentIdea?.reason ?? this.state.planReason;
+      this.state.confidence = clamp(this.state.confidence + (this.state.setbacks ? 0.035 : 0.08));
     } else {
       const inertia = 10 + this.state.confidence * 12 + Math.min(6, this.state.planAge * 1.5);
       if (bestPriority >= currentPriority + inertia) {
         this.state.plan = best.kind;
         this.state.planAge = 1;
+        this.state.planReason = best.reason;
+        this.state.setbacks = 0;
         this.state.confidence = clamp(0.38 + bestPriority / 190);
       } else {
         this.state.planAge += 1;
+        this.state.planReason = bestIdeaForPlan(ideas, current)?.reason ?? this.state.planReason;
         this.state.confidence = clamp(this.state.confidence + 0.035);
       }
     }
@@ -198,6 +218,18 @@ export class SwiftMind {
   recordDecision(move: string, reason: string): SwiftMindSnapshot {
     this.state.lastMove = move;
     this.state.lastReason = reason;
+    return this.snapshot();
+  }
+
+  recordSetback(reason: string): SwiftMindSnapshot {
+    this.state.setbacks += 1;
+    this.state.confidence = clamp(this.state.confidence * 0.62);
+    this.state.lastReason = reason;
+    if (this.state.confidence < 0.28) {
+      this.state.plan = null;
+      this.state.planAge = 0;
+      this.state.planReason = undefined;
+    }
     return this.snapshot();
   }
 
@@ -222,6 +254,7 @@ export class SwiftMind {
       plan: null,
       planAge: 0,
       confidence: 0,
+      setbacks: 0,
       concern: "No urgent defect dominates the position.",
       opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 0 },
       observedHistoryLength: 0,
