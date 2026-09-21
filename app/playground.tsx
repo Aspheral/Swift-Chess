@@ -105,6 +105,9 @@ export default function Playground() {
   const terminal = result !== "ongoing";
   const turn = board.toFEN().split(/\s+/)[1] as Side;
   const inCheck = board.isInCheck(turn);
+  const canUndoPlayerMove = history.some((_, index) =>
+    (index % 2 === 0 ? "w" : "b") === playerSide,
+  );
 
   function ensureWorker(): Worker {
     if (workerRef.current) return workerRef.current;
@@ -197,6 +200,33 @@ export default function Playground() {
     setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setPromotion(null); setOpening(null); setThoughtArrows([]); setPlayerSide(side); setFlipped(side === "b");
   }
 
+  function undoPlayerMove() {
+    if (!canUndoPlayerMove) return;
+
+    gameVersion.current += 1;
+    restartWorker();
+
+    const game = gameRef.current;
+    game.undo();
+
+    // If Swift has already replied, also rewind its reply so the board returns
+    // to the position immediately before the player's mistaken move.
+    while (game.canUndo() && game.turn() !== playerSide) {
+      game.undo();
+    }
+
+    const moves = game.moveHistory();
+    const previousMove = moves.length ? arrowFromUci(moves[moves.length - 1]) : null;
+    setBoard(game.board());
+    setHistory(moves);
+    setLastMove(previousMove);
+    setSelected(null);
+    setPromotion(null);
+    setThinking(false);
+    setOpening(null);
+    setThoughtArrows([]);
+  }
+
   function applyHumanMove(move: Move) {
     const game = gameRef.current;
     game.play(move);
@@ -255,6 +285,7 @@ export default function Playground() {
             <button className={playerSide === "b" ? "active" : ""} onClick={() => reset("b")}>Black</button>
           </div>
           <button className="flip" onClick={() => setFlipped((value) => !value)} aria-label="Flip board">↻ Flip board</button>
+          <button className="undo" onClick={undoPlayerMove} disabled={!canUndoPlayerMove} aria-label="Undo your last move">← Undo move</button>
           <button className="reset" onClick={() => reset()}>New game</button>
         </div>
       </div>
