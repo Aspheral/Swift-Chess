@@ -12,14 +12,13 @@ describe("Swift seeded randomness", () => {
     expect(Math.max(...values) - Math.min(...values)).toBeGreaterThan(0.75);
   });
 
-  it("gives neighboring game seeds genuine opening diversity", () => {
+  it("does not use neighboring game seeds to manufacture opening diversity", () => {
     const board = Board.start();
     const moves = Array.from({ length: 20 }, (_, index) =>
       openingBookMove(board, 10_000 + index, [])?.move.uci(),
     );
 
-    expect(new Set(moves).size).toBe(3);
-    expect(new Set(moves)).toEqual(new Set(["g1f3", "d2d4", "e2e4"]));
+    expect(new Set(moves)).toEqual(new Set(["g1f3"]));
   });
 
   it("derives reproducible but different seeds for successive plies", () => {
