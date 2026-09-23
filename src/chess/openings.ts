@@ -24,15 +24,15 @@ function openingFamily(history: string[], _seed: number): SwiftOpening | null {
   if (first === "d2d4") {
     if (history.includes("d5c4")) return "Queen's Gambit";
     if (history.includes("e7e6")) return "Queen's Gambit Declined";
-    return seededRandom(seed) < 0.62 ? "Queen's Gambit Declined" : "Queen's Gambit";
+    return "Queen's Gambit Declined";
   }
   if (first === "e2e4") {
     // Once White has shown the bishop move or the four-knights setup, use the
-    // position rather than the seed. Before that point the two families share
-    // the natural ...e5 response.
+    // position rather than a seed. Before that point the two families share
+    // the natural ...e5 response and Swift prefers Four Knights.
     if (history.includes("f1c4")) return "Bishop's Opening";
     if (history.includes("b1c3") || history.includes("g1f3")) return "Four Knights";
-    return seededRandom(seed) < 0.52 ? "Four Knights" : "Bishop's Opening";
+    return "Four Knights";
   }
   return null;
 }
