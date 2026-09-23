@@ -1,35 +1,38 @@
 import { Board, Move } from "./board";
-import { seededRandom } from "./random";
 
 export type SwiftOpening = "Reti" | "Queen's Gambit" | "Queen's Gambit Declined" | "Four Knights" | "Bishop's Opening";
 
-function legalChoice(board: Board, choices: string[], seed: number): Move | null {
+function legalChoice(board: Board, choices: string[], _seed: number): Move | null {
   const legal = new Map(board.legalMoves().map((move) => [move.uci(), move]));
-  const available = choices.filter((uci) => legal.has(uci));
-  if (!available.length) return null;
-  const index = Math.min(available.length - 1, Math.floor(seededRandom(seed) * available.length));
-  return legal.get(available[index]) ?? null;
+  // Choices are deliberately ordered by Swift's repertoire preference. Normal
+  // opening variation should come from what the opponent has played and which
+  // plan remains available, not from a random roll.
+  for (const uci of choices) {
+    const move = legal.get(uci);
+    if (move) return move;
+  }
+  return null;
 }
 
 function sideToMove(board: Board): "w" | "b" {
   return board.turn();
 }
 
-function openingFamily(history: string[], seed: number): SwiftOpening | null {
+function openingFamily(history: string[], _seed: number): SwiftOpening | null {
   const first = history[0];
   if (first === "g1f3" || first === "c2c4") return "Reti";
   if (first === "d2d4") {
     if (history.includes("d5c4")) return "Queen's Gambit";
     if (history.includes("e7e6")) return "Queen's Gambit Declined";
-    return seededRandom(seed) < 0.62 ? "Queen's Gambit Declined" : "Queen's Gambit";
+    return "Queen's Gambit Declined";
   }
   if (first === "e2e4") {
     // Once White has shown the bishop move or the four-knights setup, use the
-    // position rather than the seed. Before that point the two families share
-    // the natural ...e5 response.
+    // position rather than a seed. Before that point the two families share
+    // the natural ...e5 response and Swift prefers Four Knights.
     if (history.includes("f1c4")) return "Bishop's Opening";
     if (history.includes("b1c3") || history.includes("g1f3")) return "Four Knights";
-    return seededRandom(seed) < 0.52 ? "Four Knights" : "Bishop's Opening";
+    return "Four Knights";
   }
   return null;
 }
@@ -127,17 +130,10 @@ export function openingBookMove(
   if (history.length >= 12) return null;
 
   if (!history.length && sideToMove(board) === "w") {
-    const roll = seededRandom(seed);
-    if (roll < 0.4) {
-      const move = legalChoice(board, ["g1f3"], seed);
-      return move ? { move, opening: "Reti" } : null;
-    }
-    if (roll < 0.75) {
-      const move = legalChoice(board, ["d2d4"], seed);
-      return move ? { move, opening: roll < 0.62 ? "Queen's Gambit Declined" : "Queen's Gambit" } : null;
-    }
-    const move = legalChoice(board, ["e2e4"], seed);
-    return move ? { move, opening: roll < 0.88 ? "Four Knights" : "Bishop's Opening" } : null;
+    // Swift has an opening preference rather than rolling for an identity at
+    // move one. The repertoire can still branch naturally as the game develops.
+    const move = legalChoice(board, ["g1f3", "d2d4", "e2e4"], seed);
+    return move ? { move, opening: "Reti" } : null;
   }
 
   const opening = openingFamily(history, seed);
