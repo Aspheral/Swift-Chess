@@ -53,50 +53,26 @@ function strategicIdeas(ideas: ChessIdea[]): ChessIdea[] {
 }
 
 function bestIdeaForPlan(ideas: ChessIdea[], kind: IdeaKind): ChessIdea | undefined {
-  return ideas
-    .filter((idea) => idea.kind === kind)
-    .sort((a, b) => b.priority - a.priority)[0];
+  return ideas.filter((idea) => idea.kind === kind).sort((a, b) => b.priority - a.priority)[0];
 }
 
 function planPriority(ideas: ChessIdea[], kind: IdeaKind): number {
   return bestIdeaForPlan(ideas, kind)?.priority ?? -Infinity;
 }
 
-function describeConcern(
-  generation: IdeaGeneration,
-  profile: MindPositionProfile,
-): string {
+function describeConcern(generation: IdeaGeneration, profile: MindPositionProfile): string {
   const u = generation.understanding;
   const side = u.sideToMove;
   const enemy = opposite(side);
-
-  if (u.king[side].attackers > 0 || profile.tacticalPressure >= 0.2) {
-    return "Immediate king safety and forcing moves need attention.";
-  }
-
+  if (u.king[side].attackers > 0 || profile.tacticalPressure >= 0.2) return "Immediate king safety and forcing moves need attention.";
   const vulnerable = u.pieces[side].filter((piece) => piece.vulnerable);
-  if (vulnerable.length) {
-    return `${vulnerable[0].square} is loose and may need protection or activity.`;
-  }
-
-  if (u.development[side] + 1 < u.development[enemy] && profile.gameStage === "opening") {
-    return "Development is lagging behind the opponent.";
-  }
-
+  if (vulnerable.length) return `${vulnerable[0].square} is loose and may need protection or activity.`;
+  if (u.development[side] + 1 < u.development[enemy] && profile.gameStage === "opening") return "Development is lagging behind the opponent.";
   const weaknesses = u.pawns[side].isolated + u.pawns[side].doubled + u.pawns[side].backward;
-  if (weaknesses >= 2) {
-    return "The pawn structure has multiple long-term weaknesses.";
-  }
-
+  if (weaknesses >= 2) return "The pawn structure has multiple long-term weaknesses.";
   const materialForSide = side === "w" ? u.material : -u.material;
-  if (materialForSide <= -250) {
-    return "Material is down, so passive play is unlikely to be enough.";
-  }
-
-  if (u.king[enemy].exposed && profile.practicalPressure > 0.2) {
-    return "The opponent king is exposed enough to justify sustained pressure.";
-  }
-
+  if (materialForSide <= -250) return "Material is down, so passive play is unlikely to be enough.";
+  if (u.king[enemy].exposed && profile.practicalPressure > 0.2) return "The opponent king is exposed enough to justify sustained pressure.";
   return "No urgent defect dominates the position.";
 }
 
@@ -107,31 +83,23 @@ function analyzeOpponent(history: string[], swiftSide: Color): SwiftOpponentMode
   let checks = 0;
   let pawnMoves = 0;
   let observedMoves = 0;
-
   for (let index = 0; index < history.length; index += 1) {
     const uci = history[index];
     const move = board.legalMoves().find((candidate) => candidate.uci() === uci);
     if (!move) break;
-
     const mover = board.turn();
     const movingPiece = board.pieceAt(move.from);
     const capture = move.enPassant || board.pieceAt(move.to) !== null;
     const child = board.makeMove(move);
-
     if (index >= recentStart && mover !== swiftSide) {
       observedMoves += 1;
       if (capture) captures += 1;
       if (movingPiece?.[1] === "p") pawnMoves += 1;
       if (child.isInCheck(swiftSide)) checks += 1;
     }
-
     board = child;
   }
-
-  if (!observedMoves) {
-    return { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 0 };
-  }
-
+  if (!observedMoves) return { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 0 };
   return {
     aggression: clamp((captures * 0.55 + checks * 0.9) / observedMoves),
     exchangeSeeking: clamp(captures / observedMoves),
@@ -140,13 +108,6 @@ function analyzeOpponent(history: string[], swiftSide: Color): SwiftOpponentMode
   };
 }
 
-/**
- * Persistent game-level state for Swift.
- *
- * The mind does not replace calculation. It gives Swift continuity: a plan can
- * survive several moves, an urgent new fact can replace it, and the selected
- * move can be remembered with the reason it served.
- */
 export class SwiftMind {
   private state: SwiftMindSnapshot = {
     plan: null,
@@ -157,14 +118,20 @@ export class SwiftMind {
     opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 0 },
     observedHistoryLength: 0,
   };
+  private lastObservedPositionKey = "";
 
-  observe(
-    board: Board,
-    generation: IdeaGeneration,
-    profile: MindPositionProfile,
-    history: string[] = [],
-  ): SwiftMindSnapshot {
+  observe(board: Board, generation: IdeaGeneration, profile: MindPositionProfile, history: string[] = []): SwiftMindSnapshot {
     if (history.length < this.state.observedHistoryLength) this.reset();
+
+    const positionKey = board.toFEN().split(/\s+/).slice(0, 4).join(" ");
+    if (positionKey === this.lastObservedPositionKey && history.length === this.state.observedHistoryLength) {
+      // Re-searching the same position is more calculation, not more life experience.
+      // Do not let UI refreshes, analysis retries, or deeper searches manufacture
+      // plan age and confidence when no chess move has actually happened.
+      this.state.concern = describeConcern(generation, profile);
+      this.state.opponent = analyzeOpponent(history, board.turn());
+      return this.snapshot();
+    }
 
     const ideas = strategicIdeas(generation.ideas);
     const best = ideas[0];
@@ -179,8 +146,6 @@ export class SwiftMind {
       this.state.planReason = undefined;
       this.state.confidence *= 0.75;
     } else if (tacticalEmergency && current && currentPriority !== -Infinity) {
-      // A forcing interruption should not erase the strategic thread of the
-      // game. Humans often solve the immediate problem, then return to the plan.
       this.state.planReason = bestIdeaForPlan(ideas, current)?.reason ?? this.state.planReason;
       this.state.confidence = clamp(this.state.confidence - 0.04);
     } else if (!current || currentPriority === -Infinity) {
@@ -212,6 +177,7 @@ export class SwiftMind {
     this.state.concern = describeConcern(generation, profile);
     this.state.opponent = analyzeOpponent(history, board.turn());
     this.state.observedHistoryLength = history.length;
+    this.lastObservedPositionKey = positionKey;
     return this.snapshot();
   }
 
@@ -243,10 +209,7 @@ export class SwiftMind {
   }
 
   snapshot(): SwiftMindSnapshot {
-    return {
-      ...this.state,
-      opponent: { ...this.state.opponent },
-    };
+    return { ...this.state, opponent: { ...this.state.opponent } };
   }
 
   reset(): void {
@@ -259,5 +222,6 @@ export class SwiftMind {
       opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 0 },
       observedHistoryLength: 0,
     };
+    this.lastObservedPositionKey = "";
   }
 }
