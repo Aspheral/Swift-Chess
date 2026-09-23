@@ -2,7 +2,7 @@ import { Board } from "./board";
 import { HumanEngineOptions } from "./human-engine";
 import { humanErrorProfile } from "./human";
 
-export const SWIFT_PLAY_PROFILE = "adaptive-human-v4";
+export const SWIFT_PLAY_PROFILE = "adaptive-human-v5";
 
 export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 
@@ -60,12 +60,17 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
   }
 
   if (opening) {
+    // Humans tend to snap out the first familiar moves, then spend a little
+    // longer as the opening becomes an actual decision. History depth gives us
+    // that effect without timers, noise, or a random hesitation generator.
+    const openingThinkMs = 90 + Math.min(150, history.length * 18);
+    const openingSearchMs = 280 + Math.min(180, history.length * 22);
     return {
       kind: "opening",
-      minimumThinkMs: 140,
+      minimumThinkMs: openingThinkMs,
       options: {
         depth: 5,
-        timeMs: 350,
+        timeMs: openingSearchMs,
         randomness: 0,
         errorBudget: 0.035,
         strictBestPlay: false,
