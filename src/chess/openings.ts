@@ -18,7 +18,7 @@ function sideToMove(board: Board): "w" | "b" {
   return board.turn();
 }
 
-function openingFamily(history: string[], seed: number): SwiftOpening | null {
+function openingFamily(history: string[], _seed: number): SwiftOpening | null {
   const first = history[0];
   if (first === "g1f3" || first === "c2c4") return "Reti";
   if (first === "d2d4") {
