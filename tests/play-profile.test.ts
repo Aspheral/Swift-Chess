@@ -10,6 +10,15 @@ describe("Swift browser play timing", () => {
     expect(profile.minimumThinkMs).toBeLessThan(250);
   });
 
+  it("thinks progressively longer as an opening becomes a real decision", () => {
+    const firstMove = swiftPlayProfile(Board.start(), []);
+    const laterOpening = swiftPlayProfile(Board.start(), Array(6).fill("fixture"));
+
+    expect(laterOpening.kind).toBe("opening");
+    expect(laterOpening.minimumThinkMs).toBeGreaterThan(firstMove.minimumThinkMs);
+    expect(laterOpening.options.timeMs ?? 0).toBeGreaterThan(firstMove.options.timeMs ?? 0);
+  });
+
   it("spends more time when the king is under tactical pressure", () => {
     const calm = swiftPlayProfile(Board.start(), []);
     const tacticalBoard = Board.fromFEN("k3r3/8/8/8/8/8/8/4K3 w - - 0 1");
