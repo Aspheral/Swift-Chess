@@ -1,4 +1,5 @@
 import { Board, Move } from "./board";
+import { generateIdeas } from "./ideas";
 
 export type SwiftOpening = "Reti" | "Queen's Gambit" | "Queen's Gambit Declined" | "Four Knights" | "Bishop's Opening";
 
@@ -37,6 +38,19 @@ function familiarOpponentMove(opening: SwiftOpening, move: string | undefined): 
     "Bishop's Opening": new Set(["f1c4", "d2d3", "g1f3", "c2c3", "e1g1", "e7e5", "g8f6", "b8c6", "f8c5", "c7c6", "d7d5", "f8e7", "d7d6", "a7a6"]),
   };
   return familiar[opening].has(move);
+}
+
+function openingHandoffPly(board: Board, history: string[]): number {
+  // A concrete strategic problem is a reason to stop recalling moves and start
+  // thinking. Quiet, familiar development can remain guided for one extra move.
+  // This makes the handoff emerge from the position instead of a single clock.
+  if (history.length >= 6) {
+    const strongestStrategic = generateIdeas(board).ideas
+      .filter((idea) => idea.kind !== "tactical")
+      .reduce((best, idea) => Math.max(best, idea.priority), 0);
+    if (strongestStrategic >= 70) return 6;
+  }
+  return 10;
 }
 
 function moveForReti(board: Board, history: string[], seed: number): Move | null {
@@ -125,7 +139,7 @@ function moveForBishops(board: Board, history: string[], seed: number): Move | n
 }
 
 export function openingBookMove(board: Board, seed = Date.now(), history: string[] = []): { move: Move; opening: SwiftOpening } | null {
-  if (history.length >= 8) return null;
+  if (history.length >= openingHandoffPly(board, history)) return null;
 
   if (!history.length && sideToMove(board) === "w") {
     const move = legalChoice(board, ["g1f3", "d2d4", "e2e4"], seed);

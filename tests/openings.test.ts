@@ -69,8 +69,14 @@ describe("Swift human opening repertoire", () => {
     expect(openingBookMove(board, 1, history)).toBeNull();
   });
 
-  it("hands the game to strategic reasoning after four familiar moves", () => {
+  it("lets a quiet familiar opening breathe past the old fixed eight-ply cutoff", () => {
     const history = ["g1f3", "d7d5", "c2c4", "e7e6", "g2g3", "g8f6", "f1g2", "f8e7"];
+    const board = play(Board.start(), history);
+    expect(openingBookMove(board, 1, history)?.move.uci()).toBe("d2d4");
+  });
+
+  it("still hands every opening to strategic reasoning by ten plies", () => {
+    const history = ["g1f3", "d7d5", "c2c4", "e7e6", "g2g3", "g8f6", "f1g2", "f8e7", "d2d4", "c7c5"];
     const board = play(Board.start(), history);
     expect(openingBookMove(board, 1, history)).toBeNull();
   });
