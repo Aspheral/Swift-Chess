@@ -2,7 +2,7 @@ import { Board } from "./board";
 import { HumanEngineOptions } from "./human-engine";
 import { humanErrorProfile } from "./human";
 
-export const SWIFT_PLAY_PROFILE = "adaptive-human-v3";
+export const SWIFT_PLAY_PROFILE = "adaptive-human-v4";
 
 export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 
@@ -19,6 +19,12 @@ export interface SwiftPlayProfile {
  * ordinary positions get a short think, and tactical danger earns more time.
  * These limits are intentionally smaller than the old flat 800 ms budget and
  * are safe to use in calibration because they are deterministic from position.
+ *
+ * Default play deliberately carries no sampling randomness. Variation should
+ * come from Swift's position interpretation, continuing plan, opponent model,
+ * game history, and style preferences. Seeded/random sampling remains available
+ * to explicit experiments through HumanEngineOptions, but it is not what makes
+ * normal Swift play look human.
  */
 export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPlayProfile {
   const profile = humanErrorProfile(board, 0.05);
@@ -37,7 +43,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
       options: {
         depth: 6,
         timeMs: 850,
-        randomness: 0.003,
+        randomness: 0,
         errorBudget: 0.015,
         strictBestPlay: false,
         safetyDepth: 4,
@@ -60,7 +66,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
       options: {
         depth: 5,
         timeMs: 350,
-        randomness: 0.006,
+        randomness: 0,
         errorBudget: 0.035,
         strictBestPlay: false,
         safetyDepth: 3,
@@ -83,7 +89,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
       options: {
         depth: 6,
         timeMs: 700,
-        randomness: 0.003,
+        randomness: 0,
         errorBudget: 0.015,
         strictBestPlay: false,
         safetyDepth: 4,
@@ -105,7 +111,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
     options: {
       depth: 5,
       timeMs: 600,
-      randomness: 0.008,
+      randomness: 0,
       errorBudget: 0.035,
       strictBestPlay: false,
       safetyDepth: 4,
