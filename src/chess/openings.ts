@@ -27,6 +27,18 @@ function openingFamily(history: string[], _seed: number): SwiftOpening | null {
   return null;
 }
 
+function familiarOpponentMove(opening: SwiftOpening, move: string | undefined): boolean {
+  if (!move) return true;
+  const familiar: Record<SwiftOpening, Set<string>> = {
+    Reti: new Set(["c2c4", "g2g3", "f1g2", "d2d4", "b1c3", "d7d5", "g8f6", "e7e6", "c7c6", "d5d4", "f8e7", "c7c5"]),
+    "Queen's Gambit": new Set(["c2c4", "g1f3", "e2e3", "c1g5", "f1c4", "d7d5", "d5c4", "g8f6", "e7e6", "f8e7"]),
+    "Queen's Gambit Declined": new Set(["c2c4", "g1f3", "b1c3", "c1g5", "e2e3", "d7d5", "e7e6", "g8f6", "f8e7", "c7c5"]),
+    "Four Knights": new Set(["g1f3", "b1c3", "f1b5", "d2d4", "f3d4", "e7e5", "b8c6", "g8f6", "f8b4", "a7a6", "f8e7", "e5d4"]),
+    "Bishop's Opening": new Set(["f1c4", "d2d3", "g1f3", "c2c3", "e1g1", "e7e5", "g8f6", "b8c6", "f8c5", "c7c6", "d7d5", "f8e7", "d7d6", "a7a6"]),
+  };
+  return familiar[opening].has(move);
+}
+
 function moveForReti(board: Board, history: string[], seed: number): Move | null {
   const last = history.at(-1);
   if (sideToMove(board) === "b") {
@@ -113,9 +125,6 @@ function moveForBishops(board: Board, history: string[], seed: number): Move | n
 }
 
 export function openingBookMove(board: Board, seed = Date.now(), history: string[] = []): { move: Move; opening: SwiftOpening } | null {
-  // Familiar repertoire guides the first four moves. After that Swift has seen
-  // enough of the actual game for its position understanding and persistent
-  // plan to choose the continuation instead of following a memorized script.
   if (history.length >= 8) return null;
 
   if (!history.length && sideToMove(board) === "w") {
@@ -125,6 +134,13 @@ export function openingBookMove(board: Board, seed = Date.now(), history: string
 
   const opening = openingFamily(history, seed);
   if (!opening) return null;
+
+  // Once a few moves have established the opening, an unfamiliar last move is
+  // a reason to think rather than keep playing a generic setup by rote. Early
+  // transpositions stay flexible; later novelty hands control to Swift's
+  // position understanding and persistent strategic plan.
+  if (history.length >= 4 && !familiarOpponentMove(opening, history.at(-1))) return null;
+
   let move: Move | null = null;
   if (opening === "Reti") move = moveForReti(board, history, seed);
   else if (opening === "Queen's Gambit") move = moveForQueensGambit(board, history, seed);
