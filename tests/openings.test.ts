@@ -62,4 +62,10 @@ describe("Swift human opening repertoire", () => {
     expect(openingBookMove(board, 1, history)?.move.uci()).toBe("g8f6");
     expect(openingBookMove(board, 1, history)?.opening).toBe("Bishop's Opening");
   });
+
+  it("hands the game to strategic reasoning after four familiar moves", () => {
+    const history = ["g1f3", "d7d5", "c2c4", "e7e6", "g2g3", "g8f6", "f1g2", "f8e7"];
+    const board = play(Board.start(), history);
+    expect(openingBookMove(board, 1, history)).toBeNull();
+  });
 });
