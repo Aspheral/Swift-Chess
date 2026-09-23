@@ -39,26 +39,38 @@ function snapshot(plan: SwiftMindSnapshot["plan"], confidence = 0.8, planAge = 3
 }
 
 describe("Swift persistent mind", () => {
-  it("keeps a viable plan instead of resetting every turn", () => {
+  it("keeps a viable plan across actual turns", () => {
     const board = Board.start();
     const mind = new SwiftMind();
-
     const first = mind.observe(board, ideas(board, [["develop", 60], ["attack", 55]]), quietProfile, []);
     expect(first.plan).toBe("develop");
 
-    const second = mind.observe(board, ideas(board, [["attack", 63], ["develop", 60]]), quietProfile, []);
+    const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
+    if (!e4) throw new Error("Expected e2e4");
+    const next = board.makeMove(e4);
+    const second = mind.observe(next, ideas(next, [["attack", 63], ["develop", 60]]), quietProfile, ["e2e4"]);
     expect(second.plan).toBe("develop");
     expect(second.planAge).toBeGreaterThan(first.planAge);
     expect(second.confidence).toBeGreaterThan(first.confidence);
   });
 
-  it("abandons a plan when a much stronger new idea appears", () => {
+  it("does not manufacture plan confidence by re-searching the same position", () => {
     const board = Board.start();
     const mind = new SwiftMind();
+    const first = mind.observe(board, ideas(board, [["develop", 60], ["attack", 55]]), quietProfile, []);
+    const second = mind.observe(board, ideas(board, [["develop", 60], ["attack", 55]]), quietProfile, []);
+    expect(second.planAge).toBe(first.planAge);
+    expect(second.confidence).toBe(first.confidence);
+  });
 
+  it("abandons a plan when a much stronger new idea appears after play advances", () => {
+    const board = Board.start();
+    const mind = new SwiftMind();
     mind.observe(board, ideas(board, [["develop", 60], ["attack", 50]]), quietProfile, []);
-    const changed = mind.observe(board, ideas(board, [["attack", 100], ["develop", 45]]), quietProfile, []);
-
+    const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
+    if (!e4) throw new Error("Expected e2e4");
+    const next = board.makeMove(e4);
+    const changed = mind.observe(next, ideas(next, [["attack", 100], ["develop", 45]]), quietProfile, ["e2e4"]);
     expect(changed.plan).toBe("attack");
     expect(changed.planAge).toBe(1);
   });
@@ -68,39 +80,10 @@ describe("Swift persistent mind", () => {
     const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
     const d4 = board.legalMoves().find((move) => move.uci() === "d2d4");
     if (!e4 || !d4) throw new Error("Expected central pawn moves");
-
-    const attack: CandidateScore = {
-      move: e4,
-      score: 100,
-      ideaKinds: ["attack"],
-      reasons: ["continue pressure"],
-    };
-    const simplify: CandidateScore = {
-      move: d4,
-      score: 100,
-      ideaKinds: ["simplify"],
-      reasons: ["reduce complexity"],
-    };
-
-    const attackingMind = selectHumanMove(board, {
-      candidates: [simplify, attack],
-      candidateLimit: 2,
-      randomness: 0,
-      errorBudget: 0,
-      mind: snapshot("attack"),
-      initiative: 0,
-      simplification: 0,
-    });
-    const simplifyingMind = selectHumanMove(board, {
-      candidates: [attack, simplify],
-      candidateLimit: 2,
-      randomness: 0,
-      errorBudget: 0,
-      mind: snapshot("simplify"),
-      initiative: 0,
-      simplification: 0,
-    });
-
+    const attack: CandidateScore = { move: e4, score: 100, ideaKinds: ["attack"], reasons: ["continue pressure"] };
+    const simplify: CandidateScore = { move: d4, score: 100, ideaKinds: ["simplify"], reasons: ["reduce complexity"] };
+    const attackingMind = selectHumanMove(board, { candidates: [simplify, attack], candidateLimit: 2, randomness: 0, errorBudget: 0, mind: snapshot("attack"), initiative: 0, simplification: 0 });
+    const simplifyingMind = selectHumanMove(board, { candidates: [attack, simplify], candidateLimit: 2, randomness: 0, errorBudget: 0, mind: snapshot("simplify"), initiative: 0, simplification: 0 });
     expect(attackingMind.move?.uci()).toBe(e4.uci());
     expect(simplifyingMind.move?.uci()).toBe(d4.uci());
   });
@@ -113,25 +96,20 @@ describe("Swift persistent mind", () => {
       if (!move) throw new Error(`Illegal fixture move: ${uci}`);
       board = board.makeMove(move);
     }
-
     const mind = new SwiftMind();
     const state = mind.observe(board, generateIdeas(board), quietProfile, history);
-
     expect(state.opponent.observedMoves).toBe(3);
     expect(state.opponent.pawnActivity).toBeGreaterThan(0.5);
     expect(state.opponent.aggression).toBe(0);
   });
 
-
   it("loses confidence when a plan repeatedly fails verification", () => {
     const board = Board.start();
     const mind = new SwiftMind();
     const initial = mind.observe(board, ideas(board, [["develop", 60], ["attack", 50]]), quietProfile, []);
-
     const first = mind.recordSetback("No safe developing move survived.");
     const second = mind.recordSetback("The plan failed again.");
     const third = mind.recordSetback("The plan is no longer convincing.");
-
     expect(first.confidence).toBeLessThan(initial.confidence);
     expect(second.confidence).toBeLessThan(first.confidence);
     expect(third.plan).toBeNull();
@@ -141,7 +119,6 @@ describe("Swift persistent mind", () => {
   it("remembers the reason for the move it chose", () => {
     const mind = new SwiftMind();
     const state = mind.recordDecision("e2e4", "Claim space and keep development flexible.");
-
     expect(state.lastMove).toBe("e2e4");
     expect(state.lastReason).toContain("Claim space");
   });
