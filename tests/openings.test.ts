@@ -10,11 +10,11 @@ function play(board: Board, moves: string[]): Board {
 }
 
 describe("Swift human opening repertoire", () => {
-  it("starts from Swift's intended repertoire instead of a random first move", () => {
+  it("starts from Swift's preferred opening without changing identity by seed", () => {
     const choices = [1, 7, 17].map((seed) => openingBookMove(Board.start(), seed, []));
     for (const choice of choices) {
-      expect(choice).not.toBeNull();
-      expect(["g1f3", "d2d4", "e2e4"]).toContain(choice?.move.uci());
+      expect(choice?.move.uci()).toBe("g1f3");
+      expect(choice?.opening).toBe("Reti");
     }
   });
 
@@ -32,11 +32,14 @@ describe("Swift human opening repertoire", () => {
     expect(openingBookMove(board, 1, history)?.opening).toBe("Reti");
   });
 
-  it("chooses between the Queen's Gambit branches like a repertoire", () => {
+  it("keeps a stable Queen's Gambit preference instead of seed-driven branching", () => {
     const history = ["d2d4", "d7d5", "c2c4"];
     const board = play(Board.start(), history);
-    const choice = openingBookMove(board, 7, history);
-    expect(["d5c4", "e7e6", "g8f6"]).toContain(choice?.move.uci());
+    const choices = [1, 7, 17].map((seed) => openingBookMove(board, seed, history));
+    for (const choice of choices) {
+      expect(choice?.move.uci()).toBe("e7e6");
+      expect(choice?.opening).toBe("Queen's Gambit Declined");
+    }
   });
 
   it("recognizes the Queen's Gambit Declined continuation", () => {
