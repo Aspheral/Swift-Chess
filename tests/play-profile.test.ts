@@ -45,14 +45,14 @@ describe("Swift browser play timing", () => {
   it("scales hesitation smoothly with partial strategic disagreement", () => {
     expect(ideaConflict(["develop"], ["develop"])).toBe(0);
     expect(ideaConflict(["develop"], ["pawn-break"])).toBe(1);
-    expect(ideaConflict(["develop", "king-safety"], ["develop", "pawn-break"])).toBeCloseTo(2 / 3);
+    expect(ideaConflict(["develop", "improve-piece"], ["develop", "pawn-break"])).toBeCloseTo(2 / 3);
 
     const samePlan = candidateIdeaUncertainty([
       { score: 12, ideaKinds: ["develop"] },
       { score: 11.5, ideaKinds: ["develop"] },
     ]);
     const partialConflict = candidateIdeaUncertainty([
-      { score: 12, ideaKinds: ["develop", "king-safety"] },
+      { score: 12, ideaKinds: ["develop", "improve-piece"] },
       { score: 11.5, ideaKinds: ["develop", "pawn-break"] },
     ]);
     const competingPlans = candidateIdeaUncertainty([
