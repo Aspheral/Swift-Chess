@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { personalizedCandidateConflict, selectiveConsequenceDepth } from "../src/chess/selective-calculation";
+import { personalizedCandidateConflict, selectiveConflictCandidateIndexes, selectiveConsequenceDepth } from "../src/chess/selective-calculation";
 
 describe("Swift selective calculation", () => {
   const noBias = () => 0;
@@ -14,12 +14,35 @@ describe("Swift selective calculation", () => {
     expect(selectiveConsequenceDepth(3, candidates, noBias)).toBe(4);
   });
 
+  it("focuses the extra look on the two candidates creating the conflict", () => {
+    const candidates = [
+      { score: 12, ideaKinds: ["develop"] },
+      { score: 11, ideaKinds: ["pawn-break"] },
+      { score: 10.5, ideaKinds: ["improve-piece"] },
+      { score: 4, ideaKinds: ["defend"] },
+    ];
+    expect(selectiveConflictCandidateIndexes(candidates, noBias)).toEqual([0, 1]);
+  });
+
+  it("does not focus extra calculation on unrelated candidates", () => {
+    const candidates = [
+      { score: 12, ideaKinds: ["develop"] },
+      { score: 11, ideaKinds: ["pawn-break"] },
+      { score: 10.5, ideaKinds: ["improve-piece"] },
+    ];
+    const focused = selectiveConflictCandidateIndexes(candidates, noBias);
+    expect(focused).toContain(0);
+    expect(focused).toContain(1);
+    expect(focused).not.toContain(2);
+  });
+
   it("does not deepen for two executions of the same idea", () => {
     const candidates = [
       { score: 12, ideaKinds: ["develop"] },
       { score: 11, ideaKinds: ["develop"] },
     ];
     expect(personalizedCandidateConflict(candidates, noBias)).toBeLessThan(0.4);
+    expect(selectiveConflictCandidateIndexes(candidates, noBias)).toEqual([]);
     expect(selectiveConsequenceDepth(3, candidates, noBias)).toBe(3);
   });
 
@@ -31,6 +54,7 @@ describe("Swift selective calculation", () => {
     const preferDevelopment = (ideas: string[]) => ideas.includes("develop") ? 10 : 0;
     expect(personalizedCandidateConflict(candidates, noBias)).toBe(1);
     expect(personalizedCandidateConflict(candidates, preferDevelopment)).toBe(0);
+    expect(selectiveConflictCandidateIndexes(candidates, preferDevelopment)).toEqual([]);
     expect(selectiveConsequenceDepth(3, candidates, preferDevelopment)).toBe(3);
   });
 
