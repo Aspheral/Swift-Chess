@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { Board, swiftPlayProfile } from "../src";
-import { candidateDecisionUncertainty, candidateIdeaUncertainty, quietDecisionUncertainty } from "../src/chess/play-profile";
+import { candidateDecisionUncertainty, candidateIdeaUncertainty, ideaConflict, quietDecisionUncertainty } from "../src/chess/play-profile";
 
 describe("Swift browser play timing", () => {
   it("plays familiar opening positions quickly", () => {
     const profile = swiftPlayProfile(Board.start(), []);
-
     expect(profile.kind).toBe("opening");
     expect(profile.options.timeMs).toBeLessThan(400);
     expect(profile.minimumThinkMs).toBeLessThan(250);
@@ -14,7 +13,6 @@ describe("Swift browser play timing", () => {
   it("thinks progressively longer as an opening becomes a real decision", () => {
     const firstMove = swiftPlayProfile(Board.start(), []);
     const laterOpening = swiftPlayProfile(Board.start(), Array(6).fill("fixture"));
-
     expect(laterOpening.kind).toBe("opening");
     expect(laterOpening.minimumThinkMs).toBeGreaterThan(firstMove.minimumThinkMs);
     expect(laterOpening.options.timeMs ?? 0).toBeGreaterThan(firstMove.options.timeMs ?? 0);
@@ -24,7 +22,6 @@ describe("Swift browser play timing", () => {
     const calm = swiftPlayProfile(Board.start(), []);
     const tacticalBoard = Board.fromFEN("k3r3/8/8/8/8/8/8/4K3 w - - 0 1");
     const tactical = swiftPlayProfile(tacticalBoard, Array(16).fill("a2a3"));
-
     expect(tactical.kind).toBe("tactical");
     expect(tactical.options.timeMs ?? 0).toBeGreaterThan(calm.options.timeMs ?? 0);
     expect(tactical.minimumThinkMs).toBeGreaterThan(calm.minimumThinkMs);
@@ -33,7 +30,6 @@ describe("Swift browser play timing", () => {
   it("uses an endgame budget instead of the full tactical budget in quiet endings", () => {
     const board = Board.fromFEN("7k/8/8/8/8/8/8/K7 w - - 0 1");
     const profile = swiftPlayProfile(board, Array(30).fill("h1h2"));
-
     expect(profile.kind).toBe("endgame");
     expect(profile.options.timeMs).toBeLessThan(760);
     expect(profile.options.safetyDepth).toBe(4);
@@ -46,21 +42,27 @@ describe("Swift browser play timing", () => {
     expect(candidateDecisionUncertainty([12])).toBe(0);
   });
 
-  it("distinguishes competing ideas from several moves serving the same plan", () => {
+  it("scales hesitation smoothly with partial strategic disagreement", () => {
+    expect(ideaConflict(["develop"], ["develop"])).toBe(0);
+    expect(ideaConflict(["develop"], ["pawn-break"])).toBe(1);
+    expect(ideaConflict(["develop", "king-safety"], ["develop", "pawn-break"])).toBeCloseTo(2 / 3);
+
     const samePlan = candidateIdeaUncertainty([
       { score: 12, ideaKinds: ["develop"] },
       { score: 11.5, ideaKinds: ["develop"] },
-      { score: 5, ideaKinds: ["develop"] },
+    ]);
+    const partialConflict = candidateIdeaUncertainty([
+      { score: 12, ideaKinds: ["develop", "king-safety"] },
+      { score: 11.5, ideaKinds: ["develop", "pawn-break"] },
     ]);
     const competingPlans = candidateIdeaUncertainty([
       { score: 12, ideaKinds: ["develop"] },
       { score: 11.5, ideaKinds: ["pawn-break"] },
-      { score: 5, ideaKinds: ["simplify"] },
     ]);
 
-    expect(samePlan).toBeLessThan(0.4);
+    expect(samePlan).toBeLessThan(partialConflict);
+    expect(partialConflict).toBeLessThan(competingPlans);
     expect(competingPlans).toBeGreaterThan(0.9);
-    expect(competingPlans).toBeGreaterThan(samePlan * 2);
   });
 
   it("still lets practical pressure force a second look", () => {
