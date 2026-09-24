@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Board, swiftPlayProfile } from "../src";
-import { candidateDecisionUncertainty, quietDecisionUncertainty } from "../src/chess/play-profile";
+import { candidateDecisionUncertainty, candidateIdeaUncertainty, quietDecisionUncertainty } from "../src/chess/play-profile";
 
 describe("Swift browser play timing", () => {
   it("plays familiar opening positions quickly", () => {
@@ -44,6 +44,23 @@ describe("Swift browser play timing", () => {
     expect(candidateDecisionUncertainty([12, 8, 3])).toBeCloseTo(0.5);
     expect(candidateDecisionUncertainty([12, 3, 2])).toBe(0);
     expect(candidateDecisionUncertainty([12])).toBe(0);
+  });
+
+  it("distinguishes competing ideas from several moves serving the same plan", () => {
+    const samePlan = candidateIdeaUncertainty([
+      { score: 12, ideaKinds: ["develop"] },
+      { score: 11.5, ideaKinds: ["develop"] },
+      { score: 5, ideaKinds: ["develop"] },
+    ]);
+    const competingPlans = candidateIdeaUncertainty([
+      { score: 12, ideaKinds: ["develop"] },
+      { score: 11.5, ideaKinds: ["pawn-break"] },
+      { score: 5, ideaKinds: ["simplify"] },
+    ]);
+
+    expect(samePlan).toBeLessThan(0.4);
+    expect(competingPlans).toBeGreaterThan(0.9);
+    expect(competingPlans).toBeGreaterThan(samePlan * 2);
   });
 
   it("still lets practical pressure force a second look", () => {
