@@ -2,9 +2,9 @@ import { Board } from "./board";
 import { HumanEngineOptions } from "./human-engine";
 import { humanErrorProfile } from "./human";
 import { generateIdeas } from "./ideas";
-import { scoreCandidates } from "./scoring";
+import { CandidateScore, scoreCandidates } from "./scoring";
 
-export const SWIFT_PLAY_PROFILE = "adaptive-human-v7";
+export const SWIFT_PLAY_PROFILE = "adaptive-human-v8";
 
 export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 
@@ -27,14 +27,40 @@ export function candidateDecisionUncertainty(scores: number[]): number {
   return Math.max(0, Math.min(1, 1 - closestGap / 8));
 }
 
+/**
+ * Distinguish several ways to execute one idea from a genuine conflict between
+ * ideas. Humans can choose fairly quickly between two development moves that
+ * serve the same plan, but competing plans deserve a more deliberate decision.
+ */
+export function candidateIdeaUncertainty(candidates: Array<Pick<CandidateScore, "score" | "ideaKinds">>): number {
+  if (candidates.length < 2) return 0;
+  const ordered = [...candidates].sort((a, b) => b.score - a.score).slice(0, 3);
+  const leader = ordered[0];
+  const leaderKinds = new Set(leader.ideaKinds);
+  const competingIdeas = ordered.slice(1).filter((candidate) =>
+    candidate.ideaKinds.every((kind) => !leaderKinds.has(kind)),
+  );
+
+  if (!competingIdeas.length) {
+    // There is still some move-level choice, but it is mostly about execution
+    // of the same strategic thought rather than choosing what Swift believes.
+    return candidateDecisionUncertainty(ordered.map((candidate) => candidate.score)) * 0.35;
+  }
+
+  return candidateDecisionUncertainty([
+    leader.score,
+    ...competingIdeas.map((candidate) => candidate.score),
+  ]);
+}
+
 /** Estimate how much a quiet position deserves a second look before committing. */
 export function quietDecisionUncertainty(board: Board, practicalPressure: number): number {
   // Do not mistake a huge legal-move count for indecision. Humans discard many
-  // legal moves immediately. Measure ambiguity among Swift's generated ideas,
+  // legal moves immediately. Measure conflict among Swift's generated ideas,
   // then combine it with practical pressure from the position itself.
   const generation = generateIdeas(board);
   const candidates = scoreCandidates(board, 8, generation).scores;
-  const choiceLoad = candidateDecisionUncertainty(candidates.map((candidate) => candidate.score));
+  const choiceLoad = candidateIdeaUncertainty(candidates);
   const pressureLoad = Math.max(0, Math.min(1, practicalPressure / 0.48));
   return Math.max(choiceLoad, pressureLoad);
 }
