@@ -54,6 +54,22 @@ describe("Swift persistent mind", () => {
     expect(second.confidence).toBeGreaterThan(first.confidence);
   });
 
+  it("earns more confidence when the board strongly supports the continuing plan", () => {
+    const board = Board.start();
+    const weakMind = new SwiftMind();
+    const strongMind = new SwiftMind();
+    const weakFirst = weakMind.observe(board, ideas(board, [["develop", 40]]), quietProfile, []);
+    const strongFirst = strongMind.observe(board, ideas(board, [["develop", 40]]), quietProfile, []);
+    const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
+    if (!e4) throw new Error("Expected e2e4");
+    const next = board.makeMove(e4);
+    const weakSecond = weakMind.observe(next, ideas(next, [["develop", 40]]), quietProfile, ["e2e4"]);
+    const strongSecond = strongMind.observe(next, ideas(next, [["develop", 95]]), quietProfile, ["e2e4"]);
+    const weakGain = weakSecond.confidence - weakFirst.confidence;
+    const strongGain = strongSecond.confidence - strongFirst.confidence;
+    expect(strongGain).toBeGreaterThan(weakGain * 2);
+  });
+
   it("does not manufacture plan confidence by re-searching the same position", () => {
     const board = Board.start();
     const mind = new SwiftMind();

@@ -60,6 +60,15 @@ function planPriority(ideas: ChessIdea[], kind: IdeaKind): number {
   return bestIdeaForPlan(ideas, kind)?.priority ?? -Infinity;
 }
 
+function confidenceGain(priority: number, setbacks: number): number {
+  // Conviction should grow because the board keeps supporting the plan, not
+  // merely because the plan survived another turn. Weak evidence produces only
+  // a small nudge; a repeatedly strong strategic signal earns real confidence.
+  const evidence = clamp((priority - 35) / 65);
+  const base = 0.015 + evidence * 0.065;
+  return setbacks ? base * 0.45 : base;
+}
+
 function describeConcern(generation: IdeaGeneration, profile: MindPositionProfile): string {
   const u = generation.understanding;
   const side = u.sideToMove;
@@ -158,7 +167,7 @@ export class SwiftMind {
       const currentIdea = bestIdeaForPlan(ideas, current);
       this.state.planAge += 1;
       this.state.planReason = currentIdea?.reason ?? this.state.planReason;
-      this.state.confidence = clamp(this.state.confidence + (this.state.setbacks ? 0.035 : 0.08));
+      this.state.confidence = clamp(this.state.confidence + confidenceGain(currentPriority, this.state.setbacks));
     } else {
       const inertia = 10 + this.state.confidence * 12 + Math.min(6, this.state.planAge * 1.5);
       if (bestPriority >= currentPriority + inertia) {
@@ -170,7 +179,7 @@ export class SwiftMind {
       } else {
         this.state.planAge += 1;
         this.state.planReason = bestIdeaForPlan(ideas, current)?.reason ?? this.state.planReason;
-        this.state.confidence = clamp(this.state.confidence + 0.035);
+        this.state.confidence = clamp(this.state.confidence + confidenceGain(currentPriority, this.state.setbacks) * 0.55);
       }
     }
 
