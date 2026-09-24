@@ -1,18 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { Board, HumanSwiftEngine } from "../src";
+import { shouldPreferPlanToBook } from "../src/chess/human-engine";
+import type { SwiftMindSnapshot } from "../src/chess/mind";
 
 describe("Integrated Swift human engine", () => {
+  it("lets a mature, setback-free strategic plan earn independence from book", () => {
+    const mind: SwiftMindSnapshot = {
+      plan: "develop",
+      planAge: 2,
+      confidence: 0.56,
+      setbacks: 0,
+      concern: "Finish development before expanding.",
+      opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 3 },
+      observedHistoryLength: 6,
+    };
+    expect(shouldPreferPlanToBook(mind, 6)).toBe(true);
+    expect(shouldPreferPlanToBook({ ...mind, planAge: 1 }, 6)).toBe(false);
+    expect(shouldPreferPlanToBook({ ...mind, confidence: 0.54 }, 6)).toBe(false);
+    expect(shouldPreferPlanToBook({ ...mind, setbacks: 1 }, 6)).toBe(false);
+    expect(shouldPreferPlanToBook(mind, 5)).toBe(false);
+  });
+
   it("never exposes a candidate that allows an immediate mate", () => {
     const board = Board.fromFEN("6k1/8/8/8/8/7q/8/6K1 w - - 0 1");
-    const result = new HumanSwiftEngine().search(board, {
-      depth: 2,
-      safetyDepth: 2,
-      randomness: 1,
-      errorBudget: 1,
-      candidateLimit: 8,
-      seed: 17,
-    });
-
+    const result = new HumanSwiftEngine().search(board, { depth: 2, safetyDepth: 2, randomness: 1, errorBudget: 1, candidateLimit: 8, seed: 17 });
     expect(result.move).not.toBeNull();
     for (const candidate of result.humanCandidates) {
       const child = board.makeMove(candidate.move);
@@ -25,16 +36,7 @@ describe("Integrated Swift human engine", () => {
   it("keeps the engine move available when safety filtering is active", () => {
     const board = Board.start();
     const engine = new HumanSwiftEngine();
-    const result = engine.search(board, {
-      depth: 2,
-      safetyDepth: 2,
-      safetyMargin: 60,
-      randomness: 1,
-      errorBudget: 0.5,
-      candidateLimit: 8,
-      seed: 23,
-    });
-
+    const result = engine.search(board, { depth: 2, safetyDepth: 2, safetyMargin: 60, randomness: 1, errorBudget: 0.5, candidateLimit: 8, seed: 23 });
     expect(result.move).not.toBeNull();
     expect(result.humanCandidates.some((candidate) => candidate.move.uci() === result.move?.uci())).toBe(true);
   });
@@ -47,18 +49,8 @@ describe("Integrated Swift human engine", () => {
       if (!move) throw new Error(`Illegal fixture move: ${uci}`);
       board = board.makeMove(move);
     }
-
     const repeatedKey = Board.start().toFEN().split(/\s+/).slice(0, 4).join(" ");
-    const result = new HumanSwiftEngine().search(board, {
-      depth: 2,
-      safetyDepth: 2,
-      randomness: 0,
-      errorBudget: 0.35,
-      seed: 7,
-      moveHistory: gameMoves,
-      positionHistoryKeys: [repeatedKey, repeatedKey],
-    });
-
+    const result = new HumanSwiftEngine().search(board, { depth: 2, safetyDepth: 2, randomness: 0, errorBudget: 0.35, seed: 7, moveHistory: gameMoves, positionHistoryKeys: [repeatedKey, repeatedKey] });
     expect(result.move).not.toBeNull();
     const nextKey = board.makeMove(result.move!).toFEN().split(/\s+/).slice(0, 4).join(" ");
     expect(nextKey).not.toBe(repeatedKey);
@@ -66,15 +58,7 @@ describe("Integrated Swift human engine", () => {
 
   it("does not send a knight back to the square it just vacated when alternatives exist", () => {
     const board = Board.fromFEN("rnbqkb1r/pppppppp/8/7n/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 2 2");
-    const result = new HumanSwiftEngine().search(board, {
-      depth: 2,
-      safetyDepth: 2,
-      randomness: 0,
-      errorBudget: 0.35,
-      seed: 11,
-      moveHistory: ["g1f3", "g8h6"],
-    });
-
+    const result = new HumanSwiftEngine().search(board, { depth: 2, safetyDepth: 2, randomness: 0, errorBudget: 0.35, seed: 11, moveHistory: ["g1f3", "g8h6"] });
     expect(result.move).not.toBeNull();
     expect(result.move?.uci()).not.toBe("h6g8");
   });
