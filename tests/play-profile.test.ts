@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Board, swiftPlayProfile } from "../src";
-import { quietDecisionUncertainty } from "../src/chess/play-profile";
+import { candidateDecisionUncertainty, quietDecisionUncertainty } from "../src/chess/play-profile";
 
 describe("Swift browser play timing", () => {
   it("plays familiar opening positions quickly", () => {
@@ -39,12 +39,15 @@ describe("Swift browser play timing", () => {
     expect(profile.options.safetyDepth).toBe(4);
   });
 
-  it("treats quiet choice overload as uncertainty instead of a flat think", () => {
-    const narrow = Board.fromFEN("7k/8/8/8/8/8/6P1/6K1 w - - 0 1");
-    const broad = Board.start();
+  it("treats close strategic candidates as more uncertain than a clear leader", () => {
+    expect(candidateDecisionUncertainty([12, 11.5, 4])).toBeGreaterThan(0.9);
+    expect(candidateDecisionUncertainty([12, 8, 3])).toBeCloseTo(0.5);
+    expect(candidateDecisionUncertainty([12, 3, 2])).toBe(0);
+    expect(candidateDecisionUncertainty([12])).toBe(0);
+  });
 
-    expect(quietDecisionUncertainty(narrow, 0)).toBe(0);
-    expect(quietDecisionUncertainty(broad, 0)).toBeGreaterThan(0);
+  it("still lets practical pressure force a second look", () => {
+    const narrow = Board.fromFEN("7k/8/8/8/8/8/6P1/6K1 w - - 0 1");
     expect(quietDecisionUncertainty(narrow, 0.36)).toBeGreaterThan(0.7);
   });
 });
