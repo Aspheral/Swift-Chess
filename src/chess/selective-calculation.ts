@@ -1,13 +1,13 @@
-export interface SelectiveCandidate {
+export interface SelectiveCandidate<Idea extends string = string> {
   score: number;
-  ideaKinds: string[];
+  ideaKinds: Idea[];
 }
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-function ideaConflict(leaderKinds: string[], rivalKinds: string[]): number {
+function ideaConflict<Idea extends string>(leaderKinds: Idea[], rivalKinds: Idea[]): number {
   if (!leaderKinds.length || !rivalKinds.length) return 1;
   const leader = new Set(leaderKinds);
   const rival = new Set(rivalKinds);
@@ -23,9 +23,9 @@ function ideaConflict(leaderKinds: string[], rivalKinds: string[]): number {
  * move count: a remembered plan can turn an apparent tie into a clear human
  * preference, while genuinely competing ideas remain ambiguous.
  */
-export function personalizedCandidateConflict(
-  candidates: SelectiveCandidate[],
-  planBias: (ideaKinds: string[]) => number,
+export function personalizedCandidateConflict<Idea extends string>(
+  candidates: SelectiveCandidate<Idea>[],
+  planBias: (ideaKinds: Idea[]) => number,
 ): number {
   if (candidates.length < 2) return 0;
   const ordered = candidates
@@ -46,10 +46,10 @@ export function personalizedCandidateConflict(
  * A genuine conflict between personalized strategic choices earns one extra
  * consequence ply, never more. Clear preferences keep the normal depth.
  */
-export function selectiveConsequenceDepth(
+export function selectiveConsequenceDepth<Idea extends string>(
   baseDepth: number,
-  candidates: SelectiveCandidate[],
-  planBias: (ideaKinds: string[]) => number,
+  candidates: SelectiveCandidate<Idea>[],
+  planBias: (ideaKinds: Idea[]) => number,
 ): number {
   const depth = Math.max(1, Math.floor(baseDepth));
   return personalizedCandidateConflict(candidates, planBias) >= 0.65 ? depth + 1 : depth;
