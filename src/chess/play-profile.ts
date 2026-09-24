@@ -2,7 +2,7 @@ import { Board } from "./board";
 import { HumanEngineOptions } from "./human-engine";
 import { humanErrorProfile } from "./human";
 
-export const SWIFT_PLAY_PROFILE = "adaptive-human-v5";
+export const SWIFT_PLAY_PROFILE = "adaptive-human-v6";
 
 export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 
@@ -10,6 +10,16 @@ export interface SwiftPlayProfile {
   kind: SwiftThinkKind;
   minimumThinkMs: number;
   options: HumanEngineOptions;
+}
+
+/** Estimate how much a quiet position deserves a second look before committing. */
+export function quietDecisionUncertainty(board: Board, practicalPressure: number): number {
+  // A broad menu of plausible moves creates choice uncertainty even without a
+  // tactic. Practical pressure adds a separate reason to hesitate. Neither is
+  // random: the board itself decides whether Swift spends the extra time.
+  const choiceLoad = Math.max(0, Math.min(1, (board.legalMoves().length - 18) / 18));
+  const pressureLoad = Math.max(0, Math.min(1, practicalPressure / 0.48));
+  return Math.max(choiceLoad, pressureLoad);
 }
 
 /**
@@ -110,12 +120,15 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
     };
   }
 
+  const uncertainty = quietDecisionUncertainty(board, profile.practicalPressure);
+  const calmThinkMs = 250 + Math.round(120 * uncertainty);
+  const calmSearchMs = 600 + Math.round(180 * uncertainty);
   return {
     kind: "calm",
-    minimumThinkMs: 250,
+    minimumThinkMs: calmThinkMs,
     options: {
       depth: 5,
-      timeMs: 600,
+      timeMs: calmSearchMs,
       randomness: 0,
       errorBudget: 0.035,
       strictBestPlay: false,
