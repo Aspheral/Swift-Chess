@@ -8,6 +8,7 @@ import { SwiftOpening, openingBookMove } from "./openings";
 import { findTacticalPriority, isOwnQueenUnderAttack } from "./fast-tactics";
 import { deriveSeed } from "./random";
 import { SwiftMind, SwiftMindSnapshot } from "./mind";
+import { selectiveConsequenceDepth } from "./selective-calculation";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   safetyMargin?: number;
@@ -47,9 +48,6 @@ export interface HumanSearchResult extends SearchResult {
 }
 
 export function shouldPreferPlanToBook(mind: SwiftMindSnapshot, historyLength: number): boolean {
-  // Opening recall should yield once Swift has lived with a well-supported plan
-  // across real moves. A fresh idea or a plan carrying setbacks has not earned
-  // enough conviction to override familiar repertoire yet.
   return historyLength >= 6 &&
     mind.plan !== null &&
     mind.planAge >= 2 &&
@@ -72,9 +70,7 @@ export class HumanSwiftEngine {
     const history = options.moveHistory ?? options.history ?? [];
     const technicalEndgame = this.isTechnicalEndgame(board);
     const queenUnderAttack = isOwnQueenUnderAttack(board);
-    const baseErrorBudget = technicalEndgame
-      ? Math.min(options.errorBudget ?? 0.35, 0.08)
-      : (options.errorBudget ?? 0.35);
+    const baseErrorBudget = technicalEndgame ? Math.min(options.errorBudget ?? 0.35, 0.08) : (options.errorBudget ?? 0.35);
     const profile = humanErrorProfile(board, baseErrorBudget);
 
     const ideaGeneration = generateIdeas(board);
@@ -99,9 +95,7 @@ export class HumanSwiftEngine {
 
     if (options.strictBestPlay) {
       const strictBook = openingBookMove(board, options.seed ?? Date.now(), history);
-      if (strictBook && history.length <= 5 && !this.wouldRepeatPosition(board, strictBook.move, options.positionHistoryKeys ?? [])) {
-        return decision(strictBook.move, "strict", ["The strict opening repertoire selected this move."], [], { opening: strictBook.opening });
-      }
+      if (strictBook && history.length <= 5 && !this.wouldRepeatPosition(board, strictBook.move, options.positionHistoryKeys ?? [])) return decision(strictBook.move, "strict", ["The strict opening repertoire selected this move."], [], { opening: strictBook.opening });
       return decision(result.move, "strict", ["Strict mode follows the concrete principal move."], []);
     }
 
@@ -116,13 +110,12 @@ export class HumanSwiftEngine {
     if (!planned.some((candidate) => candidate.move.uci() === engineMoveUci)) planned.push(engineCandidate);
     const candidateScores = planned;
 
-    const ponderDepth = Math.max(safetyDepth, Math.min(5, Math.floor(options.ponderDepth ?? (profile.tacticalPressure > 0.2 ? safetyDepth + 1 : safetyDepth))));
+    const basePonderDepth = Math.max(safetyDepth, Math.min(5, Math.floor(options.ponderDepth ?? (profile.tacticalPressure > 0.2 ? safetyDepth + 1 : safetyDepth))));
+    const ponderDepth = Math.min(5, selectiveConsequenceDepth(basePonderDepth, candidateScores, (ideaKinds) => this.mind.planBias(ideaKinds)));
     const baseline = this.childSearchScore(board, result.move, ponderDepth, options.ponderTimeMs);
     const tacticalMargin = this.positionSafetyMargin(safetyMargin, profile);
 
-    const book = shouldPreferPlanToBook(observedMind, history.length)
-      ? null
-      : openingBookMove(board, options.seed ?? Date.now(), history);
+    const book = shouldPreferPlanToBook(observedMind, history.length) ? null : openingBookMove(board, options.seed ?? Date.now(), history);
     if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
       const bookMargin = history.length < 8 ? Math.max(tacticalMargin, 90) : history.length < 12 ? Math.max(tacticalMargin, 65) : tacticalMargin;
       const bookSafe = history.length <= 1 || this.isSafeCandidate(board, book.move, baseline, bookMargin, ponderDepth, options.safetyTimeMs);
