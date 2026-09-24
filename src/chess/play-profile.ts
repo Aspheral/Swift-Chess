@@ -1,8 +1,10 @@
 import { Board } from "./board";
 import { HumanEngineOptions } from "./human-engine";
 import { humanErrorProfile } from "./human";
+import { generateIdeas } from "./ideas";
+import { scoreCandidates } from "./scoring";
 
-export const SWIFT_PLAY_PROFILE = "adaptive-human-v6";
+export const SWIFT_PLAY_PROFILE = "adaptive-human-v7";
 
 export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 
@@ -12,12 +14,27 @@ export interface SwiftPlayProfile {
   options: HumanEngineOptions;
 }
 
+/** How unresolved the leading strategically plausible choices are, from 0 to 1. */
+export function candidateDecisionUncertainty(scores: number[]): number {
+  if (scores.length < 2) return 0;
+  const ordered = [...scores].sort((a, b) => b - a).slice(0, 3);
+  const leader = ordered[0];
+  const rivals = ordered.slice(1);
+  const closestGap = Math.min(...rivals.map((score) => Math.max(0, leader - score)));
+  // Candidate scores are intentionally coarse strategic evidence. A rival
+  // within roughly eight points is close enough to deserve another look;
+  // beyond that, the position has a comparatively clear human preference.
+  return Math.max(0, Math.min(1, 1 - closestGap / 8));
+}
+
 /** Estimate how much a quiet position deserves a second look before committing. */
 export function quietDecisionUncertainty(board: Board, practicalPressure: number): number {
-  // A broad menu of plausible moves creates choice uncertainty even without a
-  // tactic. Practical pressure adds a separate reason to hesitate. Neither is
-  // random: the board itself decides whether Swift spends the extra time.
-  const choiceLoad = Math.max(0, Math.min(1, (board.legalMoves().length - 18) / 18));
+  // Do not mistake a huge legal-move count for indecision. Humans discard many
+  // legal moves immediately. Measure ambiguity among Swift's generated ideas,
+  // then combine it with practical pressure from the position itself.
+  const generation = generateIdeas(board);
+  const candidates = scoreCandidates(board, 8, generation).scores;
+  const choiceLoad = candidateDecisionUncertainty(candidates.map((candidate) => candidate.score));
   const pressureLoad = Math.max(0, Math.min(1, practicalPressure / 0.48));
   return Math.max(choiceLoad, pressureLoad);
 }
