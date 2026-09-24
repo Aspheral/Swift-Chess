@@ -4,7 +4,7 @@ import { humanErrorProfile } from "./human";
 import { generateIdeas } from "./ideas";
 import { CandidateScore, scoreCandidates } from "./scoring";
 
-export const SWIFT_PLAY_PROFILE = "adaptive-human-v8";
+export const SWIFT_PLAY_PROFILE = "adaptive-human-v9";
 
 export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 
@@ -27,30 +27,37 @@ export function candidateDecisionUncertainty(scores: number[]): number {
   return Math.max(0, Math.min(1, 1 - closestGap / 8));
 }
 
+/** How strategically different a rival is from the leading candidate, from 0 to 1. */
+export function ideaConflict(leaderKinds: string[], rivalKinds: string[]): number {
+  if (!leaderKinds.length || !rivalKinds.length) return 1;
+  const leader = new Set(leaderKinds);
+  const rival = new Set(rivalKinds);
+  let shared = 0;
+  for (const kind of rival) if (leader.has(kind)) shared += 1;
+  const union = new Set([...leader, ...rival]).size;
+  return union ? 1 - shared / union : 0;
+}
+
 /**
  * Distinguish several ways to execute one idea from a genuine conflict between
  * ideas. Humans can choose fairly quickly between two development moves that
- * serve the same plan, but competing plans deserve a more deliberate decision.
+ * serve the same plan, while partially overlapping plans deserve intermediate
+ * hesitation and fully competing plans deserve a more deliberate decision.
  */
 export function candidateIdeaUncertainty(candidates: Array<Pick<CandidateScore, "score" | "ideaKinds">>): number {
   if (candidates.length < 2) return 0;
   const ordered = [...candidates].sort((a, b) => b.score - a.score).slice(0, 3);
   const leader = ordered[0];
-  const leaderKinds = new Set(leader.ideaKinds);
-  const competingIdeas = ordered.slice(1).filter((candidate) =>
-    candidate.ideaKinds.every((kind) => !leaderKinds.has(kind)),
+  const moveUncertainty = candidateDecisionUncertainty(ordered.map((candidate) => candidate.score));
+  const closestRival = ordered.slice(1).reduce((best, candidate) =>
+    Math.abs(leader.score - candidate.score) < Math.abs(leader.score - best.score) ? candidate : best,
   );
+  const conflict = ideaConflict(leader.ideaKinds, closestRival.ideaKinds);
 
-  if (!competingIdeas.length) {
-    // There is still some move-level choice, but it is mostly about execution
-    // of the same strategic thought rather than choosing what Swift believes.
-    return candidateDecisionUncertainty(ordered.map((candidate) => candidate.score)) * 0.35;
-  }
-
-  return candidateDecisionUncertainty([
-    leader.score,
-    ...competingIdeas.map((candidate) => candidate.score),
-  ]);
+  // There is still some move-level choice when ideas overlap completely. As
+  // the rival's strategic content diverges, preserve progressively more of the
+  // underlying uncertainty instead of flipping a binary same/different switch.
+  return moveUncertainty * (0.35 + 0.65 * conflict);
 }
 
 /** Estimate how much a quiet position deserves a second look before committing. */
