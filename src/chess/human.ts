@@ -87,6 +87,36 @@ export function humanErrorProfile(board: Board, baseBudget = 0.35): HumanErrorPr
   return { complexity, tacticalPressure, phase, practicalPressure, gameStage, effectiveBudget };
 }
 
+/**
+ * Extra score latitude reserved for a mature continuing plan.
+ *
+ * This is deliberately not a general blunder budget. Only moves that serve the
+ * remembered plan may use it, and tactical/practical pressure squeezes it back
+ * toward zero. A calm, well-supported plan can therefore prefer a near-equal
+ * move for a human reason without making Swift randomly ignore calculation.
+ */
+export function humanPlanLatitude(
+  mind: SwiftMindSnapshot | undefined,
+  profile: HumanErrorProfile,
+): number {
+  if (
+    !mind?.plan ||
+    mind.planAge < 2 ||
+    mind.confidence < 0.55 ||
+    mind.setbacks > 0
+  ) return 0;
+
+  if (profile.tacticalPressure >= 0.12 || profile.practicalPressure >= 0.48) return 0;
+
+  const maturity = clamp((mind.planAge - 1) / 4);
+  const conviction = clamp((mind.confidence - 0.55) / 0.35);
+  const tacticalCalm = clamp(1 - profile.tacticalPressure / 0.12);
+  const practicalCalm = clamp(1 - profile.practicalPressure / 0.48);
+  const quietness = tacticalCalm * practicalCalm;
+
+  return Math.min(18, (6 + conviction * 7 + maturity * 4) * quietness);
+}
+
 function isCentralPawnMove(board: Board, move: Move): boolean {
   const piece = board.pieceAt(move.from);
   if (piece?.[1] !== "p") return false;
@@ -289,7 +319,17 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
 
   const topScore = Math.max(...ranked.map((candidate) => candidate.score));
   const allowedLoss = profile.effectiveBudget * 80;
-  const eligible = ranked.filter((candidate) => candidate.score >= topScore - allowedLoss);
+  const planLatitude = humanPlanLatitude(options.mind, profile);
+  const activePlan = options.mind?.plan;
+  const eligible = ranked.filter((candidate) =>
+    candidate.score >= topScore - allowedLoss ||
+    (
+      activePlan !== null &&
+      activePlan !== undefined &&
+      candidate.ideaKinds.includes(activePlan) &&
+      candidate.score >= topScore - planLatitude
+    ),
+  );
   const rng = options.seed === undefined ? Math.random : createSeededRandom(options.seed);
   const temperature = 1 + randomness * 5 + profile.effectiveBudget * 7;
   const initiative = clamp(options.initiative ?? 0.5);
