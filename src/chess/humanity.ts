@@ -13,7 +13,10 @@ export interface HumanitySummary {
   tacticalOverrideRate: number;
   openingBookRate: number;
   engineFallbackRate: number;
+  humanPlanDivergenceRate: number;
   averagePlanAge: number;
+  averagePlanConfidence: number;
+  setbackRate: number;
   planContinuationRate: number;
   distinctPlans: string[];
   reasonCoverage: number;
@@ -38,11 +41,20 @@ export function summarizeHumanity(observations: HumanityObservation[]): Humanity
   const tactical = usable.filter((observation) => observation.decision?.source === "tactical").length;
   const book = usable.filter((observation) => observation.decision?.source === "opening-book").length;
   const fallback = usable.filter((observation) => observation.decision?.source === "engine-fallback").length;
+  const humanPlanDivergences = usable.filter(
+    (observation) => observation.decision?.source === "human-plan" && !observation.decision?.engineAgreement,
+  ).length;
   const reasons = usable.filter((observation) => (observation.decision?.reasons.length ?? 0) > 0).length;
 
   const minds = usable.map((observation) => observation.mind).filter((mind): mind is SwiftMindSnapshot => !!mind);
   const averagePlanAge = minds.length
     ? minds.reduce((sum, mind) => sum + mind.planAge, 0) / minds.length
+    : 0;
+  const averagePlanConfidence = minds.length
+    ? minds.reduce((sum, mind) => sum + mind.confidence, 0) / minds.length
+    : 0;
+  const setbackRate = minds.length
+    ? minds.filter((mind) => mind.setbacks > 0).length / minds.length
     : 0;
 
   let planTransitions = 0;
@@ -64,7 +76,10 @@ export function summarizeHumanity(observations: HumanityObservation[]): Humanity
     tacticalOverrideRate: rate(tactical, decisions),
     openingBookRate: rate(book, decisions),
     engineFallbackRate: rate(fallback, decisions),
+    humanPlanDivergenceRate: rate(humanPlanDivergences, decisions),
     averagePlanAge,
+    averagePlanConfidence,
+    setbackRate,
     planContinuationRate: rate(planContinuations, planTransitions),
     distinctPlans,
     reasonCoverage: rate(reasons, decisions),
