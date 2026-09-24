@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Board, swiftPlayProfile } from "../src";
+import { quietDecisionUncertainty } from "../src/chess/play-profile";
 
 describe("Swift browser play timing", () => {
   it("plays familiar opening positions quickly", () => {
@@ -36,5 +37,14 @@ describe("Swift browser play timing", () => {
     expect(profile.kind).toBe("endgame");
     expect(profile.options.timeMs).toBeLessThan(760);
     expect(profile.options.safetyDepth).toBe(4);
+  });
+
+  it("treats quiet choice overload as uncertainty instead of a flat think", () => {
+    const narrow = Board.fromFEN("7k/8/8/8/8/8/6P1/6K1 w - - 0 1");
+    const broad = Board.start();
+
+    expect(quietDecisionUncertainty(narrow, 0)).toBe(0);
+    expect(quietDecisionUncertainty(broad, 0)).toBeGreaterThan(0);
+    expect(quietDecisionUncertainty(narrow, 0.36)).toBeGreaterThan(0.7);
   });
 });
