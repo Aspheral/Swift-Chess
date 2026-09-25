@@ -24,6 +24,16 @@ describe("Swift selective calculation", () => {
     expect(selectiveConflictCandidateIndexes(candidates, noBias)).toEqual([0, 1]);
   });
 
+  it("prefers a credible alternative plan over a slightly closer same-plan move", () => {
+    const candidates = [
+      { score: 12, ideaKinds: ["develop"] },
+      { score: 11.8, ideaKinds: ["develop"] },
+      { score: 11.2, ideaKinds: ["pawn-break"] },
+    ];
+    expect(selectiveConflictCandidateIndexes(candidates, noBias)).toEqual([0, 2]);
+    expect(selectiveCandidateDepths(3, candidates, noBias)).toEqual([4, 3, 4]);
+  });
+
   it("does not focus extra calculation on unrelated candidates", () => {
     const candidates = [
       { score: 12, ideaKinds: ["develop"] },
