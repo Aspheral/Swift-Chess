@@ -397,6 +397,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
       `humanPlan=${(humanity.humanPlanRate * 100).toFixed(1)}% planDivergence=${(humanity.humanPlanDivergenceRate * 100).toFixed(1)}% ` +
       `fallback=${(humanity.engineFallbackRate * 100).toFixed(1)}% planContinuation=${(humanity.planContinuationRate * 100).toFixed(1)}% ` +
       `avgPlanAge=${humanity.averagePlanAge.toFixed(2)} avgConfidence=${(humanity.averagePlanConfidence * 100).toFixed(1)}% ` +
+      `avgProgress=${humanity.averagePlanProgress.toFixed(3)} progressing=${(humanity.progressingPlanRate * 100).toFixed(1)}% ` +
       `setbackRate=${(humanity.setbackRate * 100).toFixed(1)}% plans=${humanity.distinctPlans.join(",")}`,
     );
 

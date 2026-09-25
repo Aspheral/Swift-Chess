@@ -3,6 +3,7 @@ import {
   Board,
   CandidateScore,
   generateIdeas,
+  planProgressMetric,
   selectHumanMove,
   SwiftMind,
   SwiftMindSnapshot,
@@ -52,6 +53,29 @@ describe("Swift persistent mind", () => {
     expect(second.plan).toBe("develop");
     expect(second.planAge).toBeGreaterThan(first.planAge);
     expect(second.confidence).toBeGreaterThan(first.confidence);
+  });
+
+
+  it("recognizes concrete progress on a continuing development plan", () => {
+    const start = Board.start();
+    const mind = new SwiftMind();
+    mind.observe(start, ideas(start, [["develop", 60]]), quietProfile, []);
+
+    let next = start;
+    for (const uci of ["g1f3", "a7a6"]) {
+      const move = next.legalMoves().find((candidate) => candidate.uci() === uci);
+      if (!move) throw new Error(`Illegal fixture move: ${uci}`);
+      next = next.makeMove(move);
+    }
+
+    const generation = ideas(next, [["develop", 60]]);
+    expect(planProgressMetric(start, ideas(start, [["develop", 60]]), "develop")).toBe(0);
+    expect(planProgressMetric(next, generation, "develop")).toBeGreaterThan(0);
+
+    const state = mind.observe(next, generation, quietProfile, ["g1f3", "a7a6"]);
+    expect(state.plan).toBe("develop");
+    expect(state.planProgress).toBeGreaterThan(0);
+    expect(state.planProgressNote).toContain("progress");
   });
 
   it("earns more confidence when the board strongly supports the continuing plan", () => {

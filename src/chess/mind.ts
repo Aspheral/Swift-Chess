@@ -13,6 +13,8 @@ export interface SwiftMindSnapshot {
   planAge: number;
   confidence: number;
   planReason?: string;
+  planProgress?: number;
+  planProgressNote?: string;
   setbacks: number;
   concern: string;
   opponent: SwiftOpponentModel;
@@ -67,6 +69,82 @@ function confidenceGain(priority: number, setbacks: number): number {
   const evidence = clamp((priority - 35) / 65);
   const base = 0.015 + evidence * 0.065;
   return setbacks ? base * 0.45 : base;
+}
+
+function signedClamp(value: number, limit = 1): number {
+  return Math.max(-limit, Math.min(limit, value));
+}
+
+/**
+ * Measure whether the board is moving in the direction a plan is trying to go.
+ * The metric is intentionally coarse and plan-specific. Swift should remember
+ * whether a plan is making progress, not invent a universal "strategic score."
+ */
+export function planProgressMetric(
+  board: Board,
+  generation: IdeaGeneration,
+  plan: IdeaKind,
+): number {
+  const u = generation.understanding;
+  const side = u.sideToMove;
+  const enemy = opposite(side);
+  const ownPieces = u.pieces[side];
+  const enemyPieces = u.pieces[enemy];
+  const averageActivity = ownPieces.length
+    ? ownPieces.reduce((sum, piece) => sum + piece.activity, 0) / (ownPieces.length * 10)
+    : 0;
+  const ownVulnerable = ownPieces.filter((piece) => piece.vulnerable).length;
+  const enemyVulnerable = enemyPieces.filter((piece) => piece.vulnerable).length;
+  const ownWeakPawns = u.pawns[side].isolated + u.pawns[side].doubled + u.pawns[side].backward;
+  const enemyWeakPawns = u.pawns[enemy].isolated + u.pawns[enemy].doubled + u.pawns[enemy].backward;
+  const forcing = clamp(u.tactics.forcingMoves / 10);
+  const enemyKingPressure = clamp(
+    (u.king[enemy].exposed ? 0.35 : 0) +
+    u.king[enemy].attackers * 0.18 +
+    enemyVulnerable * 0.08,
+  );
+
+  switch (plan) {
+    case "develop":
+      return clamp(u.development[side] / 4);
+    case "defend":
+      return clamp(
+        1 -
+        ownVulnerable * 0.18 -
+        (u.king[side].exposed ? 0.2 : 0) -
+        u.king[side].attackers * 0.18 -
+        ownWeakPawns * 0.04,
+      );
+    case "improve-piece":
+      return clamp(averageActivity);
+    case "attack":
+    case "create-threat":
+    case "tactical":
+      return clamp(enemyKingPressure * 0.65 + forcing * 0.35);
+    case "create-weakness":
+      return clamp((enemyWeakPawns * 0.16) + (enemyVulnerable * 0.08));
+    case "pawn-break":
+      return clamp(
+        (u.pawns[side].openFiles.length + u.pawns[side].semiOpenFiles.length) * 0.08 +
+        enemyWeakPawns * 0.12,
+      );
+    case "simplify": {
+      const pieces = board.toFEN().split(/\s+/)[0].replace(/[1-8/]/g, "").length;
+      const materialForSide = side === "w" ? u.material : -u.material;
+      const reduction = clamp((32 - pieces) / 24);
+      return materialForSide > 0 ? reduction : reduction * 0.45;
+    }
+    case "complicate":
+      return clamp((u.space[side] / 40) * 0.55 + forcing * 0.45);
+  }
+}
+
+function progressNote(progress: number): string {
+  if (progress >= 0.08) return "The last cycle made clear progress on the plan.";
+  if (progress >= 0.025) return "The plan improved a little.";
+  if (progress <= -0.08) return "The plan lost ground after the last cycle.";
+  if (progress <= -0.025) return "The plan became slightly less convincing.";
+  return "The plan is holding roughly steady.";
 }
 
 function describeConcern(generation: IdeaGeneration, profile: MindPositionProfile): string {
@@ -128,6 +206,8 @@ export class SwiftMind {
     observedHistoryLength: 0,
   };
   private lastObservedPositionKey = "";
+  private lastPlanMetric: number | null = null;
+  private lastMetricPlan: IdeaKind | null = null;
 
   observe(board: Board, generation: IdeaGeneration, profile: MindPositionProfile, history: string[] = []): SwiftMindSnapshot {
     if (history.length < this.state.observedHistoryLength) this.reset();
@@ -145,6 +225,14 @@ export class SwiftMind {
     const ideas = strategicIdeas(generation.ideas);
     const best = ideas[0];
     const current = this.state.plan;
+    const currentMetric = current ? planProgressMetric(board, generation, current) : null;
+    const planProgress =
+      current &&
+      this.lastMetricPlan === current &&
+      this.lastPlanMetric !== null &&
+      currentMetric !== null
+        ? signedClamp(currentMetric - this.lastPlanMetric)
+        : 0;
     const currentPriority = current ? planPriority(ideas, current) : -Infinity;
     const bestPriority = best?.priority ?? -Infinity;
     const tacticalEmergency = profile.tacticalPressure >= 0.24 || board.isInCheck(board.turn());
@@ -161,6 +249,8 @@ export class SwiftMind {
       this.state.plan = best.kind;
       this.state.planAge = 1;
       this.state.planReason = best.reason;
+      this.state.planProgress = 0;
+      this.state.planProgressNote = "Swift is establishing a new plan.";
       this.state.setbacks = 0;
       this.state.confidence = clamp(0.42 + bestPriority / 180);
     } else if (best.kind === current) {
@@ -183,10 +273,27 @@ export class SwiftMind {
       }
     }
 
+    if (this.state.plan && this.state.plan === current && currentMetric !== null) {
+      this.state.planProgress = planProgress;
+      this.state.planProgressNote = progressNote(planProgress);
+      if (!tacticalEmergency) {
+        if (planProgress >= 0.025) {
+          this.state.confidence = clamp(this.state.confidence + Math.min(0.03, planProgress * 0.2));
+        } else if (planProgress <= -0.025) {
+          this.state.confidence = clamp(this.state.confidence - Math.min(0.045, Math.abs(planProgress) * 0.24));
+        }
+      }
+    } else {
+      this.state.planProgress = 0;
+      this.state.planProgressNote = this.state.plan ? "Swift is establishing a new plan." : undefined;
+    }
+
     this.state.concern = describeConcern(generation, profile);
     this.state.opponent = analyzeOpponent(history, board.turn());
     this.state.observedHistoryLength = history.length;
     this.lastObservedPositionKey = positionKey;
+    this.lastMetricPlan = this.state.plan;
+    this.lastPlanMetric = this.state.plan ? planProgressMetric(board, generation, this.state.plan) : null;
     return this.snapshot();
   }
 
@@ -204,6 +311,8 @@ export class SwiftMind {
       this.state.plan = null;
       this.state.planAge = 0;
       this.state.planReason = undefined;
+      this.state.planProgress = 0;
+      this.state.planProgressNote = undefined;
     }
     return this.snapshot();
   }
@@ -232,5 +341,7 @@ export class SwiftMind {
       observedHistoryLength: 0,
     };
     this.lastObservedPositionKey = "";
+    this.lastPlanMetric = null;
+    this.lastMetricPlan = null;
   }
 }
