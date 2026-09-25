@@ -10,6 +10,7 @@ export interface SwiftWorkerSearchRequest {
   seed: number;
   moveHistory: string[];
   positionHistoryKeys: string[];
+  mode?: "play" | "analyze";
 }
 
 export interface SwiftWorkerResetRequest {
@@ -23,6 +24,7 @@ export interface SwiftWorkerSearchResponse {
   id: number;
   move: string | null;
   pv: string[];
+  suggestions?: string[];
   opening?: SwiftOpening;
   score: number;
   depth: number;

@@ -13,6 +13,7 @@ const pieceNames: Record<Piece, string> = {
 
 type PromotionPiece = "q" | "r" | "b" | "n";
 type Side = "w" | "b";
+type GameMode = "play" | "analyze";
 type Arrow = { from: number; to: number };
 
 function squareName(index: number) {
@@ -73,7 +74,7 @@ function ThoughtArrows({ arrows, flipped }: { arrows: Arrow[]; flipped: boolean 
 
   return (
     <svg className="thought-arrows" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      <defs><marker id="swift-arrowhead" markerWidth="5" markerHeight="5" refX="4.2" refY="2.5" orient="auto"><path d="M0 0L5 2.5L0 5Z" /></marker></defs>
+      <defs><marker id="swift-arrowhead" markerWidth="6" markerHeight="6" refX="5.1" refY="3" orient="auto"><path d="M0 0L6 3L0 6Z" /></marker></defs>
       {arrows.map((arrow, index) => {
         const from = point(arrow.from); const to = point(arrow.to);
         const dx = to.x - from.x; const dy = to.y - from.y; const length = Math.max(1, Math.hypot(dx, dy));
@@ -91,6 +92,7 @@ export default function Playground() {
   const requestIdRef = useRef(0);
   const activeSearchRef = useRef<{ id: number; version: number; game: Game; startedAt: number } | null>(null);
   const playerSideRef = useRef<Side>("w");
+  const analysisModeRef = useRef(false);
   const [board, setBoard] = useState(() => gameRef.current.board());
   const [selected, setSelected] = useState<number | null>(null);
   const [history, setHistory] = useState<string[]>([]);
@@ -99,6 +101,7 @@ export default function Playground() {
   const [promotion, setPromotion] = useState<{ moves: Move[] } | null>(null);
   const [opening, setOpening] = useState<SwiftOpening | null>(null);
   const [playerSide, setPlayerSide] = useState<Side>("w");
+  const [mode, setMode] = useState<GameMode>("play");
   const [flipped, setFlipped] = useState(false);
   const [thoughtArrows, setThoughtArrows] = useState<Arrow[]>([]);
   const [mind, setMind] = useState<SwiftMindSnapshot | null>(null);
@@ -111,7 +114,8 @@ export default function Playground() {
   const terminal = result !== "ongoing";
   const turn = board.toFEN().split(/\s+/)[1] as Side;
   const inCheck = board.isInCheck(turn);
-  const canUndoPlayerMove = history.some((_, index) =>
+  const analysisMode = mode === "analyze";
+  const canUndoPlayerMove = analysisMode ? history.length > 0 : history.some((_, index) =>
     (index % 2 === 0 ? "w" : "b") === playerSide,
   );
 
@@ -144,16 +148,18 @@ export default function Playground() {
           ? game.legalMoves().find((candidate) => candidate.uci() === response.move)
           : null;
 
+        const arrowMoves = analysisModeRef.current
+          ? (response.suggestions?.length ? response.suggestions : response.move ? [response.move] : [])
+          : response.pv.slice(0, 4);
         setThoughtArrows(
-          response.pv
-            .slice(0, 4)
+          arrowMoves
             .map(arrowFromUci)
             .filter((arrow): arrow is Arrow => arrow !== null),
         );
         if (response.opening) setOpening(response.opening);
         setMind(response.mind ?? null);
 
-        if (move && game.turn() !== playerSideRef.current) {
+        if (move && !analysisModeRef.current && game.turn() !== playerSideRef.current) {
           game.play(move);
           setBoard(game.board());
           setLastMove({ from: move.from, to: move.to });
@@ -165,7 +171,7 @@ export default function Playground() {
       };
 
       const elapsed = performance.now() - active.startedAt;
-      const remaining = Math.max(0, response.minimumThinkMs - elapsed);
+      const remaining = analysisModeRef.current ? 0 : Math.max(0, response.minimumThinkMs - elapsed);
       if (remaining > 0) window.setTimeout(finish, remaining);
       else finish();
     };
@@ -184,7 +190,7 @@ export default function Playground() {
   }
 
   function runSwift(version: number, game: Game) {
-    if (version !== gameVersion.current || gameRef.current !== game || game.turn() === playerSideRef.current) return;
+    if (version !== gameVersion.current || gameRef.current !== game || (!analysisModeRef.current && game.turn() === playerSideRef.current)) return;
     const id = ++requestIdRef.current;
     activeSearchRef.current = { id, version, game, startedAt: performance.now() };
     setThinking(true);
@@ -195,7 +201,22 @@ export default function Playground() {
       seed: openingSeed.current,
       moveHistory: game.moveHistory(),
       positionHistoryKeys: game.positionHistoryKeys(),
+      mode: analysisModeRef.current ? "analyze" : "play",
     });
+  }
+
+  function setGameMode(nextMode: GameMode) {
+    if (mode === nextMode) return;
+    gameVersion.current += 1;
+    restartWorker();
+    analysisModeRef.current = nextMode === "analyze";
+    setMode(nextMode);
+    setSelected(null);
+    setPromotion(null);
+    setThinking(false);
+    setOpening(null);
+    setThoughtArrows([]);
+    setMind(null);
   }
 
   function reset(side: Side = playerSide) {
@@ -216,10 +237,12 @@ export default function Playground() {
     const game = gameRef.current;
     game.undo();
 
-    // If Swift has already replied, also rewind its reply so the board returns
-    // to the position immediately before the player's mistaken move.
-    while (game.canUndo() && game.turn() !== playerSide) {
-      game.undo();
+    // In a normal game, rewind Swift's reply too. Analyze mode rewinds one ply
+    // because the user is intentionally controlling both colors.
+    if (!analysisMode) {
+      while (game.canUndo() && game.turn() !== playerSide) {
+        game.undo();
+      }
     }
 
     const moves = game.moveHistory();
@@ -237,6 +260,13 @@ export default function Playground() {
 
   function applyHumanMove(move: Move) {
     const game = gameRef.current;
+    if (analysisModeRef.current) {
+      activeSearchRef.current = null;
+      setThinking(false);
+      setThoughtArrows([]);
+      setMind(null);
+      setOpening(null);
+    }
     game.play(move);
     const next = game.board();
     setBoard(next); setSelected(null); setPromotion(null); setLastMove({ from: move.from, to: move.to }); setHistory(game.moveHistory());
@@ -249,15 +279,16 @@ export default function Playground() {
   }
 
   function clickSquare(index: number) {
-    if (thinking || terminal || turn !== playerSide || promotion) return;
+    if (terminal || promotion || (!analysisMode && (thinking || turn !== playerSide))) return;
     const piece = board.pieceAt(index);
     if (selectedTargets.has(index)) { chooseMove(selectedMoves.filter((move) => move.to === index)); return; }
-    if (piece?.startsWith(playerSide)) { setSelected(index); return; }
+    if (piece?.startsWith(analysisMode ? turn : playerSide)) { setSelected(index); return; }
     setSelected(null);
   }
 
   function dragStart(event: React.DragEvent, index: number) {
-    if (thinking || terminal || turn !== playerSide || !board.pieceAt(index)?.startsWith(playerSide)) { event.preventDefault(); return; }
+    const movableSide = analysisMode ? turn : playerSide;
+    if (terminal || (!analysisMode && thinking) || (!analysisMode && turn !== playerSide) || !board.pieceAt(index)?.startsWith(movableSide)) { event.preventDefault(); return; }
     setSelected(index); event.dataTransfer.setData("text/plain", String(index)); event.dataTransfer.effectAllowed = "move";
   }
 
@@ -269,7 +300,17 @@ export default function Playground() {
     if (moves.length) chooseMove(moves);
   }
 
-  const status = thinking ? "Swift is considering the position…" : terminal ? (result === "checkmate" ? `Checkmate · ${turn === playerSide ? "Swift" : "You"} wins` : resultLabels[result] ?? "Game over") : turn === playerSide ? (inCheck ? "Your king is in check" : "Your move") : "Swift to move";
+  const status = analysisMode
+    ? thinking
+      ? `Swift is analyzing ${turn === "w" ? "White" : "Black"}'s move…`
+      : terminal
+        ? (result === "checkmate" ? `Checkmate · ${turn === "w" ? "Black" : "White"} wins` : resultLabels[result] ?? "Game over")
+        : `${turn === "w" ? "White" : "Black"} to move · Swift is showing its preferences`
+    : thinking
+      ? "Swift is considering the position…"
+      : terminal
+        ? (result === "checkmate" ? `Checkmate · ${turn === playerSide ? "Swift" : "You"} wins` : resultLabels[result] ?? "Game over")
+        : turn === playerSide ? (inCheck ? "Your king is in check" : "Your move") : "Swift to move";
   const promotionOptions: Array<{ piece: PromotionPiece; label: string }> = [{ piece: "q", label: "Queen" }, { piece: "r", label: "Rook" }, { piece: "b", label: "Bishop" }, { piece: "n", label: "Knight" }];
 
   useEffect(() => {
@@ -277,21 +318,29 @@ export default function Playground() {
   }, [playerSide]);
 
   useEffect(() => {
-    if (turn === playerSide || terminal || thinking) return;
+    analysisModeRef.current = analysisMode;
+  }, [analysisMode]);
+
+  useEffect(() => {
+    if (terminal || thinking || (!analysisMode && turn === playerSide)) return;
     runSwift(gameVersion.current, gameRef.current);
-  }, [turn, playerSide, terminal, thinking]);
+  }, [turn, playerSide, terminal, thinking, analysisMode]);
 
   useEffect(() => () => workerRef.current?.terminate(), []);
 
   return (
     <section className="playground" id="play">
       <div className="play-head">
-        <div><p className="eyebrow">YOUR GAME</p><h2>Set up the board. See what happens.</h2><p>Play as White or Black, turn the board around, and follow the lines Swift is considering as the position changes.</p></div>
+        <div><p className="eyebrow">YOUR GAME</p><h2>Set up the board. See what happens.</h2><p>Play Swift normally, or switch to Analyze to move both colors while Swift marks the moves it prefers.</p></div>
         <div className="game-controls">
-          <div className="side-picker" aria-label="Choose your side">
+          <div className="mode-picker" aria-label="Choose board mode">
+            <button className={mode === "play" ? "active" : ""} onClick={() => setGameMode("play")}>Play</button>
+            <button className={mode === "analyze" ? "active" : ""} onClick={() => setGameMode("analyze")}>Analyze</button>
+          </div>
+          {!analysisMode && <div className="side-picker" aria-label="Choose your side">
             <button className={playerSide === "w" ? "active" : ""} onClick={() => reset("w")}>White</button>
             <button className={playerSide === "b" ? "active" : ""} onClick={() => reset("b")}>Black</button>
-          </div>
+          </div>}
           <button className="flip" onClick={() => setFlipped((value) => !value)} aria-label="Flip board">↻ Flip board</button>
           <button className="undo" onClick={undoPlayerMove} disabled={!canUndoPlayerMove} aria-label="Undo your last move">← Undo move</button>
           <button className="reset" onClick={() => reset()}>New game</button>
@@ -307,7 +356,7 @@ export default function Playground() {
                 const rank = flipped ? visualRank : 7 - visualRank; const file = flipped ? 7 - visualFile : visualFile; const index = rank * 8 + file;
                 const piece = board.pieceAt(index); const isSelected = selected === index; const isTarget = selectedTargets.has(index); const isLast = lastMove?.from === index || lastMove?.to === index; const isKingInCheck = piece?.[1] === "k" && piece[0] === turn && inCheck; const dark = (rank + file) % 2 === 1;
                 return <button key={index} className={`square ${dark ? "dark" : "light"} ${isSelected ? "selected" : ""} ${isTarget ? "target" : ""} ${isLast ? "last" : ""} ${isKingInCheck ? "in-check" : ""}`} onClick={() => clickSquare(index)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropSquare(event, index)} aria-label={piece ? `${pieceNames[piece]} on ${squareName(index)}` : squareName(index)}>
-                  {piece && <span className={`piece ${piece[0]}`} draggable={piece[0] === playerSide} onDragStart={(event) => dragStart(event, index)}><PieceArt piece={piece} /></span>}
+                  {piece && <span className={`piece ${piece[0]}`} draggable={piece[0] === (analysisMode ? turn : playerSide)} onDragStart={(event) => dragStart(event, index)}><PieceArt piece={piece} /></span>}
                   {isTarget && <span className={`move-dot ${piece ? "capture" : ""}`} />}
                 </button>;
               })}
@@ -315,13 +364,13 @@ export default function Playground() {
             </div>
             <div className="file-labels" aria-hidden="true">{(flipped ? files.split("").reverse() : files.split("")).map((file) => <span key={file}>{file}</span>)}</div>
           </div>
-          {promotion && <div className="promotion" role="dialog" aria-label="Choose promotion piece"><span>Promote to</span>{promotionOptions.map(({ piece, label }) => <button key={piece} onClick={() => { const move = promotion.moves.find((candidate) => candidate.promotion === piece); if (move) applyHumanMove(move); }}><PieceArt piece={`${playerSide}${piece}` as Piece} /><small>{label}</small></button>)}</div>}
+          {promotion && <div className="promotion" role="dialog" aria-label="Choose promotion piece"><span>Promote to</span>{promotionOptions.map(({ piece, label }) => <button key={piece} onClick={() => { const move = promotion.moves.find((candidate) => candidate.promotion === piece); if (move) applyHumanMove(move); }}><PieceArt piece={`${analysisMode ? turn : playerSide}${piece}` as Piece} /><small>{label}</small></button>)}</div>}
         </div>
         <aside className="game-info">
           <div className="game-status"><span className={thinking ? "pulse" : "dot"} />{status}</div>
           <div className="thought-card">
-            <span>Swift's current plan</span>
-            <strong>{mind?.plan ? planLabel(mind.plan) : (thoughtArrows.length ? `${thoughtArrows.length} moves in view` : "Reading the position")}</strong>
+            <span>{analysisMode ? "Swift's analysis" : "Swift's current plan"}</span>
+            <strong>{mind?.plan ? planLabel(mind.plan) : (thoughtArrows.length ? (analysisMode ? `${thoughtArrows.length} preferred move${thoughtArrows.length === 1 ? "" : "s"}` : `${thoughtArrows.length} moves in view`) : "Reading the position")}</strong>
             <p>{mind?.planReason ?? "Swift carries plans forward when the position still supports them."}</p>
             {mind?.planProgressNote && <p className="mind-detail">{mind.planProgressNote}</p>}
             {mind && <p className="mind-detail">Watching: {mind.concern} Confidence {Math.round(mind.confidence * 100)}% · held for {mind.planAge} Swift turn{mind.planAge === 1 ? "" : "s"}{mind.setbacks ? ` · ${mind.setbacks} setback${mind.setbacks === 1 ? "" : "s"}` : ""}.</p>}
