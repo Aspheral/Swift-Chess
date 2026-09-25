@@ -84,3 +84,19 @@ export function selectiveConsequenceDepth<Idea extends string>(
   const depth = Math.max(1, Math.floor(baseDepth));
   return selectiveConflictCandidateIndexes(candidates, planBias).length ? depth + 1 : depth;
 }
+
+
+/**
+ * Allocate consequence-search depth per candidate. Only the two moves behind
+ * unresolved strategic conflict receive Swift's optional extra look.
+ */
+export function selectiveCandidateDepths<Idea extends string>(
+  baseDepth: number,
+  candidates: SelectiveCandidate<Idea>[],
+  planBias: (ideaKinds: Idea[]) => number,
+  maxDepth = 5,
+): number[] {
+  const depth = Math.max(1, Math.min(maxDepth, Math.floor(baseDepth)));
+  const focused = new Set(selectiveConflictCandidateIndexes(candidates, planBias));
+  return candidates.map((_, index) => focused.has(index) ? Math.min(maxDepth, depth + 1) : depth);
+}

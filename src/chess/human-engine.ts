@@ -8,7 +8,7 @@ import { SwiftOpening, openingBookMove } from "./openings";
 import { findTacticalPriority, isOwnQueenUnderAttack } from "./fast-tactics";
 import { deriveSeed } from "./random";
 import { SwiftMind, SwiftMindSnapshot } from "./mind";
-import { selectiveConsequenceDepth } from "./selective-calculation";
+import { selectiveCandidateDepths } from "./selective-calculation";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   safetyMargin?: number;
@@ -111,19 +111,7 @@ export class HumanSwiftEngine {
     const candidateScores = planned;
 
     const basePonderDepth = Math.max(safetyDepth, Math.min(5, Math.floor(options.ponderDepth ?? (profile.tacticalPressure > 0.2 ? safetyDepth + 1 : safetyDepth))));
-    const ponderDepth = Math.min(5, selectiveConsequenceDepth(basePonderDepth, candidateScores, (ideaKinds) => this.mind.planBias(ideaKinds)));
-    const baseline = this.childSearchScore(board, result.move, ponderDepth, options.ponderTimeMs);
     const tacticalMargin = this.positionSafetyMargin(safetyMargin, profile);
-
-    const book = shouldPreferPlanToBook(observedMind, history.length) ? null : openingBookMove(board, options.seed ?? Date.now(), history);
-    if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
-      const bookMargin = history.length < 8 ? Math.max(tacticalMargin, 90) : history.length < 12 ? Math.max(tacticalMargin, 65) : tacticalMargin;
-      const bookSafe = history.length <= 1 || this.isSafeCandidate(board, book.move, baseline, bookMargin, ponderDepth, options.safetyTimeMs);
-      if (bookSafe) {
-        const bookCandidate = candidateScores.find((candidate) => candidate.move.uci() === book.move.uci()) ?? { move: book.move, score: result.score, ideaKinds: ["develop"] as CandidateScore["ideaKinds"], reasons: ["Swift's opening repertoire selected this move."] };
-        return decision(book.move, "opening-book", bookCandidate.reasons, [bookCandidate], { opening: book.opening });
-      }
-    }
 
     const safetyLimit = Math.max(1, Math.floor(options.safetyCandidateLimit ?? candidateScores.length));
     const safetyCandidates = candidateScores.slice(0, safetyLimit);
@@ -132,7 +120,22 @@ export class HumanSwiftEngine {
       else safetyCandidates.push(engineCandidate);
     }
 
-    const safe = safetyCandidates.map((candidate) => this.assessCandidate(board, candidate, baseline, tacticalMargin, ponderDepth, options.safetyTimeMs, candidate.move.uci() === engineMoveUci)).filter((candidate): candidate is CandidateScore => candidate !== null);
+    const candidateDepths = selectiveCandidateDepths(basePonderDepth, safetyCandidates, (ideaKinds) => this.mind.planBias(ideaKinds));
+    const engineIndex = safetyCandidates.findIndex((candidate) => candidate.move.uci() === engineMoveUci);
+    const baselineDepth = engineIndex >= 0 ? candidateDepths[engineIndex] : basePonderDepth;
+    const baseline = this.childSearchScore(board, result.move, baselineDepth, options.ponderTimeMs);
+
+    const book = shouldPreferPlanToBook(observedMind, history.length) ? null : openingBookMove(board, options.seed ?? Date.now(), history);
+    if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
+      const bookMargin = history.length < 8 ? Math.max(tacticalMargin, 90) : history.length < 12 ? Math.max(tacticalMargin, 65) : tacticalMargin;
+      const bookSafe = history.length <= 1 || this.isSafeCandidate(board, book.move, baseline, bookMargin, basePonderDepth, options.safetyTimeMs);
+      if (bookSafe) {
+        const bookCandidate = candidateScores.find((candidate) => candidate.move.uci() === book.move.uci()) ?? { move: book.move, score: result.score, ideaKinds: ["develop"] as CandidateScore["ideaKinds"], reasons: ["Swift's opening repertoire selected this move."] };
+        return decision(book.move, "opening-book", bookCandidate.reasons, [bookCandidate], { opening: book.opening });
+      }
+    }
+
+    const safe = safetyCandidates.map((candidate, index) => this.assessCandidate(board, candidate, baseline, tacticalMargin, candidateDepths[index], options.safetyTimeMs, candidate.move.uci() === engineMoveUci)).filter((candidate): candidate is CandidateScore => candidate !== null);
     if (!safe.length) {
       this.mind.recordSetback("The current plan produced no candidate that survived concrete verification.");
       return decision(result.move, "engine-fallback", ["No human-plan candidate survived the concrete safety check."], candidateScores.slice(0, options.candidateLimit ?? 6));
