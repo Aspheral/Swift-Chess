@@ -74,12 +74,15 @@ function ThoughtArrows({ arrows, flipped }: { arrows: Arrow[]; flipped: boolean 
 
   return (
     <svg className="thought-arrows" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      <defs><marker id="swift-arrowhead" markerWidth="6" markerHeight="6" refX="5.1" refY="3" orient="auto"><path d="M0 0L6 3L0 6Z" /></marker></defs>
+      <defs>
+        <marker id="swift-best-arrowhead" markerWidth="7" markerHeight="7" refX="5.9" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7Z" /></marker>
+        <marker id="swift-alt-arrowhead" markerWidth="5.5" markerHeight="5.5" refX="4.7" refY="2.75" orient="auto"><path d="M0 0L5.5 2.75L0 5.5Z" /></marker>
+      </defs>
       {arrows.map((arrow, index) => {
         const from = point(arrow.from); const to = point(arrow.to);
         const dx = to.x - from.x; const dy = to.y - from.y; const length = Math.max(1, Math.hypot(dx, dy));
         const inset = 2.1;
-        return <line key={`${arrow.from}-${arrow.to}-${index}`} x1={from.x + (dx / length) * inset} y1={from.y + (dy / length) * inset} x2={to.x - (dx / length) * inset} y2={to.y - (dy / length) * inset} className="thought-arrow" markerEnd="url(#swift-arrowhead)" />;
+        return <line key={`${arrow.from}-${arrow.to}-${index}`} x1={from.x + (dx / length) * inset} y1={from.y + (dy / length) * inset} x2={to.x - (dx / length) * inset} y2={to.y - (dy / length) * inset} className={`thought-arrow ${index === 0 ? "best" : "alternative"}`} markerEnd={index === 0 ? "url(#swift-best-arrowhead)" : "url(#swift-alt-arrowhead)"} />;
       })}
     </svg>
   );
@@ -374,6 +377,7 @@ export default function Playground() {
             <p>{mind?.planReason ?? "Swift carries plans forward when the position still supports them."}</p>
             {mind?.planProgressNote && <p className="mind-detail">{mind.planProgressNote}</p>}
             {mind && <p className="mind-detail">Watching: {mind.concern} Confidence {Math.round(mind.confidence * 100)}% · held for {mind.planAge} Swift turn{mind.planAge === 1 ? "" : "s"}{mind.setbacks ? ` · ${mind.setbacks} setback${mind.setbacks === 1 ? "" : "s"}` : ""}.</p>}
+            {analysisMode && thoughtArrows.length > 1 && <div className="analysis-legend"><span className="best-swatch" />Best move <span className="alt-swatch" />Other ideas</div>}
           </div>
           {opening && <div className="opening-card"><span>Opening</span><strong>{opening}</strong></div>}
           <div className="history-head"><span>Moves</span><span>{history.length}</span></div>
