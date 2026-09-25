@@ -2,6 +2,9 @@ name: Swift Rating Ladder
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - humanity-audit-v10b-1700
 
 jobs:
   rating-games:
@@ -11,8 +14,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        elo: [1450, 1550, 1650, 1750, 1850]
-        batch: [0, 1]
+        elo: [1700]
+        batch: [0]
     env:
       SWIFT_RUN_STOCKFISH_GATE: "1"
       SWIFT_CALIBRATION_MODE: "human"
@@ -55,6 +58,9 @@ jobs:
 
   aggregate:
     name: calibrated-elo
+    env:
+      SWIFT_RATING_LADDER: "1700"
+      SWIFT_EXPECTED_BATCHES: "1"
     needs: rating-games
     if: always()
     runs-on: ubuntu-latest
