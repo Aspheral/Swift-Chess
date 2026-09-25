@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { personalizedCandidateConflict, selectiveConflictCandidateIndexes, selectiveConsequenceDepth } from "../src/chess/selective-calculation";
+import { personalizedCandidateConflict, selectiveCandidateDepths, selectiveConflictCandidateIndexes, selectiveConsequenceDepth } from "../src/chess/selective-calculation";
 
 describe("Swift selective calculation", () => {
   const noBias = () => 0;
@@ -56,6 +56,24 @@ describe("Swift selective calculation", () => {
     expect(personalizedCandidateConflict(candidates, preferDevelopment)).toBe(0);
     expect(selectiveConflictCandidateIndexes(candidates, preferDevelopment)).toEqual([]);
     expect(selectiveConsequenceDepth(3, candidates, preferDevelopment)).toBe(3);
+  });
+
+
+  it("spends the extra ply only on the conflicting pair", () => {
+    const candidates = [
+      { score: 12, ideaKinds: ["develop"] },
+      { score: 11, ideaKinds: ["pawn-break"] },
+      { score: 4, ideaKinds: ["improve-piece"] },
+    ];
+    expect(selectiveCandidateDepths(3, candidates, noBias)).toEqual([4, 4, 3]);
+  });
+
+  it("keeps focused attention inside the depth-five ceiling", () => {
+    const candidates = [
+      { score: 20, ideaKinds: ["attack"] },
+      { score: 20, ideaKinds: ["defend"] },
+    ];
+    expect(selectiveCandidateDepths(5, candidates, noBias)).toEqual([5, 5]);
   });
 
   it("never adds more than one consequence ply", () => {
