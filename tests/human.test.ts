@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Board, CandidateScore, HumanSwiftEngine, humanErrorProfile, selectHumanMove } from "../src";
+import { Board, CandidateScore, HumanSwiftEngine, humanErrorProfile, humanPlanLatitude, selectHumanMove } from "../src";
+import type { SwiftMindSnapshot } from "../src";
 
 describe("Swift human move selection", () => {
   it("returns a legal move", () => {
@@ -55,6 +56,73 @@ describe("Swift human move selection", () => {
 
     expect(result.candidates[0].move.uci()).toBe(e4.uci());
     expect(result.move?.uci()).toBe(e4.uci());
+  });
+
+
+  it("lets a mature plan choose a calm near-equal move for a coherent reason", () => {
+    const board = Board.start();
+    const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
+    const d4 = board.legalMoves().find((move) => move.uci() === "d2d4");
+    if (!e4 || !d4) throw new Error("Expected central pawn moves");
+
+    const mind: SwiftMindSnapshot = {
+      plan: "attack",
+      planAge: 5,
+      confidence: 0.9,
+      setbacks: 0,
+      concern: "No urgent defect dominates the position.",
+      opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 4 },
+      observedHistoryLength: 8,
+    };
+    const engineFavorite: CandidateScore = {
+      move: d4,
+      score: 100,
+      ideaKinds: ["simplify"],
+      reasons: ["slightly higher concrete score"],
+    };
+    const planMove: CandidateScore = {
+      move: e4,
+      score: 96,
+      ideaKinds: ["attack"],
+      reasons: ["continue the attacking plan"],
+    };
+
+    const result = selectHumanMove(board, {
+      candidates: [engineFavorite, planMove],
+      candidateLimit: 2,
+      randomness: 0,
+      errorBudget: 0,
+      initiative: 0,
+      simplification: 0,
+      mind,
+    });
+
+    expect(result.move?.uci()).toBe(e4.uci());
+  });
+
+  it("removes plan latitude when the position becomes tactically dangerous", () => {
+    const calm = {
+      complexity: 0.5,
+      tacticalPressure: 0,
+      phase: 0.4,
+      practicalPressure: 0,
+      gameStage: "middlegame" as const,
+      effectiveBudget: 0,
+    };
+    const mind: SwiftMindSnapshot = {
+      plan: "attack",
+      planAge: 5,
+      confidence: 0.9,
+      setbacks: 0,
+      concern: "No urgent defect dominates the position.",
+      opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 4 },
+      observedHistoryLength: 8,
+    };
+
+    expect(humanPlanLatitude(mind, calm)).toBeGreaterThan(4);
+    expect(humanPlanLatitude(mind, calm)).toBeLessThanOrEqual(6);
+    expect(humanPlanLatitude(mind, { ...calm, tacticalPressure: 0.06 })).toBe(0);
+    expect(humanPlanLatitude({ ...mind, setbacks: 1 }, calm)).toBe(0);
   });
 
   it("returns no move for a checkmated position", () => {
