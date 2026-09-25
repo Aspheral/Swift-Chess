@@ -33,12 +33,19 @@ function candidateConflictPair<Idea extends string>(
     .sort((a, b) => b.adjusted - a.adjusted)
     .slice(0, 3);
   const leader = ordered[0];
-  const rival = ordered.slice(1).reduce((best, candidate) =>
-    Math.abs(leader.adjusted - candidate.adjusted) < Math.abs(leader.adjusted - best.adjusted) ? candidate : best,
+  const rivals = ordered.slice(1).map((candidate) => {
+    const gap = Math.max(0, leader.adjusted - candidate.adjusted);
+    const moveUncertainty = clamp01(1 - gap / 8);
+    const ideaDifference = ideaConflict(leader.candidate.ideaKinds, candidate.candidate.ideaKinds);
+    return {
+      ...candidate,
+      conflict: moveUncertainty * (0.35 + 0.65 * ideaDifference),
+    };
+  });
+  const rival = rivals.reduce((best, candidate) =>
+    candidate.conflict > best.conflict ? candidate : best,
   );
-  const gap = Math.max(0, leader.adjusted - rival.adjusted);
-  const moveUncertainty = clamp01(1 - gap / 8);
-  const conflict = ideaConflict(leader.candidate.ideaKinds, rival.candidate.ideaKinds);
+  const conflict = rival.conflict;
   return {
     leaderIndex: leader.index,
     rivalIndex: rival.index,
