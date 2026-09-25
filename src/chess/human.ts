@@ -101,22 +101,23 @@ export function humanPlanLatitude(
 ): number {
   if (
     !mind?.plan ||
-    mind.planAge < 3 ||
-    mind.confidence < 0.65 ||
+    mind.planAge < 4 ||
+    mind.confidence < 0.72 ||
     mind.setbacks > 0
   ) return 0;
 
-  if (profile.tacticalPressure >= 0.08 || profile.practicalPressure >= 0.36) return 0;
+  if (profile.tacticalPressure >= 0.06 || profile.practicalPressure >= 0.30) return 0;
 
-  const maturity = clamp((mind.planAge - 2) / 4);
-  const conviction = clamp((mind.confidence - 0.65) / 0.25);
-  const tacticalCalm = clamp(1 - profile.tacticalPressure / 0.08);
-  const practicalCalm = clamp(1 - profile.practicalPressure / 0.36);
+  const maturity = clamp((mind.planAge - 3) / 4);
+  const conviction = clamp((mind.confidence - 0.72) / 0.20);
+  const tacticalCalm = clamp(1 - profile.tacticalPressure / 0.06);
+  const practicalCalm = clamp(1 - profile.practicalPressure / 0.30);
   const quietness = tacticalCalm * practicalCalm;
 
-  // Eight-ish centipawns is enough to distinguish a human preference from a
-  // machine tie-break without repeatedly donating a quarter-pawn.
-  return Math.min(10, (4 + conviction * 4 + maturity * 2) * quietness);
+  // This is now a tie-break-sized freedom window, not a strength handicap.
+  // Swift may prefer a move for a mature strategic reason only when concrete
+  // search sees the alternatives as essentially equivalent.
+  return Math.min(6, (3 + conviction * 2 + maturity) * quietness);
 }
 
 function isCentralPawnMove(board: Board, move: Move): boolean {
