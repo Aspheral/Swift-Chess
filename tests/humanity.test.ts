@@ -67,6 +67,8 @@ describe("Swift humanity telemetry", () => {
     expect(summary.planContinuationRate).toBe(1);
     expect(summary.averagePlanAge).toBe(3);
     expect(summary.averagePlanConfidence).toBeCloseTo((0.7 + 0.78 + 0.82) / 3);
+    expect(summary.averagePlanProgress).toBe(0);
+    expect(summary.progressingPlanRate).toBe(0);
     expect(summary.setbackRate).toBe(0);
     expect(summary.distinctPlans).toEqual(["pawn-break"]);
     expect(summary.reasonCoverage).toBe(1);
