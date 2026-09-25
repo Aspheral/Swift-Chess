@@ -49,7 +49,7 @@ function candidateConflictPair<Idea extends string>(
   return {
     leaderIndex: leader.index,
     rivalIndex: rival.index,
-    conflict: moveUncertainty * (0.35 + 0.65 * conflict),
+    conflict,
   };
 }
 
