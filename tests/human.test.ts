@@ -82,7 +82,7 @@ describe("Swift human move selection", () => {
     };
     const planMove: CandidateScore = {
       move: e4,
-      score: 94,
+      score: 95,
       ideaKinds: ["attack"],
       reasons: ["continue the attacking plan"],
     };
@@ -112,9 +112,9 @@ describe("Swift human move selection", () => {
       observedHistoryLength: 8,
     };
 
-    expect(humanPlanLatitude(mind, calm)).toBeGreaterThan(7);
-    expect(humanPlanLatitude(mind, calm)).toBeLessThanOrEqual(10);
-    expect(humanPlanLatitude(mind, { ...calm, tacticalPressure: 0.08 })).toBe(0);
+    expect(humanPlanLatitude({ ...mind, planAge: 5, confidence: 0.9 }, calm)).toBeGreaterThan(4);
+    expect(humanPlanLatitude({ ...mind, planAge: 5, confidence: 0.9 }, calm)).toBeLessThanOrEqual(6);
+    expect(humanPlanLatitude({ ...mind, planAge: 5, confidence: 0.9 }, { ...calm, tacticalPressure: 0.06 })).toBe(0);
     expect(humanPlanLatitude({ ...mind, setbacks: 1 }, calm)).toBe(0);
   });
 
