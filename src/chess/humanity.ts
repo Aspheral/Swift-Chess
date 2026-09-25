@@ -16,6 +16,8 @@ export interface HumanitySummary {
   humanPlanDivergenceRate: number;
   averagePlanAge: number;
   averagePlanConfidence: number;
+  averagePlanProgress: number;
+  progressingPlanRate: number;
   setbackRate: number;
   planContinuationRate: number;
   distinctPlans: string[];
@@ -53,6 +55,15 @@ export function summarizeHumanity(observations: HumanityObservation[]): Humanity
   const averagePlanConfidence = minds.length
     ? minds.reduce((sum, mind) => sum + mind.confidence, 0) / minds.length
     : 0;
+  const progressSamples = minds
+    .map((mind) => mind.planProgress)
+    .filter((progress): progress is number => typeof progress === "number" && Number.isFinite(progress));
+  const averagePlanProgress = progressSamples.length
+    ? progressSamples.reduce((sum, progress) => sum + progress, 0) / progressSamples.length
+    : 0;
+  const progressingPlanRate = progressSamples.length
+    ? progressSamples.filter((progress) => progress >= 0.025).length / progressSamples.length
+    : 0;
   const setbackRate = minds.length
     ? minds.filter((mind) => mind.setbacks > 0).length / minds.length
     : 0;
@@ -79,6 +90,8 @@ export function summarizeHumanity(observations: HumanityObservation[]): Humanity
     humanPlanDivergenceRate: rate(humanPlanDivergences, decisions),
     averagePlanAge,
     averagePlanConfidence,
+    averagePlanProgress,
+    progressingPlanRate,
     setbackRate,
     planContinuationRate: rate(planContinuations, planTransitions),
     distinctPlans,
