@@ -60,10 +60,10 @@ describe("Swift human move selection", () => {
 
 
   it("lets a mature plan choose a calm near-equal move for a coherent reason", () => {
-    const board = Board.start();
+    const board = Board.fromFEN("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
     const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
-    const d4 = board.legalMoves().find((move) => move.uci() === "d2d4");
-    if (!e4 || !d4) throw new Error("Expected central pawn moves");
+    const kingMove = board.legalMoves().find((move) => move.uci() === "e1d1");
+    if (!e4 || !kingMove) throw new Error("Expected quiet fixture moves");
 
     const mind: SwiftMindSnapshot = {
       plan: "attack",
@@ -75,7 +75,7 @@ describe("Swift human move selection", () => {
       observedHistoryLength: 8,
     };
     const engineFavorite: CandidateScore = {
-      move: d4,
+      move: kingMove,
       score: 100,
       ideaKinds: ["simplify"],
       reasons: ["slightly higher concrete score"],
@@ -101,7 +101,7 @@ describe("Swift human move selection", () => {
   });
 
   it("removes plan latitude when the position becomes tactically dangerous", () => {
-    const calm = humanErrorProfile(Board.start(), 0);
+    const calm = humanErrorProfile(Board.fromFEN("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1"), 0);
     const mind: SwiftMindSnapshot = {
       plan: "attack",
       planAge: 4,
