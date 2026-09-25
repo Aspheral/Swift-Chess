@@ -60,29 +60,29 @@ describe("Swift human move selection", () => {
 
 
   it("lets a mature plan choose a calm near-equal move for a coherent reason", () => {
-    const board = Board.fromFEN("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+    const board = Board.start();
     const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
-    const kingMove = board.legalMoves().find((move) => move.uci() === "e1d1");
-    if (!e4 || !kingMove) throw new Error("Expected quiet fixture moves");
+    const d4 = board.legalMoves().find((move) => move.uci() === "d2d4");
+    if (!e4 || !d4) throw new Error("Expected central pawn moves");
 
     const mind: SwiftMindSnapshot = {
       plan: "attack",
-      planAge: 4,
-      confidence: 0.85,
+      planAge: 5,
+      confidence: 0.9,
       setbacks: 0,
       concern: "No urgent defect dominates the position.",
       opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 4 },
       observedHistoryLength: 8,
     };
     const engineFavorite: CandidateScore = {
-      move: kingMove,
+      move: d4,
       score: 100,
       ideaKinds: ["simplify"],
       reasons: ["slightly higher concrete score"],
     };
     const planMove: CandidateScore = {
       move: e4,
-      score: 95,
+      score: 96,
       ideaKinds: ["attack"],
       reasons: ["continue the attacking plan"],
     };
@@ -101,20 +101,27 @@ describe("Swift human move selection", () => {
   });
 
   it("removes plan latitude when the position becomes tactically dangerous", () => {
-    const calm = humanErrorProfile(Board.fromFEN("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1"), 0);
+    const calm = {
+      complexity: 0.5,
+      tacticalPressure: 0,
+      phase: 0.4,
+      practicalPressure: 0,
+      gameStage: "middlegame" as const,
+      effectiveBudget: 0,
+    };
     const mind: SwiftMindSnapshot = {
       plan: "attack",
-      planAge: 4,
-      confidence: 0.85,
+      planAge: 5,
+      confidence: 0.9,
       setbacks: 0,
       concern: "No urgent defect dominates the position.",
       opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 4 },
       observedHistoryLength: 8,
     };
 
-    expect(humanPlanLatitude({ ...mind, planAge: 5, confidence: 0.9 }, calm)).toBeGreaterThan(4);
-    expect(humanPlanLatitude({ ...mind, planAge: 5, confidence: 0.9 }, calm)).toBeLessThanOrEqual(6);
-    expect(humanPlanLatitude({ ...mind, planAge: 5, confidence: 0.9 }, { ...calm, tacticalPressure: 0.06 })).toBe(0);
+    expect(humanPlanLatitude(mind, calm)).toBeGreaterThan(4);
+    expect(humanPlanLatitude(mind, calm)).toBeLessThanOrEqual(6);
+    expect(humanPlanLatitude(mind, { ...calm, tacticalPressure: 0.06 })).toBe(0);
     expect(humanPlanLatitude({ ...mind, setbacks: 1 }, calm)).toBe(0);
   });
 
