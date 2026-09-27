@@ -101,6 +101,7 @@ export default function Playground() {
   const [history, setHistory] = useState<string[]>([]);
   const [lastMove, setLastMove] = useState<{ from: number; to: number } | null>(null);
   const [thinking, setThinking] = useState(false);
+  const [humanThinkSeconds, setHumanThinkSeconds] = useState<number | null>(null);
   const [promotion, setPromotion] = useState<{ moves: Move[] } | null>(null);
   const [opening, setOpening] = useState<SwiftOpening | null>(null);
   const [playerSide, setPlayerSide] = useState<Side>("w");
@@ -161,6 +162,7 @@ export default function Playground() {
         );
         if (response.opening) setOpening(response.opening);
         setMind(response.mind ?? null);
+        if (!analysisModeRef.current) setHumanThinkSeconds(response.humanThinkSeconds);
 
         if (move && !analysisModeRef.current && game.turn() !== playerSideRef.current) {
           game.play(move);
@@ -197,6 +199,7 @@ export default function Playground() {
     const id = ++requestIdRef.current;
     activeSearchRef.current = { id, version, game, startedAt: performance.now() };
     setThinking(true);
+    if (!analysisModeRef.current) setHumanThinkSeconds(null);
     ensureWorker().postMessage({
       type: "search",
       id,
@@ -217,6 +220,7 @@ export default function Playground() {
     setSelected(null);
     setPromotion(null);
     setThinking(false);
+    setHumanThinkSeconds(null);
     setOpening(null);
     setThoughtArrows([]);
     setMind(null);
@@ -228,7 +232,7 @@ export default function Playground() {
     gameRef.current = Game.start();
     openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
     playerSideRef.current = side;
-    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlayerSide(side); setFlipped(side === "b");
+    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setHumanThinkSeconds(null); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlayerSide(side); setFlipped(side === "b");
   }
 
   function undoPlayerMove() {
@@ -256,6 +260,7 @@ export default function Playground() {
     setSelected(null);
     setPromotion(null);
     setThinking(false);
+    setHumanThinkSeconds(null);
     setOpening(null);
     setThoughtArrows([]);
     setMind(null);
@@ -371,6 +376,9 @@ export default function Playground() {
         </div>
         <aside className="game-info">
           <div className="game-status"><span className={thinking ? "pulse" : "dot"} />{status}</div>
+          {!analysisMode && humanThinkSeconds !== null && !thinking && (
+            <div className="human-think-time">Human think time: <strong>{humanThinkSeconds.toFixed(1)}s</strong></div>
+          )}
           <div className="thought-card">
             <span>{analysisMode ? "Swift's analysis" : "Swift's current plan"}</span>
             <strong>{mind?.plan ? planLabel(mind.plan) : (thoughtArrows.length ? (analysisMode ? `${thoughtArrows.length} preferred move${thoughtArrows.length === 1 ? "" : "s"}` : `${thoughtArrows.length} moves in view`) : "Reading the position")}</strong>
