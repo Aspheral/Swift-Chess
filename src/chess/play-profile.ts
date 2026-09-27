@@ -11,6 +11,8 @@ export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 export interface SwiftPlayProfile {
   kind: SwiftThinkKind;
   minimumThinkMs: number;
+  /** Display-only estimate of how long a human player might spend on this decision. */
+  humanThinkSeconds: number;
   options: HumanEngineOptions;
 }
 
@@ -100,6 +102,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
     return {
       kind: "tactical",
       minimumThinkMs: 380,
+      humanThinkSeconds: Math.round((12 + profile.tacticalPressure * 18 + profile.practicalPressure * 6) * 10) / 10,
       options: {
         depth: 6,
         timeMs: 850,
@@ -128,6 +131,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
     return {
       kind: "opening",
       minimumThinkMs: openingThinkMs,
+      humanThinkSeconds: Math.round((1.2 + Math.min(3.6, history.length * 0.3)) * 10) / 10,
       options: {
         depth: 5,
         timeMs: openingSearchMs,
@@ -151,6 +155,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
     return {
       kind: "endgame",
       minimumThinkMs: 260,
+      humanThinkSeconds: Math.round((6.5 + profile.practicalPressure * 7) * 10) / 10,
       options: {
         depth: 6,
         timeMs: 700,
@@ -176,6 +181,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
   return {
     kind: "calm",
     minimumThinkMs: calmThinkMs,
+    humanThinkSeconds: Math.round((4.5 + uncertainty * 8 + profile.practicalPressure * 3) * 10) / 10,
     options: {
       depth: 5,
       timeMs: calmSearchMs,
