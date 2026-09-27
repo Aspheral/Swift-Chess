@@ -31,6 +31,8 @@ export interface SwiftWorkerSearchResponse {
   nodes: number;
   thinkKind: SwiftThinkKind;
   minimumThinkMs: number;
+  /** Display-only estimate, not wall-clock engine latency. */
+  humanThinkSeconds: number;
   mind?: SwiftMindSnapshot;
   decision?: SwiftDecisionTrace;
 }
