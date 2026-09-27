@@ -52,6 +52,7 @@ context.onmessage = (event) => {
       nodes: result.nodes,
       thinkKind: profile.kind,
       minimumThinkMs: profile.minimumThinkMs,
+      humanThinkSeconds: profile.humanThinkSeconds,
       mind: result.mind,
       decision: result.decision,
     });
