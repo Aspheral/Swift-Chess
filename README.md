@@ -189,3 +189,7 @@ Not a traditional engine with artificial blunders.
   <br><br>
   <sub>Swift Chess · Aspheral</sub>
 </div>
+
+### Tactical reliability
+
+After recent rapid-game regressions, Swift's human-plan selection now treats incomplete consequence searches as **unverified**. The candidate-checking layer requires completed search depth before comparing scores; if the baseline fails to finish a minimum two-ply check, Swift uses its main principal move instead of claiming an unverified plan is safe. This prevents a specific failure mode, but it is not a guarantee against multi-move blunders and does not establish a new Elo rating. More game-position regressions are needed.

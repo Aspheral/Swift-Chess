@@ -75,9 +75,9 @@ export class HumanSwiftEngine {
   private readonly safetyEngine: SwiftEngine;
   private readonly mind: SwiftMind;
 
-  constructor(engine = new SwiftEngine()) {
+  constructor(engine = new SwiftEngine(), safetyEngine = new SwiftEngine()) {
     this.engine = engine;
-    this.safetyEngine = new SwiftEngine();
+    this.safetyEngine = safetyEngine;
     this.mind = new SwiftMind();
   }
 
