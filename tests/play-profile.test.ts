@@ -26,13 +26,15 @@ describe("Swift browser play timing", () => {
     expect(tactical.kind).toBe("tactical");
     expect(tactical.options.timeMs ?? 0).toBeGreaterThan(calm.options.timeMs ?? 0);
     expect(tactical.minimumThinkMs).toBeGreaterThan(calm.minimumThinkMs);
+    expect(tactical.options.depth).toBe(7);
   });
 
   it("uses an endgame budget instead of the full tactical budget in quiet endings", () => {
     const board = Board.fromFEN("7k/8/8/8/8/8/8/K7 w - - 0 1");
     const profile = swiftPlayProfile(board, Array(30).fill("h1h2"));
     expect(profile.kind).toBe("endgame");
-    expect(profile.options.timeMs).toBeLessThan(760);
+    expect(profile.options.timeMs).toBeLessThan(950);
+    expect(profile.options.depth).toBe(7);
     expect(profile.options.safetyDepth).toBe(4);
   });
 

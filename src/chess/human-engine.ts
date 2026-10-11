@@ -129,21 +129,37 @@ export class HumanSwiftEngine {
     }
 
     const candidateDepths = selectiveCandidateDepths(basePonderDepth, safetyCandidates, (ideaKinds) => this.mind.planBias(ideaKinds));
-    const engineIndex = safetyCandidates.findIndex((candidate) => candidate.move.uci() === engineMoveUci);
-    const baselineDepth = engineIndex >= 0 ? candidateDepths[engineIndex] : basePonderDepth;
-    const baseline = this.childSearchScore(board, result.move, baselineDepth, options.ponderTimeMs);
+    // Compare every candidate at the same depth with the same search budget.
+    // A score from the main root search or a deeper probe is not interchangeable
+    // with the shallow consequence scores used by human move selection.
+    const baseline = this.childSearchScore(board, result.move, basePonderDepth, options.ponderTimeMs);
 
     const book = shouldPreferPlanToBook(observedMind, history.length) ? null : openingBookMove(board, options.seed ?? Date.now(), history);
     if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
-      const bookMargin = history.length < 8 ? Math.max(tacticalMargin, 90) : history.length < 12 ? Math.max(tacticalMargin, 65) : tacticalMargin;
-      const bookSafe = history.length <= 1 || this.isSafeCandidate(board, book.move, baseline, bookMargin, basePonderDepth, options.safetyTimeMs);
+      const bookMargin = history.length < 8 ? Math.max(tacticalMargin, 42) : tacticalMargin;
+      // Book familiarity cannot bypass concrete verification, even on move one.
+      const bookSafe = this.isSafeCandidate(board, book.move, baseline, bookMargin, basePonderDepth, options.safetyTimeMs);
       if (bookSafe) {
         const bookCandidate = candidateScores.find((candidate) => candidate.move.uci() === book.move.uci()) ?? { move: book.move, score: result.score, ideaKinds: ["develop"] as CandidateScore["ideaKinds"], reasons: ["Swift's opening repertoire selected this move."] };
         return decision(book.move, "opening-book", bookCandidate.reasons, [bookCandidate], { opening: book.opening });
       }
     }
 
-    const safe = safetyCandidates.map((candidate, index) => this.assessCandidate(board, candidate, baseline, tacticalMargin, candidateDepths[index], options.safetyTimeMs, candidate.move.uci() === engineMoveUci)).filter((candidate): candidate is CandidateScore => candidate !== null);
+    const deepBaselines = new Map<number, number>();
+    const safe = safetyCandidates.flatMap((candidate, index): CandidateScore[] => {
+      const verified = this.assessCandidate(board, candidate, baseline, tacticalMargin, basePonderDepth, options.safetyTimeMs);
+      if (!verified) return [];
+      const deepDepth = candidateDepths[index];
+      if (deepDepth > basePonderDepth && candidate.move.uci() !== engineMoveUci) {
+        // The extra selective look is a veto only. Keep the original comparable
+        // score for ranking, and check the extra depth against a matching baseline.
+        if (!deepBaselines.has(deepDepth)) {
+          deepBaselines.set(deepDepth, this.childSearchScore(board, result.move!, deepDepth, options.ponderTimeMs));
+        }
+        if (!this.isSafeCandidate(board, candidate.move, deepBaselines.get(deepDepth)!, tacticalMargin, deepDepth, options.safetyTimeMs)) return [];
+      }
+      return [verified];
+    });
     if (!safe.length) {
       this.mind.recordSetback("The current plan produced no candidate that survived concrete verification.");
       return decision(result.move, "engine-fallback", ["No human-plan candidate survived the concrete safety check."], candidateScores.slice(0, options.candidateLimit ?? 6));
@@ -205,7 +221,7 @@ export class HumanSwiftEngine {
     return Math.max(0, baseMargin * (1 - pressure));
   }
 
-  private assessCandidate(board: Board, candidate: CandidateScore, baseline: number, margin: number, depth: number, timeMs?: number, preservePrincipalScore = false): CandidateScore | null {
+  private assessCandidate(board: Board, candidate: CandidateScore, baseline: number, margin: number, depth: number, timeMs?: number): CandidateScore | null {
     const child = board.makeMove(candidate.move);
     if (!child.isCheckmate()) {
       const opponent = child.turn();
@@ -215,7 +231,7 @@ export class HumanSwiftEngine {
     }
     const concreteScore = -this.safetyEngine.search(child, { depth, timeMs: this.optionsTimeMs(timeMs) }).score;
     if (concreteScore < baseline - margin) return null;
-    return { ...candidate, score: preservePrincipalScore ? candidate.score : concreteScore, reasons: [...candidate.reasons, "Concrete consequence search kept this move inside Swift's safety margin."] };
+    return { ...candidate, score: concreteScore, reasons: [...candidate.reasons, "Concrete consequence search kept this move inside Swift's safety margin."] };
   }
 
   private isSafeCandidate(board: Board, move: Move, baseline: number, margin: number, depth: number, timeMs?: number): boolean {
