@@ -15,7 +15,7 @@
 <div align="center">
   <table>
     <tr>
-      <td align="center"><strong>≈1630 Elo</strong><br><sub>200-game calibrated estimate</sub></td>
+      <td align="center"><strong>1900 Rapid goal</strong><br><sub>Not yet verified; earlier estimate: 1632</sub></td>
       <td align="center"><strong>AI</strong><br><sub>Not a fixed engine</sub></td>
       <td align="center"><strong>Swift</strong><br><sub>Fast, personal, experimental</sub></td>
     </tr>
@@ -28,7 +28,7 @@ Swift is a chess AI made by Aspheral.
 
 The original idea was pretty simple: I wanted a chess program that could actually feel like it was playing chess, instead of just being a machine that looks through a position and finds the move with the highest number attached to it.
 
-The target is around **1650 Elo**. Swift now has a measured benchmark close to that target: **1632 calibrated Elo** from a 200-game paired Stockfish ladder, with a 95% benchmark interval of **1580–1684**. That is a calibration estimate, not an official human federation rating, but it is strong enough evidence to stop calling 1650 a guess.
+Swift now aims for **1900 rapid Elo**, while keeping its own human-like decision process. The last completed 200-game paired Stockfish ladder gave an earlier build **1632 calibrated Elo** (95% benchmark interval **1580–1684**). That is historical evidence, not a rating for this new build or a Chess.com rapid rating. Swift needs a new calibrated ladder and games against human opponents before we can claim the goal was met.
 
 This is not supposed to be Stockfish with a strength limiter.
 
@@ -155,7 +155,7 @@ That is the part we want to build.
 
 > **Early development**
 >
-> Swift is currently an experimental project. Its current playable profile is calibrated at **1632 Elo** across 200 paired games against Stockfish strength levels from 1450 to 1850. The 95% benchmark interval is **1580–1684**. This is a measured engine-vs-engine calibration, not an official human rating, and the number will move as Swift changes.
+> Swift is currently an experimental project. The goal is now **1900 rapid Elo**, not yet verified. Its **previous profile** scored **1632 calibrated Elo** across 200 paired games against Stockfish strength levels from 1450 to 1850, with a 95% benchmark interval of **1580–1684**. The updated profile is not covered by that result and must be remeasured.
 
 The browser build runs Swift in a Web Worker with adaptive thinking time: quick in familiar openings, measured in quiet positions, and longer when the board becomes tactical. Competing final plans also affect pacing. The on-screen time is measured from request through move, not a hypothetical human estimate. This is a behavioral model, not a clock-use calibration against human game data. The full rating methodology and ladder results are documented in [docs/calibration.md](docs/calibration.md).
 

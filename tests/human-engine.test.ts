@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Board, HumanSwiftEngine } from "../src";
+import { Board, HumanSwiftEngine, SwiftEngine } from "../src";
 import { isImmediateMoveReversal, shouldPreferPlanToBook } from "../src/chess/human-engine";
 import type { SwiftMindSnapshot } from "../src/chess/mind";
 
@@ -69,4 +69,25 @@ describe("Integrated Swift human engine", () => {
     expect(isImmediateMoveReversal("f3g1", ["d2d4", "g8h6"])).toBe(false);
   });
 
+
+  it("ranks human candidates by comparable verified consequence scores", () => {
+    const board = Board.start();
+    const result = new HumanSwiftEngine().search(board, {
+      depth: 2,
+      safetyDepth: 2,
+      ponderDepth: 2,
+      tacticalSearchDepth: 0,
+      safetyCandidateLimit: 3,
+      concreteCandidateLimit: 6,
+      errorBudget: 0.05,
+      randomness: 0,
+      moveHistory: Array(22).fill("fixture"),
+    });
+    expect(result.decision?.source).toBe("human-plan");
+    expect(result.humanCandidates.length).toBeGreaterThan(0);
+    for (const candidate of result.humanCandidates) {
+      const sameDepth = -new SwiftEngine().search(board.makeMove(candidate.move), { depth: 2 }).score;
+      expect(candidate.score, candidate.move.uci()).toBe(sameDepth);
+    }
+  });
 });

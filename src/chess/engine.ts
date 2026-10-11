@@ -8,6 +8,7 @@ interface TTEntry { depth: number; score: number; bound: Bound; move?: Move; }
 const INF = 1_000_000;
 const MATE = 100_000;
 const MAX_PV = 32;
+const MAX_TRANSPOSITIONS = 80_000;
 const pieceValues: Record<PieceType, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
 
 const PST: Record<Exclude<PieceType, "k">, number[]> = {
@@ -187,6 +188,9 @@ export class SwiftEngine {
       moveIndex++;
     }
     const bound: Bound = best <= alphaOriginal ? "upper" : best >= beta ? "lower" : "exact";
+    // Bound the per-worker search cache over long rapid games.
+    // Keep existing keys in place, clear only when a new position would overflow.
+    if (!this.table.has(key) && this.table.size >= MAX_TRANSPOSITIONS) this.table.clear();
     this.table.set(key, { depth: effectiveDepth, score: this.scoreToTable(best, ply), bound, move: bestMove });
     return { score: best, pv: bestPv.slice(0, MAX_PV) };
   }

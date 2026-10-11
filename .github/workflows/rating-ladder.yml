@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        elo: [1450, 1550, 1650, 1750, 1850]
+        elo: [1650, 1750, 1850, 1950, 2050]
         batch: [0, 1]
     env:
       SWIFT_RUN_STOCKFISH_GATE: "1"

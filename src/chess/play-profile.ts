@@ -4,7 +4,7 @@ import { humanErrorProfile } from "./human";
 import { generateIdeas } from "./ideas";
 import { CandidateScore, scoreCandidates } from "./scoring";
 
-export const SWIFT_PLAY_PROFILE = "adaptive-human-v12";
+export const SWIFT_PLAY_PROFILE = "adaptive-human-v13";
 
 export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 
@@ -101,16 +101,16 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
       kind: "tactical",
       minimumThinkMs: 720,
       options: {
-        depth: 6,
-        timeMs: 850,
+        depth: 7,
+        timeMs: 1050,
         randomness: 0,
-        errorBudget: 0.015,
+        errorBudget: 0.012,
         strictBestPlay: false,
         safetyDepth: 4,
         ponderDepth: 5,
         safetyMargin: 24,
-        safetyTimeMs: 90,
-        ponderTimeMs: 120,
+        safetyTimeMs: 105,
+        ponderTimeMs: 140,
         candidateLimit: 5,
         safetyCandidateLimit: 4,
         concreteCandidateLimit: 8,
@@ -124,21 +124,21 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
     // longer as the opening becomes an actual decision. History depth gives us
     // that effect without timers, noise, or a random hesitation generator.
     const openingThinkMs = 130 + Math.min(220, history.length * 18);
-    const openingSearchMs = 280 + Math.min(180, history.length * 22);
+    const openingSearchMs = 350 + Math.min(220, history.length * 27);
     return {
       kind: "opening",
       minimumThinkMs: openingThinkMs,
       options: {
-        depth: 5,
+        depth: 6,
         timeMs: openingSearchMs,
         randomness: 0,
-        errorBudget: 0.035,
+        errorBudget: 0.025,
         strictBestPlay: false,
         safetyDepth: 3,
         ponderDepth: 3,
         safetyMargin: 30,
-        safetyTimeMs: 55,
-        ponderTimeMs: 70,
+        safetyTimeMs: 65,
+        ponderTimeMs: 80,
         candidateLimit: 4,
         safetyCandidateLimit: 2,
         concreteCandidateLimit: 6,
@@ -152,16 +152,16 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
       kind: "endgame",
       minimumThinkMs: 450,
       options: {
-        depth: 6,
-        timeMs: 700,
+        depth: 7,
+        timeMs: 850,
         randomness: 0,
-        errorBudget: 0.015,
+        errorBudget: 0.012,
         strictBestPlay: false,
         safetyDepth: 4,
         ponderDepth: 4,
         safetyMargin: 24,
-        safetyTimeMs: 80,
-        ponderTimeMs: 100,
+        safetyTimeMs: 95,
+        ponderTimeMs: 115,
         candidateLimit: 4,
         safetyCandidateLimit: 3,
         concreteCandidateLimit: 7,
@@ -172,21 +172,21 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
 
   const uncertainty = quietDecisionUncertainty(board, profile.practicalPressure);
   const calmThinkMs = 400 + Math.round(180 * uncertainty);
-  const calmSearchMs = 600 + Math.round(180 * uncertainty);
+  const calmSearchMs = 780 + Math.round(190 * uncertainty);
   return {
     kind: "calm",
     minimumThinkMs: calmThinkMs,
     options: {
-      depth: 5,
+      depth: 6,
       timeMs: calmSearchMs,
       randomness: 0,
-      errorBudget: 0.035,
+      errorBudget: 0.025,
       strictBestPlay: false,
       safetyDepth: 4,
       ponderDepth: 4,
       safetyMargin: 24,
-      safetyTimeMs: 80,
-      ponderTimeMs: 95,
+      safetyTimeMs: 95,
+      ponderTimeMs: 110,
       candidateLimit: 5,
       safetyCandidateLimit: 4,
       concreteCandidateLimit: 8,
