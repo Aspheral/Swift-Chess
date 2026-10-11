@@ -2,7 +2,15 @@ import { Board, Color, Move, PieceType } from "./board";
 import { canDeltaPrune } from "./tactics";
 
 export interface SearchOptions { depth?: number; timeMs?: number; }
-export interface SearchResult { move: Move | null; score: number; depth: number; nodes: number; pv?: Move[]; }
+export interface SearchStability {
+  /** Difference between the last two completed iterative-deepening scores, in centipawns. */
+  scoreSwingCp: number;
+  /** Whether the best move changed at the last completed iteration. */
+  moveChanged: boolean;
+  /** Whether the search failed to finish its requested depth. */
+  interrupted: boolean;
+}
+export interface SearchResult { move: Move | null; score: number; depth: number; nodes: number; pv?: Move[]; stability?: SearchStability; }
 type Bound = "exact" | "lower" | "upper";
 interface TTEntry { depth: number; score: number; bound: Bound; move?: Move; }
 const INF = 1_000_000;
@@ -36,7 +44,9 @@ export class SwiftEngine {
     this.deadline = options.timeMs && options.timeMs > 0 ? Date.now() + options.timeMs : Infinity;
     const legal = board.legalMoves();
     if (legal.length === 0) return { move: null, score: board.isInCheck(this.sideToMove(board)) ? -MATE : 0, depth: 0, nodes: this.nodes, pv: [] };
-    let bestMove = legal[0], bestScore = -INF, completedDepth = 0, bestPv: Move[] = [bestMove];
+    let bestMove = legal[0], bestScore = this.evaluate(board), completedDepth = 0, bestPv: Move[] = [bestMove];
+    let scoreSwingCp = 0;
+    let moveChanged = false;
     for (let depth = 1; depth <= maxDepth; depth++) {
       try {
         const result = this.root(
@@ -45,6 +55,10 @@ export class SwiftEngine {
           completedDepth > 0 ? bestScore : undefined,
           completedDepth > 0 ? bestMove : undefined,
         );
+        if (completedDepth > 0) {
+          scoreSwingCp = Math.abs(result.score - bestScore);
+          moveChanged = !!result.move && result.move.uci() !== bestMove.uci();
+        }
         if (result.move) bestMove = result.move;
         bestScore = result.score;
         bestPv = result.pv;
@@ -54,7 +68,10 @@ export class SwiftEngine {
         break;
       }
     }
-    return { move: bestMove, score: bestScore, depth: completedDepth, nodes: this.nodes, pv: bestPv };
+    return {
+      move: bestMove, score: bestScore, depth: completedDepth, nodes: this.nodes, pv: bestPv,
+      stability: { scoreSwingCp, moveChanged, interrupted: completedDepth < maxDepth },
+    };
   }
 
   evaluate(board: Board): number { return this.evaluateWhite(board) * (this.sideToMove(board) === "w" ? 1 : -1); }

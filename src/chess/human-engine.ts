@@ -9,6 +9,7 @@ import { findTacticalPriority, isOwnQueenUnderAttack } from "./fast-tactics";
 import { deriveSeed } from "./random";
 import { SwiftMind, SwiftMindSnapshot } from "./mind";
 import { selectiveCandidateDepths } from "./selective-calculation";
+import { AdaptiveThinkingOptions, planAdaptiveSecondLook, SwiftSecondLook, SwiftSecondLookReason } from "./adaptive-thinking";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   safetyMargin?: number;
@@ -27,6 +28,9 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
   ponderTimeMs?: number;
   moveHistory?: string[];
   positionHistoryKeys?: string[];
+  /** Optional in-search deeper calculation when the first answer looks unstable or high-stakes. */
+  adaptiveThinking?: AdaptiveThinkingOptions | false;
+  onSecondLook?: (reason: SwiftSecondLookReason) => void;
 }
 
 export type SwiftDecisionSource = "tactical" | "opening-book" | "human-plan" | "engine-fallback" | "strict";
@@ -45,6 +49,7 @@ export interface HumanSearchResult extends SearchResult {
   opening?: SwiftOpening;
   mind?: SwiftMindSnapshot;
   decision?: SwiftDecisionTrace;
+  secondLook?: SwiftSecondLook & { initialDepth: number; finalDepth: number; improvedDepth: boolean };
 }
 
 export function shouldPreferPlanToBook(mind: SwiftMindSnapshot, historyLength: number): boolean {
@@ -85,9 +90,32 @@ export class HumanSwiftEngine {
     const generated = scoreCandidates(board, options.concreteCandidateLimit, ideaGeneration);
 
     const searchDepth = this.positionSearchDepth(board, options.depth ?? 4, queenUnderAttack);
-    const result = this.engine.search(board, { ...options, depth: searchDepth });
+    let result = this.engine.search(board, { ...options, depth: searchDepth });
     if (!result.move) {
       return { ...result, humanCandidates: [], humanProfile: profile, mind: observedMind, decision: { source: "engine-fallback", engineMove: null, selectedMove: null, engineAgreement: true, reasons: ["No legal move was available."] } };
+    }
+
+    // Search stability is observed only after an initial concrete search. Keep
+    // the same SwiftMind observation throughout; rethinking is not another turn.
+    const initialDepth = result.depth;
+    let secondLook: HumanSearchResult["secondLook"];
+    const extension = planAdaptiveSecondLook({
+      legalMoves: board.legalMoves().length,
+      historyLength: history.length,
+      inCheck: board.isInCheck(board.turn()),
+      searchDepth,
+      baseTimeMs: options.timeMs,
+      result,
+      profile,
+      mind: observedMind,
+      candidates: generated.scores,
+    }, options.adaptiveThinking);
+    if (extension) {
+      options.onSecondLook?.(extension.reason);
+      const deeper = this.engine.search(board, { depth: extension.depth, timeMs: extension.timeMs });
+      const improvedDepth = !!deeper.move && deeper.depth > result.depth;
+      if (improvedDepth) result = deeper;
+      secondLook = { ...extension, initialDepth, finalDepth: result.depth, improvedDepth };
     }
 
     const engineMoveUci = result.move.uci();
@@ -95,7 +123,7 @@ export class HumanSwiftEngine {
       const mind = this.mind.recordDecision(move.uci(), reasons[0] ?? `Continue the plan to ${this.mind.planDescription()}.`);
       // A new first move cannot inherit the engine's unrelated continuation.
       const pv = move.uci() === engineMoveUci ? (result.pv ?? []) : [];
-      return { ...result, ...extra, move, pv: pv.length ? [move, ...pv.slice(1)] : [move], humanCandidates, humanProfile: profile, mind, decision: { source, engineMove: engineMoveUci, selectedMove: move.uci(), engineAgreement: move.uci() === engineMoveUci, reasons } };
+      return { ...result, ...extra, secondLook, move, pv: pv.length ? [move, ...pv.slice(1)] : [move], humanCandidates, humanProfile: profile, mind, decision: { source, engineMove: engineMoveUci, selectedMove: move.uci(), engineAgreement: move.uci() === engineMoveUci, reasons } };
     };
 
     const tacticalPriority = findTacticalPriority(board, this.engine, result, options.tacticalSearchDepth ?? 5);

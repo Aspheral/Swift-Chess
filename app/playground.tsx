@@ -101,6 +101,8 @@ export default function Playground() {
   const [history, setHistory] = useState<string[]>([]);
   const [lastMove, setLastMove] = useState<{ from: number; to: number } | null>(null);
   const [thinking, setThinking] = useState(false);
+  const [secondLookReason, setSecondLookReason] = useState<string | null>(null);
+  const [secondLookDepth, setSecondLookDepth] = useState<string | null>(null);
   const [actualThinkSeconds, setActualThinkSeconds] = useState<number | null>(null);
   const [promotion, setPromotion] = useState<{ moves: Move[] } | null>(null);
   const [opening, setOpening] = useState<SwiftOpening | null>(null);
@@ -132,6 +134,11 @@ export default function Playground() {
       const active = activeSearchRef.current;
       if (!active || response.id !== active.id) return;
 
+      if (response.type === "thinking") {
+        if (!analysisModeRef.current) setSecondLookReason(response.reason);
+        return;
+      }
+
       if (response.type === "error") {
         activeSearchRef.current = null;
         setThinking(false);
@@ -162,7 +169,12 @@ export default function Playground() {
         );
         if (response.opening) setOpening(response.opening);
         setMind(response.mind ?? null);
-        if (!analysisModeRef.current && move) setActualThinkSeconds(Math.max(0, (performance.now() - latest.startedAt) / 1000));
+        if (!analysisModeRef.current && move) {
+          setActualThinkSeconds(Math.max(0, (performance.now() - latest.startedAt) / 1000));
+          setSecondLookDepth(response.secondLook?.improvedDepth
+            ? `Extra search reached depth ${response.secondLook.finalDepth} (from ${response.secondLook.initialDepth}).`
+            : response.secondLook ? "Swift rechecked the position before committing." : null);
+        }
 
         if (move && !analysisModeRef.current && game.turn() !== playerSideRef.current) {
           game.play(move);
@@ -189,6 +201,8 @@ export default function Playground() {
   }
 
   function restartWorker() {
+    setSecondLookReason(null);
+    setSecondLookDepth(null);
     workerRef.current?.terminate();
     workerRef.current = null;
     activeSearchRef.current = null;
@@ -199,6 +213,8 @@ export default function Playground() {
     const id = ++requestIdRef.current;
     activeSearchRef.current = { id, version, game, startedAt: performance.now() };
     setThinking(true);
+    setSecondLookReason(null);
+    setSecondLookDepth(null);
     if (!analysisModeRef.current) setActualThinkSeconds(null);
     ensureWorker().postMessage({
       type: "search",
@@ -315,7 +331,11 @@ export default function Playground() {
         ? (result === "checkmate" ? `Checkmate · ${turn === "w" ? "Black" : "White"} wins` : resultLabels[result] ?? "Game over")
         : `${turn === "w" ? "White" : "Black"} to move · Swift is showing its preferences`
     : thinking
-      ? "Swift is considering the position…"
+      ? secondLookReason === "search-shift" ? "Swift found something unexpected. Calculating deeper…"
+        : secondLookReason === "king-danger" ? "Swift is double-checking the king\x27s safety…"
+        : secondLookReason === "competing-plans" ? "Swift is comparing two serious plans…"
+        : secondLookReason === "serious-position" ? "Swift is taking extra care with this position…"
+        : "Swift is considering the position…"
       : terminal
         ? (result === "checkmate" ? `Checkmate · ${turn === playerSide ? "Swift" : "You"} wins` : resultLabels[result] ?? "Game over")
         : turn === playerSide ? (inCheck ? "Your king is in check" : "Your move") : "Swift to move";
@@ -377,7 +397,7 @@ export default function Playground() {
         <aside className="game-info">
           <div className="game-status"><span className={thinking ? "pulse" : "dot"} />{status}</div>
           {!analysisMode && actualThinkSeconds !== null && !thinking && (
-            <div className="human-think-time">Swift think time: <strong>{actualThinkSeconds.toFixed(1)}s</strong> (measured)</div>
+            <div className="human-think-time">Swift think time: <strong>{actualThinkSeconds.toFixed(1)}s</strong> (measured){secondLookDepth && <span> · {secondLookDepth}</span>}</div>
           )}
           <div className="thought-card">
             <span>{analysisMode ? "Swift's analysis" : "Swift's current plan"}</span>

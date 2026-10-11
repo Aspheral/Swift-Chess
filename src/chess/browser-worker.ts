@@ -30,6 +30,8 @@ context.onmessage = (event) => {
     const activeEngine = request.mode === "analyze" ? analysisEngines[board.turn()] : engine;
     const result = activeEngine.search(board, {
       ...profile.options,
+      adaptiveThinking: request.mode === "analyze" ? false : profile.options.adaptiveThinking,
+      onSecondLook: (reason) => context.postMessage({ type: "thinking", id: request.id, reason }),
       seed: request.seed,
       moveHistory: request.moveHistory,
       positionHistoryKeys: request.positionHistoryKeys,
@@ -62,6 +64,7 @@ context.onmessage = (event) => {
       nodes: result.nodes,
       thinkKind: profile.kind,
       minimumThinkMs,
+      secondLook: result.secondLook,
       mind: result.mind,
       decision: result.decision,
     });
