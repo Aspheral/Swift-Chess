@@ -93,7 +93,7 @@ export class HumanSwiftEngine {
     const engineMoveUci = result.move.uci();
     const decision = (move: Move, source: SwiftDecisionSource, reasons: string[], humanCandidates: CandidateScore[], extra: Partial<HumanSearchResult> = {}): HumanSearchResult => {
       const mind = this.mind.recordDecision(move.uci(), reasons[0] ?? `Continue the plan to ${this.mind.planDescription()}.`);
-      // A new first move cannot inherit the engine\x27s unrelated continuation.
+      // A new first move cannot inherit the engine's unrelated continuation.
       const pv = move.uci() === engineMoveUci ? (result.pv ?? []) : [];
       return { ...result, ...extra, move, pv: pv.length ? [move, ...pv.slice(1)] : [move], humanCandidates, humanProfile: profile, mind, decision: { source, engineMove: engineMoveUci, selectedMove: move.uci(), engineAgreement: move.uci() === engineMoveUci, reasons } };
     };

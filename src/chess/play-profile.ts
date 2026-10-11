@@ -224,7 +224,7 @@ export function decisionThinkPaceMs(
   profile: Pick<SwiftPlayProfile, "kind" | "minimumThinkMs">,
   evidence: SwiftDecisionTimingEvidence,
 ): number {
-  if (evidence.legalMoves <= 1) return 140;
+  if (evidence.legalMoves <= 1) return 100;
   if (evidence.decisionSource === "opening-book" && profile.kind === "opening") {
     return Math.max(140, Math.min(280, profile.minimumThinkMs));
   }
