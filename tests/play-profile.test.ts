@@ -27,6 +27,7 @@ describe("Swift browser play timing", () => {
     expect(tactical.options.timeMs ?? 0).toBeGreaterThan(calm.options.timeMs ?? 0);
     expect(tactical.minimumThinkMs).toBeGreaterThan(calm.minimumThinkMs);
     expect(tactical.options.depth).toBe(7);
+    expect(tactical.options.adaptiveThinking).toEqual({ maxExtraMs: 2000, extraDepth: 2 });
   });
 
   it("uses an endgame budget instead of the full tactical budget in quiet endings", () => {

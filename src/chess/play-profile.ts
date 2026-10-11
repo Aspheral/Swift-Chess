@@ -4,7 +4,7 @@ import { humanErrorProfile } from "./human";
 import { generateIdeas } from "./ideas";
 import { CandidateScore, scoreCandidates } from "./scoring";
 
-export const SWIFT_PLAY_PROFILE = "adaptive-human-v13";
+export const SWIFT_PLAY_PROFILE = "adaptive-human-v14";
 
 export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 
@@ -77,8 +77,8 @@ export function quietDecisionUncertainty(board: Board, practicalPressure: number
  *
  * Swift should feel like a person: familiar positions are played quickly,
  * ordinary positions get a short think, and tactical danger earns more time.
- * These limits are intentionally smaller than the old flat 800 ms budget and
- * are safe to use in calibration because they are deterministic from position.
+ * First-pass budgets stay responsive; difficult decisions can ask for one
+ * additional bounded search only after Swift notices concrete uncertainty.
  *
  * Default play deliberately carries no sampling randomness. Variation should
  * come from Swift's position interpretation, continuing plan, opponent model,
@@ -103,6 +103,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
       options: {
         depth: 7,
         timeMs: 1050,
+        adaptiveThinking: { maxExtraMs: 2000, extraDepth: 2 },
         randomness: 0,
         errorBudget: 0.012,
         strictBestPlay: false,
@@ -131,6 +132,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
       options: {
         depth: 6,
         timeMs: openingSearchMs,
+        adaptiveThinking: { maxExtraMs: 700, extraDepth: 1 },
         randomness: 0,
         errorBudget: 0.025,
         strictBestPlay: false,
@@ -154,6 +156,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
       options: {
         depth: 7,
         timeMs: 850,
+        adaptiveThinking: { maxExtraMs: 1600, extraDepth: 2 },
         randomness: 0,
         errorBudget: 0.012,
         strictBestPlay: false,
@@ -179,6 +182,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
     options: {
       depth: 6,
       timeMs: calmSearchMs,
+      adaptiveThinking: { maxExtraMs: 1600, extraDepth: 2 },
       randomness: 0,
       errorBudget: 0.025,
       strictBestPlay: false,

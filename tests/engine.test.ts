@@ -16,6 +16,11 @@ describe("Swift search", () => {
     expect(board.legalMoves().some((move) => move.uci() === result.move?.uci())).toBe(true);
     expect(result.depth).toBe(3);
     expect(result.nodes).toBeGreaterThan(0);
+    expect(result.stability).toEqual({
+      scoreSwingCp: expect.any(Number),
+      moveChanged: expect.any(Boolean),
+      interrupted: false,
+    });
   });
 
   it("respects a search time budget", () => {
