@@ -166,7 +166,7 @@ export default function Playground() {
     setLastMove({ from: move.from, to: move.to });
     setHistory(active.game.moveHistory());
     setActualThinkSeconds(Math.max(0, (nowMs - active.startedAt) / 1000));
-    setSecondLookDepth("Swift moved immediately to protect its clock.");
+    setSecondLookDepth("Swift used its verified first-pass move as a fallback.");
     setThinking(false);
     setSecondLookReason(null);
     setThoughtArrows([]);
@@ -197,6 +197,10 @@ export default function Playground() {
       }
 
       if (response.type === "error") {
+        if (!analysisModeRef.current && active.provisional) {
+          finishEmergencyMove(performance.now());
+          return;
+        }
         activeSearchRef.current = null;
         setSearchError("Swift could not finish this search. Start a new game or retry.");
         setThinking(false);
@@ -253,7 +257,13 @@ export default function Playground() {
       else finish();
     };
     worker.onerror = () => {
+      const active = activeSearchRef.current;
+      if (active?.provisional && !analysisModeRef.current) {
+        finishEmergencyMove(performance.now());
+        return;
+      }
       activeSearchRef.current = null;
+      setSearchError("The chess worker stopped unexpectedly. Retry or start a new game.");
       setThinking(false);
     };
     workerRef.current = worker;

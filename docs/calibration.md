@@ -1,6 +1,6 @@
 # Swift rating calibration
 
-An earlier Swift configuration was calibrated at approximately **1632 Elo** against Stockfish's UCI strength limiter. The current `adaptive-human-v14` candidate aims for **1900 rapid Elo**, but has not yet been calibrated.
+An earlier Swift configuration was calibrated at approximately **1632 Elo** against Stockfish's UCI strength limiter. The current `adaptive-human-v15` candidate aims for **1900 rapid Elo**, but has not yet been calibrated.
 
 This is a benchmark estimate, not an official human federation or online-platform rating.
 
