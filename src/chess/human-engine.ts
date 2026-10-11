@@ -94,6 +94,7 @@ export class HumanSwiftEngine {
     if (!result.move) {
       return { ...result, humanCandidates: [], humanProfile: profile, mind: observedMind, decision: { source: "engine-fallback", engineMove: null, selectedMove: null, engineAgreement: true, reasons: ["No legal move was available."] } };
     }
+    const initialMove = result.move;
 
     // Search stability is observed only after an initial concrete search. Keep
     // the same SwiftMind observation throughout; rethinking is not another turn.
@@ -118,7 +119,9 @@ export class HumanSwiftEngine {
       secondLook = { ...extension, initialDepth, finalDepth: result.depth, improvedDepth };
     }
 
-    const engineMoveUci = result.move.uci();
+    // Preserve a legal root move even if a later search failed to complete.
+    const principalMove: Move = result.move ?? initialMove;
+    const engineMoveUci = principalMove.uci();
     const decision = (move: Move, source: SwiftDecisionSource, reasons: string[], humanCandidates: CandidateScore[], extra: Partial<HumanSearchResult> = {}): HumanSearchResult => {
       const mind = this.mind.recordDecision(move.uci(), reasons[0] ?? `Continue the plan to ${this.mind.planDescription()}.`);
       // A new first move cannot inherit the engine's unrelated continuation.
@@ -132,13 +135,13 @@ export class HumanSwiftEngine {
     if (options.strictBestPlay) {
       const strictBook = openingBookMove(board, options.seed ?? Date.now(), history);
       if (strictBook && history.length <= 5 && !this.wouldRepeatPosition(board, strictBook.move, options.positionHistoryKeys ?? [])) return decision(strictBook.move, "strict", ["The strict opening repertoire selected this move."], [], { opening: strictBook.opening });
-      return decision(result.move, "strict", ["Strict mode follows the concrete principal move."], []);
+      return decision(principalMove, "strict", ["Strict mode follows the concrete principal move."], []);
     }
 
     const safetyMargin = Math.max(0, options.safetyMargin ?? (technicalEndgame ? 25 : 60));
     const safetyDepth = Math.max(1, Math.min(4, Math.floor(options.safetyDepth ?? (technicalEndgame ? 4 : 3))));
     const generatedEngineCandidate = generated.scores.find((candidate) => candidate.move.uci() === engineMoveUci);
-    const engineCandidate: CandidateScore = generatedEngineCandidate ? { ...generatedEngineCandidate, score: result.score, reasons: [...generatedEngineCandidate.reasons, "Concrete search also selected this move as its principal variation."] } : { move: result.move, score: result.score, ideaKinds: ["tactical"], reasons: ["Concrete search selected this move as its principal variation."] };
+    const engineCandidate: CandidateScore = generatedEngineCandidate ? { ...generatedEngineCandidate, score: result.score, reasons: [...generatedEngineCandidate.reasons, "Concrete search also selected this move as its principal variation."] } : { move: principalMove, score: result.score, ideaKinds: ["tactical"], reasons: ["Concrete search selected this move as its principal variation."] };
 
     const planned = [...generated.scores]
       .sort((a, b) => (b.score + this.mind.planBias(b.ideaKinds)) - (a.score + this.mind.planBias(a.ideaKinds)))
@@ -160,7 +163,7 @@ export class HumanSwiftEngine {
     // Compare every candidate at the same depth with the same search budget.
     // A score from the main root search or a deeper probe is not interchangeable
     // with the shallow consequence scores used by human move selection.
-    const baseline = this.childSearchScore(board, result.move, basePonderDepth, options.ponderTimeMs);
+    const baseline = this.childSearchScore(board, principalMove, basePonderDepth, options.ponderTimeMs);
 
     const book = shouldPreferPlanToBook(observedMind, history.length) ? null : openingBookMove(board, options.seed ?? Date.now(), history);
     if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
@@ -182,7 +185,7 @@ export class HumanSwiftEngine {
         // The extra selective look is a veto only. Keep the original comparable
         // score for ranking, and check the extra depth against a matching baseline.
         if (!deepBaselines.has(deepDepth)) {
-          deepBaselines.set(deepDepth, this.childSearchScore(board, result.move!, deepDepth, options.ponderTimeMs));
+          deepBaselines.set(deepDepth, this.childSearchScore(board, principalMove, deepDepth, options.ponderTimeMs));
         }
         if (!this.isSafeCandidate(board, candidate.move, deepBaselines.get(deepDepth)!, tacticalMargin, deepDepth, options.safetyTimeMs)) return [];
       }
@@ -190,7 +193,7 @@ export class HumanSwiftEngine {
     });
     if (!safe.length) {
       this.mind.recordSetback("The current plan produced no candidate that survived concrete verification.");
-      return decision(result.move, "engine-fallback", ["No human-plan candidate survived the concrete safety check."], candidateScores.slice(0, options.candidateLimit ?? 6));
+      return decision(principalMove, "engine-fallback", ["No human-plan candidate survived the concrete safety check."], candidateScores.slice(0, options.candidateLimit ?? 6));
     }
 
     const historyKeys = options.positionHistoryKeys ?? [];
@@ -212,7 +215,7 @@ export class HumanSwiftEngine {
     const safeKeys = new Set(movementSafe.map((candidate) => candidate.move.uci()));
     if (!selectedMove || !safeKeys.has(selectedMove.uci())) {
       this.mind.recordSetback("The human decision layer could not produce a verified continuation.");
-      return decision(result.move, "engine-fallback", ["Human selection did not return a verified candidate."], movementSafe);
+      return decision(principalMove, "engine-fallback", ["Human selection did not return a verified candidate."], movementSafe);
     }
 
     const selectedCandidate = movementSafe.find((candidate) => candidate.move.uci() === selectedMove.uci());

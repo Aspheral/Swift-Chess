@@ -60,7 +60,7 @@ describe("Adaptive serious thinking", () => {
   });
 
   it("allocates time to close moves with incompatible strategic ideas", () => {
-    const candidates = [
+    const candidates: SecondLookEvidence["candidates"] = [
       { score: 16, ideaKinds: ["pawn-break"] },
       { score: 15, ideaKinds: ["defend"] },
     ];
