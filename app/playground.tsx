@@ -301,7 +301,19 @@ export default function Playground() {
     if (mode === nextMode) return;
     gameVersion.current += 1;
     restartWorker();
+    if (nextMode === "analyze") {
+      showClock(pauseRapidClock(clockRef.current, performance.now()));
+      analysisChangedRef.current = false;
+    } else if (analysisChangedRef.current) {
+      // Analysis may alter the position; start a fresh rapid clock for that line.
+      clockSnapshotsRef.current = [];
+      showClock(createRapidClock());
+      analysisChangedRef.current = false;
+    } else {
+      showClock(resumeRapidClock(clockRef.current, gameRef.current.turn(), performance.now()));
+    }
     analysisModeRef.current = nextMode === "analyze";
+    setSearchError(null);
     setMode(nextMode);
     setSelected(null);
     setPromotion(null);
@@ -316,6 +328,10 @@ export default function Playground() {
     gameVersion.current += 1;
     restartWorker();
     gameRef.current = Game.start();
+    clockSnapshotsRef.current = [];
+    analysisChangedRef.current = false;
+    showClock(createRapidClock());
+    setSearchError(null);
     openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
     playerSideRef.current = side;
     setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setActualThinkSeconds(null); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlayerSide(side); setFlipped(side === "b");
@@ -329,14 +345,20 @@ export default function Playground() {
 
     const game = gameRef.current;
     game.undo();
+    let clockBefore = clockSnapshotsRef.current.pop() ?? createRapidClock();
 
     // In a normal game, rewind Swift's reply too. Analyze mode rewinds one ply
     // because the user is intentionally controlling both colors.
     if (!analysisMode) {
       while (game.canUndo() && game.turn() !== playerSide) {
         game.undo();
+        clockBefore = clockSnapshotsRef.current.pop() ?? createRapidClock();
       }
+      showClock(restoreRapidClock(clockBefore, game.turn(), performance.now()));
+    } else {
+      analysisChangedRef.current = true;
     }
+    setSearchError(null);
 
     const moves = game.moveHistory();
     const previousMove = moves.length ? arrowFromUci(moves[moves.length - 1]) : null;
@@ -361,7 +383,10 @@ export default function Playground() {
       setMind(null);
       setOpening(null);
     }
+    if (analysisModeRef.current) analysisChangedRef.current = true;
+    else if (!recordClockMove(game.turn(), performance.now())) return;
     game.play(move);
+    stopClockAfterGame(performance.now());
     const next = game.board();
     setBoard(next); setSelected(null); setPromotion(null); setLastMove({ from: move.from, to: move.to }); setHistory(game.moveHistory());
     if (game.result() !== "ongoing") { setThoughtArrows([]); return; }
@@ -394,7 +419,9 @@ export default function Playground() {
     if (moves.length) chooseMove(moves);
   }
 
-  const status = analysisMode
+  const status = !analysisMode && clockView.flagged
+    ? clockView.flagged === playerSide ? "Time expired · Swift wins" : "Swift ran out of time · You win"
+    : analysisMode
     ? thinking
       ? `Swift is analyzing ${turn === "w" ? "White" : "Black"}'s move…`
       : terminal
@@ -420,9 +447,37 @@ export default function Playground() {
   }, [analysisMode]);
 
   useEffect(() => {
-    if (terminal || thinking || (!analysisMode && turn === playerSide)) return;
+    if (terminal || thinking || searchError || (!analysisMode && turn === playerSide)) return;
     runSwift(gameVersion.current, gameRef.current);
-  }, [turn, playerSide, terminal, thinking, analysisMode]);
+  }, [turn, playerSide, terminal, thinking, analysisMode, searchError]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (analysisModeRef.current) return;
+      const nowMs = performance.now();
+      const latest = settleRapidClock(clockRef.current, nowMs);
+      if (latest !== clockRef.current) showClock(latest);
+      if (latest.flagged) {
+        if (activeSearchRef.current) {
+          gameVersion.current += 1;
+          workerRef.current?.terminate();
+          workerRef.current = null;
+          activeSearchRef.current = null;
+          setThinking(false);
+          setSecondLookReason(null);
+          setPromotion(null);
+        }
+        return;
+      }
+      const active = activeSearchRef.current;
+      const side = gameRef.current.turn();
+      if (active && side !== playerSideRef.current && latest.active === side
+        && latest.remainingMs[side] <= 850 && active.provisional) {
+        finishEmergencyMove(nowMs);
+      }
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => () => workerRef.current?.terminate(), []);
 
@@ -465,7 +520,19 @@ export default function Playground() {
           {promotion && <div className="promotion" role="dialog" aria-label="Choose promotion piece"><span>Promote to</span>{promotionOptions.map(({ piece, label }) => <button key={piece} onClick={() => { const move = promotion.moves.find((candidate) => candidate.promotion === piece); if (move) applyHumanMove(move); }}><PieceArt piece={`${analysisMode ? turn : playerSide}${piece}` as Piece} /><small>{label}</small></button>)}</div>}
         </div>
         <aside className="game-info">
+          {!analysisMode && <div className="rapid-clocks" aria-label="10-minute rapid clocks">
+            {([
+              { side: playerSide, label: `You · ${playerSide === "w" ? "White" : "Black"}` },
+              { side: playerSide === "w" ? "b" as Side : "w" as Side, label: `Swift · ${playerSide === "w" ? "Black" : "White"}` },
+            ]).map(({ side, label }) => (
+              <div className={`rapid-clock ${clockView.active === side ? "active" : ""} ${clockView.flagged === side ? "flagged" : ""} ${clockView.remainingMs[side] < 30_000 ? "low" : ""}`} key={side}>
+                <span>{label}</span><strong>{rapidClockLabel(clockView.remainingMs[side])}</strong>
+              </div>
+            ))}
+            <small>10-minute rapid · no increment · clock pauses in Analyze mode</small>
+          </div>}
           <div className="game-status"><span className={thinking ? "pulse" : "dot"} />{status}</div>
+          {searchError && <div className="game-status" role="alert">{searchError} <button type="button" onClick={() => setSearchError(null)}>Retry</button></div>}
           {!analysisMode && actualThinkSeconds !== null && !thinking && (
             <div className="human-think-time">Swift think time: <strong>{actualThinkSeconds.toFixed(1)}s</strong> (measured){secondLookDepth && <span> · {secondLookDepth}</span>}</div>
           )}
