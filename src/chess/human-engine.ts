@@ -31,6 +31,8 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
   /** Optional in-search deeper calculation when the first answer looks unstable or high-stakes. */
   adaptiveThinking?: AdaptiveThinkingOptions | false;
   onSecondLook?: (reason: SwiftSecondLookReason) => void;
+  /** A legal first-pass move the browser can use when the game clock becomes critical. */
+  onInitialMove?: (move: Move) => void;
 }
 
 export type SwiftDecisionSource = "tactical" | "opening-book" | "human-plan" | "engine-fallback" | "strict";
@@ -95,6 +97,7 @@ export class HumanSwiftEngine {
       return { ...result, humanCandidates: [], humanProfile: profile, mind: observedMind, decision: { source: "engine-fallback", engineMove: null, selectedMove: null, engineAgreement: true, reasons: ["No legal move was available."] } };
     }
     const initialMove = result.move;
+    options.onInitialMove?.(initialMove);
 
     // Search stability is observed only after an initial concrete search. Keep
     // the same SwiftMind observation throughout; rethinking is not another turn.

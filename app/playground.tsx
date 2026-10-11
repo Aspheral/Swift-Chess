@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Game, Move, Piece, SwiftOpening } from "../src";
 import type { SwiftMindSnapshot } from "../src";
 import type { SwiftWorkerResponse } from "../src/chess/worker-protocol";
+import { createRapidClock, pauseRapidClock, playRapidClockMove, rapidClockLabel, restoreRapidClock, resumeRapidClock, settleRapidClock, startRapidClock } from "../src/chess/rapid-clock";
+import type { RapidClock } from "../src/chess/rapid-clock";
 
 const files = "abcdefgh";
 const pieceNames: Record<Piece, string> = {
@@ -93,7 +95,10 @@ export default function Playground() {
   const openingSeed = useRef(Date.now() & 0xffffffff);
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
-  const activeSearchRef = useRef<{ id: number; version: number; game: Game; startedAt: number } | null>(null);
+  const activeSearchRef = useRef<{ id: number; version: number; game: Game; startedAt: number; provisional?: string } | null>(null);
+  const clockRef = useRef<RapidClock>(createRapidClock());
+  const clockSnapshotsRef = useRef<RapidClock[]>([]);
+  const analysisChangedRef = useRef(false);
   const playerSideRef = useRef<Side>("w");
   const analysisModeRef = useRef(false);
   const [board, setBoard] = useState(() => gameRef.current.board());
@@ -101,6 +106,8 @@ export default function Playground() {
   const [history, setHistory] = useState<string[]>([]);
   const [lastMove, setLastMove] = useState<{ from: number; to: number } | null>(null);
   const [thinking, setThinking] = useState(false);
+  const [clockView, setClockView] = useState<RapidClock>(() => clockRef.current);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [secondLookReason, setSecondLookReason] = useState<string | null>(null);
   const [secondLookDepth, setSecondLookDepth] = useState<string | null>(null);
   const [actualThinkSeconds, setActualThinkSeconds] = useState<number | null>(null);
@@ -117,13 +124,58 @@ export default function Playground() {
   const selectedMoves = selected === null ? [] : legalMoves.filter((move) => move.from === selected);
   const selectedTargets = new Set(selectedMoves.map((move) => move.to));
   const result = gameRef.current.result();
-  const terminal = result !== "ongoing";
+  const terminal = result !== "ongoing" || (!analysisModeRef.current && !!clockView.flagged);
   const turn = board.toFEN().split(/\s+/)[1] as Side;
   const inCheck = board.isInCheck(turn);
   const analysisMode = mode === "analyze";
   const canUndoPlayerMove = analysisMode ? history.length > 0 : history.some((_, index) =>
     (index % 2 === 0 ? "w" : "b") === playerSide,
   );
+
+  function showClock(next: RapidClock) {
+    clockRef.current = next;
+    setClockView(next);
+  }
+
+  function recordClockMove(side: Side, nowMs: number): boolean {
+    if (analysisModeRef.current) return true;
+    const settled = settleRapidClock(clockRef.current, nowMs);
+    if (settled.flagged || (settled.started && settled.active !== side)) {
+      showClock(settled);
+      return false;
+    }
+    clockSnapshotsRef.current.push(settled);
+    showClock(playRapidClockMove(settled, side, nowMs));
+    return true;
+  }
+
+  function stopClockAfterGame(nowMs: number) {
+    if (!analysisModeRef.current && gameRef.current.result() !== "ongoing") {
+      showClock(pauseRapidClock(clockRef.current, nowMs));
+    }
+  }
+
+  function finishEmergencyMove(nowMs: number) {
+    const active = activeSearchRef.current;
+    if (!active?.provisional || active.version !== gameVersion.current || active.game !== gameRef.current) return;
+    if (analysisModeRef.current || active.game.turn() === playerSideRef.current || active.game.result() !== "ongoing") return;
+    const move = active.game.legalMoves().find((candidate) => candidate.uci() === active.provisional);
+    if (!move || !recordClockMove(active.game.turn(), nowMs)) return;
+    active.game.play(move);
+    setBoard(active.game.board());
+    setLastMove({ from: move.from, to: move.to });
+    setHistory(active.game.moveHistory());
+    setActualThinkSeconds(Math.max(0, (nowMs - active.startedAt) / 1000));
+    setSecondLookDepth("Swift used its verified first-pass move as a fallback.");
+    setThinking(false);
+    setSecondLookReason(null);
+    setThoughtArrows([]);
+    stopClockAfterGame(nowMs);
+    gameVersion.current += 1;
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    activeSearchRef.current = null;
+  }
 
   function ensureWorker(): Worker {
     if (workerRef.current) return workerRef.current;
@@ -134,13 +186,23 @@ export default function Playground() {
       const active = activeSearchRef.current;
       if (!active || response.id !== active.id) return;
 
+      if (response.type === "provisional") {
+        active.provisional = response.move;
+        return;
+      }
+
       if (response.type === "thinking") {
         if (!analysisModeRef.current) setSecondLookReason(response.reason);
         return;
       }
 
       if (response.type === "error") {
+        if (!analysisModeRef.current && active.provisional) {
+          finishEmergencyMove(performance.now());
+          return;
+        }
         activeSearchRef.current = null;
+        setSearchError("Swift could not finish this search. Start a new game or retry.");
         setThinking(false);
         return;
       }
@@ -176,11 +238,12 @@ export default function Playground() {
             : response.secondLook ? "Swift rechecked the position before committing." : null);
         }
 
-        if (move && !analysisModeRef.current && game.turn() !== playerSideRef.current) {
+        if (move && !analysisModeRef.current && game.turn() !== playerSideRef.current && recordClockMove(game.turn(), performance.now())) {
           game.play(move);
           setBoard(game.board());
           setLastMove({ from: move.from, to: move.to });
           setHistory(game.moveHistory());
+          stopClockAfterGame(performance.now());
         }
 
         activeSearchRef.current = null;
@@ -188,12 +251,19 @@ export default function Playground() {
       };
 
       const elapsed = performance.now() - active.startedAt;
-      const remaining = analysisModeRef.current ? 0 : Math.max(0, response.minimumThinkMs - elapsed);
+      const clockLeft = clockRef.current.remainingMs[active.game.turn()];
+      const remaining = analysisModeRef.current || clockLeft < 3000 ? 0 : Math.max(0, response.minimumThinkMs - elapsed);
       if (remaining > 0) window.setTimeout(finish, remaining);
       else finish();
     };
     worker.onerror = () => {
+      const active = activeSearchRef.current;
+      if (active?.provisional && !analysisModeRef.current) {
+        finishEmergencyMove(performance.now());
+        return;
+      }
       activeSearchRef.current = null;
+      setSearchError("The chess worker stopped unexpectedly. Retry or start a new game.");
       setThinking(false);
     };
     workerRef.current = worker;
@@ -210,6 +280,14 @@ export default function Playground() {
 
   function runSwift(version: number, game: Game) {
     if (version !== gameVersion.current || gameRef.current !== game || (!analysisModeRef.current && game.turn() === playerSideRef.current)) return;
+    if (!analysisModeRef.current) {
+      const nowMs = performance.now();
+      const next = clockRef.current.started
+        ? settleRapidClock(clockRef.current, nowMs)
+        : startRapidClock(clockRef.current, game.turn(), nowMs);
+      if (next.flagged) { showClock(next); return; }
+      showClock(next);
+    }
     const id = ++requestIdRef.current;
     activeSearchRef.current = { id, version, game, startedAt: performance.now() };
     setThinking(true);
@@ -224,6 +302,8 @@ export default function Playground() {
       moveHistory: game.moveHistory(),
       positionHistoryKeys: game.positionHistoryKeys(),
       mode: analysisModeRef.current ? "analyze" : "play",
+      clockMs: analysisModeRef.current ? undefined : clockRef.current.remainingMs[game.turn()],
+      opponentClockMs: analysisModeRef.current ? undefined : clockRef.current.remainingMs[game.turn() === "w" ? "b" : "w"],
     });
   }
 
@@ -231,7 +311,19 @@ export default function Playground() {
     if (mode === nextMode) return;
     gameVersion.current += 1;
     restartWorker();
+    if (nextMode === "analyze") {
+      showClock(pauseRapidClock(clockRef.current, performance.now()));
+      analysisChangedRef.current = false;
+    } else if (analysisChangedRef.current) {
+      // Analysis may alter the position; start a fresh rapid clock for that line.
+      clockSnapshotsRef.current = [];
+      showClock(createRapidClock());
+      analysisChangedRef.current = false;
+    } else {
+      showClock(resumeRapidClock(clockRef.current, gameRef.current.turn(), performance.now()));
+    }
     analysisModeRef.current = nextMode === "analyze";
+    setSearchError(null);
     setMode(nextMode);
     setSelected(null);
     setPromotion(null);
@@ -246,6 +338,10 @@ export default function Playground() {
     gameVersion.current += 1;
     restartWorker();
     gameRef.current = Game.start();
+    clockSnapshotsRef.current = [];
+    analysisChangedRef.current = false;
+    showClock(createRapidClock());
+    setSearchError(null);
     openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
     playerSideRef.current = side;
     setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setActualThinkSeconds(null); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlayerSide(side); setFlipped(side === "b");
@@ -259,14 +355,20 @@ export default function Playground() {
 
     const game = gameRef.current;
     game.undo();
+    let clockBefore = clockSnapshotsRef.current.pop() ?? createRapidClock();
 
     // In a normal game, rewind Swift's reply too. Analyze mode rewinds one ply
     // because the user is intentionally controlling both colors.
     if (!analysisMode) {
       while (game.canUndo() && game.turn() !== playerSide) {
         game.undo();
+        clockBefore = clockSnapshotsRef.current.pop() ?? createRapidClock();
       }
+      showClock(restoreRapidClock(clockBefore, game.turn(), performance.now()));
+    } else {
+      analysisChangedRef.current = true;
     }
+    setSearchError(null);
 
     const moves = game.moveHistory();
     const previousMove = moves.length ? arrowFromUci(moves[moves.length - 1]) : null;
@@ -291,7 +393,10 @@ export default function Playground() {
       setMind(null);
       setOpening(null);
     }
+    if (analysisModeRef.current) analysisChangedRef.current = true;
+    else if (!recordClockMove(game.turn(), performance.now())) return;
     game.play(move);
+    stopClockAfterGame(performance.now());
     const next = game.board();
     setBoard(next); setSelected(null); setPromotion(null); setLastMove({ from: move.from, to: move.to }); setHistory(game.moveHistory());
     if (game.result() !== "ongoing") { setThoughtArrows([]); return; }
@@ -324,7 +429,9 @@ export default function Playground() {
     if (moves.length) chooseMove(moves);
   }
 
-  const status = analysisMode
+  const status = !analysisMode && clockView.flagged
+    ? clockView.flagged === playerSide ? "Time expired · Swift wins" : "Swift ran out of time · You win"
+    : analysisMode
     ? thinking
       ? `Swift is analyzing ${turn === "w" ? "White" : "Black"}'s move…`
       : terminal
@@ -350,9 +457,37 @@ export default function Playground() {
   }, [analysisMode]);
 
   useEffect(() => {
-    if (terminal || thinking || (!analysisMode && turn === playerSide)) return;
+    if (terminal || thinking || searchError || (!analysisMode && turn === playerSide)) return;
     runSwift(gameVersion.current, gameRef.current);
-  }, [turn, playerSide, terminal, thinking, analysisMode]);
+  }, [turn, playerSide, terminal, thinking, analysisMode, searchError]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (analysisModeRef.current) return;
+      const nowMs = performance.now();
+      const latest = settleRapidClock(clockRef.current, nowMs);
+      if (latest !== clockRef.current) showClock(latest);
+      if (latest.flagged) {
+        if (activeSearchRef.current) {
+          gameVersion.current += 1;
+          workerRef.current?.terminate();
+          workerRef.current = null;
+          activeSearchRef.current = null;
+          setThinking(false);
+          setSecondLookReason(null);
+          setPromotion(null);
+        }
+        return;
+      }
+      const active = activeSearchRef.current;
+      const side = gameRef.current.turn();
+      if (active && side !== playerSideRef.current && latest.active === side
+        && latest.remainingMs[side] <= 850 && active.provisional) {
+        finishEmergencyMove(nowMs);
+      }
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => () => workerRef.current?.terminate(), []);
 
@@ -395,7 +530,19 @@ export default function Playground() {
           {promotion && <div className="promotion" role="dialog" aria-label="Choose promotion piece"><span>Promote to</span>{promotionOptions.map(({ piece, label }) => <button key={piece} onClick={() => { const move = promotion.moves.find((candidate) => candidate.promotion === piece); if (move) applyHumanMove(move); }}><PieceArt piece={`${analysisMode ? turn : playerSide}${piece}` as Piece} /><small>{label}</small></button>)}</div>}
         </div>
         <aside className="game-info">
+          {!analysisMode && <div className="rapid-clocks" aria-label="10-minute rapid clocks">
+            {([
+              { side: playerSide, label: `You · ${playerSide === "w" ? "White" : "Black"}` },
+              { side: playerSide === "w" ? "b" as Side : "w" as Side, label: `Swift · ${playerSide === "w" ? "Black" : "White"}` },
+            ]).map(({ side, label }) => (
+              <div className={`rapid-clock ${clockView.active === side ? "active" : ""} ${clockView.flagged === side ? "flagged" : ""} ${clockView.remainingMs[side] < 30_000 ? "low" : ""}`} key={side}>
+                <span>{label}</span><strong>{rapidClockLabel(clockView.remainingMs[side])}</strong>
+              </div>
+            ))}
+            <small>10-minute rapid · no increment · clock pauses in Analyze mode</small>
+          </div>}
           <div className="game-status"><span className={thinking ? "pulse" : "dot"} />{status}</div>
+          {searchError && <div className="game-status" role="alert">{searchError} <button type="button" onClick={() => setSearchError(null)}>Retry</button></div>}
           {!analysisMode && actualThinkSeconds !== null && !thinking && (
             <div className="human-think-time">Swift think time: <strong>{actualThinkSeconds.toFixed(1)}s</strong> (measured){secondLookDepth && <span> · {secondLookDepth}</span>}</div>
           )}

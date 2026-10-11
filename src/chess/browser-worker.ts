@@ -1,6 +1,7 @@
 import { Board } from "./board";
 import { HumanSwiftEngine } from "./human-engine";
 import { decisionThinkPaceMs, swiftPlayProfile } from "./play-profile";
+import { allocateRapidThink } from "./rapid-time";
 import { SwiftWorkerRequest, SwiftWorkerResponse } from "./worker-protocol";
 
 type WorkerContext = {
@@ -28,9 +29,16 @@ context.onmessage = (event) => {
     const board = Board.fromFEN(request.fen);
     const profile = swiftPlayProfile(board, request.moveHistory);
     const activeEngine = request.mode === "analyze" ? analysisEngines[board.turn()] : engine;
+    const isRapid = request.mode !== "analyze" && request.clockMs !== undefined && request.opponentClockMs !== undefined;
+    const rapid = isRapid ? allocateRapidThink(profile, {
+      remainingMs: request.clockMs!,
+      opponentMs: request.opponentClockMs!,
+      ply: request.moveHistory.length,
+    }) : null;
     const result = activeEngine.search(board, {
-      ...profile.options,
-      adaptiveThinking: request.mode === "analyze" ? false : profile.options.adaptiveThinking,
+      ...(rapid?.options ?? profile.options),
+      adaptiveThinking: request.mode === "analyze" ? false : (rapid?.options.adaptiveThinking ?? profile.options.adaptiveThinking),
+      onInitialMove: (move) => context.postMessage({ type: "provisional", id: request.id, move: move.uci() }),
       onSecondLook: (reason) => context.postMessage({ type: "thinking", id: request.id, reason }),
       seed: request.seed,
       moveHistory: request.moveHistory,
@@ -43,7 +51,7 @@ context.onmessage = (event) => {
       .slice(0, 4);
 
     const selectedCandidate = result.humanCandidates.find((candidate) => candidate.move.uci() === result.move?.uci());
-    const minimumThinkMs = request.mode === "analyze" ? 0 : decisionThinkPaceMs(profile, {
+    const naturalThinkMs = request.mode === "analyze" ? 0 : decisionThinkPaceMs(profile, {
       legalMoves: board.legalMoves().length,
       decisionSource: result.decision?.source,
       candidates: result.humanCandidates,
@@ -51,6 +59,8 @@ context.onmessage = (event) => {
       planConfidence: result.mind?.confidence,
       followsPlan: !!(result.mind?.plan && selectedCandidate?.ideaKinds.includes(result.mind.plan)),
     });
+
+    const minimumThinkMs = rapid ? Math.min(naturalThinkMs, rapid.minimumThinkMs) : naturalThinkMs;
 
     context.postMessage({
       type: "result",

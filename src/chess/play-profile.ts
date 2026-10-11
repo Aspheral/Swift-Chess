@@ -4,7 +4,7 @@ import { humanErrorProfile } from "./human";
 import { generateIdeas } from "./ideas";
 import { CandidateScore, scoreCandidates } from "./scoring";
 
-export const SWIFT_PLAY_PROFILE = "adaptive-human-v14";
+export const SWIFT_PLAY_PROFILE = "adaptive-human-v15";
 
 export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 
