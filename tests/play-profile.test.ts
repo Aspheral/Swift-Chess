@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Board, swiftPlayProfile } from "../src";
-import { candidateDecisionUncertainty, candidateIdeaUncertainty, ideaConflict, quietDecisionUncertainty } from "../src/chess/play-profile";
+import type { CandidateScore } from "../src/chess/scoring";
+import { candidateDecisionUncertainty, candidateIdeaUncertainty, decisionThinkPaceMs, ideaConflict, quietDecisionUncertainty, verifiedChoiceTension } from "../src/chess/play-profile";
 
 describe("Swift browser play timing", () => {
   it("plays familiar opening positions quickly", () => {
@@ -69,4 +70,30 @@ describe("Swift browser play timing", () => {
     const narrow = Board.fromFEN("7k/8/8/8/8/8/6P1/6K1 w - - 0 1");
     expect(quietDecisionUncertainty(narrow, 0.36)).toBeGreaterThan(0.7);
   });
+
+  it("gives close competing plans more time than a settled choice", () => {
+    const profile = swiftPlayProfile(Board.start(), []);
+    const choices = (gap: number, rival: "develop" | "pawn-break"): Array<Pick<CandidateScore, "score" | "ideaKinds">> => [
+      { score: 55, ideaKinds: ["develop"] },
+      { score: 55 - gap, ideaKinds: [rival] },
+    ];
+    expect(verifiedChoiceTension(choices(1, "pawn-break"))).toBeGreaterThan(verifiedChoiceTension(choices(1, "develop")));
+    const close = decisionThinkPaceMs(profile, { legalMoves: 25, candidates: choices(1, "pawn-break") });
+    const clear = decisionThinkPaceMs(profile, { legalMoves: 25, candidates: choices(90, "pawn-break") });
+    expect(close).toBeGreaterThan(clear);
+    expect(decisionThinkPaceMs(profile, { legalMoves: 1, candidates: choices(1, "pawn-break") })).toBeLessThan(clear);
+  });
+
+  it("thinks faster when a mature plan still fits the chosen move", () => {
+    const profile = swiftPlayProfile(Board.start(), []);
+    const evidence = {
+      legalMoves: 20, decisionSource: "human-plan" as const,
+      candidates: [{ score: 10, ideaKinds: ["develop" as const] }, { score: 8, ideaKinds: ["pawn-break" as const] }],
+      planAge: 5, planConfidence: 0.8,
+    };
+    expect(decisionThinkPaceMs(profile, { ...evidence, followsPlan: true })).toBeLessThan(
+      decisionThinkPaceMs(profile, { ...evidence, followsPlan: false }),
+    );
+  });
+
 });
