@@ -55,6 +55,13 @@ export function shouldPreferPlanToBook(mind: SwiftMindSnapshot, historyLength: n
     mind.setbacks === 0;
 }
 
+/** Only an exact return to the last square vacated counts as immediate reversal. */
+export function isImmediateMoveReversal(uci: string, history: string[]): boolean {
+  const previous = history[history.length - 2];
+  return !!previous && previous.slice(0, 2) === uci.slice(2, 4) &&
+    previous.slice(2, 4) === uci.slice(0, 2);
+}
+
 export class HumanSwiftEngine {
   private readonly engine: SwiftEngine;
   private readonly safetyEngine: SwiftEngine;
@@ -86,7 +93,8 @@ export class HumanSwiftEngine {
     const engineMoveUci = result.move.uci();
     const decision = (move: Move, source: SwiftDecisionSource, reasons: string[], humanCandidates: CandidateScore[], extra: Partial<HumanSearchResult> = {}): HumanSearchResult => {
       const mind = this.mind.recordDecision(move.uci(), reasons[0] ?? `Continue the plan to ${this.mind.planDescription()}.`);
-      const pv = result.pv ?? [];
+      // A new first move cannot inherit the engine\x27s unrelated continuation.
+      const pv = move.uci() === engineMoveUci ? (result.pv ?? []) : [];
       return { ...result, ...extra, move, pv: pv.length ? [move, ...pv.slice(1)] : [move], humanCandidates, humanProfile: profile, mind, decision: { source, engineMove: engineMoveUci, selectedMove: move.uci(), engineAgreement: move.uci() === engineMoveUci, reasons } };
     };
 
@@ -146,7 +154,13 @@ export class HumanSwiftEngine {
     const repetitionSafe = nonRepeatingSafe.length ? nonRepeatingSafe : safe;
     const naturalSafe = repetitionSafe.filter((candidate) => !this.burnsCastlingRightEarly(board, candidate.move, history));
     const movementPool = naturalSafe.length ? naturalSafe : repetitionSafe;
-    const nonBacktracking = movementPool.filter((candidate) => !this.isMechanicalBacktrack(board, candidate.move, history));
+    // A needed defense or forcing continuation can justify an immediate retreat.
+    const nonBacktracking = movementPool.filter((candidate) =>
+      !this.isMechanicalBacktrack(board, candidate.move, history) ||
+      candidate.ideaKinds.includes("tactical") ||
+      candidate.ideaKinds.includes("defend") ||
+      board.makeMove(candidate.move).isInCheck(board.turn() === "w" ? "b" : "w"),
+    );
     const movementSafe = nonBacktracking.length ? nonBacktracking : movementPool;
 
     const selected = selectHumanMove(board, { candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length), randomness: technicalEndgame ? 0 : options.randomness, riskTolerance: technicalEndgame ? 0.2 : options.riskTolerance, errorBudget: baseErrorBudget, seed: options.seed === undefined ? undefined : deriveSeed(options.seed, history.length), initiative: options.initiative, simplification: options.simplification, development: options.development, pawnBreaks: options.pawnBreaks, history, mind: observedMind, candidates: movementSafe, strictBestPlay: options.strictBestPlay });
@@ -240,12 +254,6 @@ export class HumanSwiftEngine {
     if (move.castle || move.enPassant || board.pieceAt(move.to)) return false;
     const piece = board.pieceAt(move.from);
     if (!piece || piece[1] === "p") return false;
-    const from = move.uci().slice(0, 2);
-    for (let index = history.length - 2; index >= Math.max(0, history.length - 12); index -= 2) {
-      const previous = history[index];
-      if (!previous) continue;
-      if (previous.slice(2, 4) === from) return true;
-    }
-    return false;
+    return isImmediateMoveReversal(move.uci(), history);
   }
 }

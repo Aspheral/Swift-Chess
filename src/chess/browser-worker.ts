@@ -1,6 +1,6 @@
 import { Board } from "./board";
 import { HumanSwiftEngine } from "./human-engine";
-import { swiftPlayProfile } from "./play-profile";
+import { decisionThinkPaceMs, swiftPlayProfile } from "./play-profile";
 import { SwiftWorkerRequest, SwiftWorkerResponse } from "./worker-protocol";
 
 type WorkerContext = {
@@ -40,6 +40,16 @@ context.onmessage = (event) => {
       .filter((move, index, moves) => moves.indexOf(move) === index)
       .slice(0, 4);
 
+    const selectedCandidate = result.humanCandidates.find((candidate) => candidate.move.uci() === result.move?.uci());
+    const minimumThinkMs = request.mode === "analyze" ? 0 : decisionThinkPaceMs(profile, {
+      legalMoves: board.legalMoves().length,
+      decisionSource: result.decision?.source,
+      candidates: result.humanCandidates,
+      planAge: result.mind?.planAge,
+      planConfidence: result.mind?.confidence,
+      followsPlan: !!(result.mind?.plan && selectedCandidate?.ideaKinds.includes(result.mind.plan)),
+    });
+
     context.postMessage({
       type: "result",
       id: request.id,
@@ -51,8 +61,7 @@ context.onmessage = (event) => {
       depth: result.depth,
       nodes: result.nodes,
       thinkKind: profile.kind,
-      minimumThinkMs: profile.minimumThinkMs,
-      humanThinkSeconds: profile.humanThinkSeconds,
+      minimumThinkMs,
       mind: result.mind,
       decision: result.decision,
     });

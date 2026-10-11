@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Board, HumanSwiftEngine } from "../src";
-import { shouldPreferPlanToBook } from "../src/chess/human-engine";
+import { isImmediateMoveReversal, shouldPreferPlanToBook } from "../src/chess/human-engine";
 import type { SwiftMindSnapshot } from "../src/chess/mind";
 
 describe("Integrated Swift human engine", () => {
@@ -62,4 +62,11 @@ describe("Integrated Swift human engine", () => {
     expect(result.move).not.toBeNull();
     expect(result.move?.uci()).not.toBe("h6g8");
   });
+
+  it("distinguishes a genuine reversal from another move by the same piece", () => {
+    expect(isImmediateMoveReversal("f3g1", ["g1f3", "g8h6"])).toBe(true);
+    expect(isImmediateMoveReversal("f3e5", ["g1f3", "g8h6"])).toBe(false);
+    expect(isImmediateMoveReversal("f3g1", ["d2d4", "g8h6"])).toBe(false);
+  });
+
 });
