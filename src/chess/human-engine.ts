@@ -10,6 +10,7 @@ import { deriveSeed } from "./random";
 import { SwiftMind, SwiftMindSnapshot } from "./mind";
 import { selectiveCandidateDepths } from "./selective-calculation";
 import { AdaptiveThinkingOptions, planAdaptiveSecondLook, SwiftSecondLook, SwiftSecondLookReason } from "./adaptive-thinking";
+import { avoidImmediateMajorBlunder } from "./blunder-guard";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   safetyMargin?: number;
@@ -125,15 +126,32 @@ export class HumanSwiftEngine {
     // Preserve a legal root move even if a later search failed to complete.
     const principalMove: Move = result.move ?? initialMove;
     const engineMoveUci = principalMove.uci();
-    const decision = (move: Move, source: SwiftDecisionSource, reasons: string[], humanCandidates: CandidateScore[], extra: Partial<HumanSearchResult> = {}): HumanSearchResult => {
-      const mind = this.mind.recordDecision(move.uci(), reasons[0] ?? `Continue the plan to ${this.mind.planDescription()}.`);
-      // A new first move cannot inherit the engine's unrelated continuation.
-      const pv = move.uci() === engineMoveUci ? (result.pv ?? []) : [];
-      return { ...result, ...extra, secondLook, move, pv: pv.length ? [move, ...pv.slice(1)] : [move], humanCandidates, humanProfile: profile, mind, decision: { source, engineMove: engineMoveUci, selectedMove: move.uci(), engineAgreement: move.uci() === engineMoveUci, reasons } };
+    const decision = (move: Move, source: SwiftDecisionSource, reasons: string[], humanCandidates: CandidateScore[], extra: Partial<HumanSearchResult> = {}, forcedMate = false): HumanSearchResult => {
+      // A short timed search may return at depth zero. Independent SEE of the
+      // opponent's immediate legal captures must veto an obvious queen/rook hang
+      // even if the human plan, book or principal search initially chose it.
+      const guard = forcedMate || result.score >= 98_000 ? null : avoidImmediateMajorBlunder(
+        board, move,
+        [principalMove, ...humanCandidates.map((candidate) => candidate.move), ...generated.scores.map((candidate) => candidate.move)],
+        (position) => this.engine.evaluate(position),
+      );
+      const selectedMove = guard?.move ?? move;
+      const selectedSource: SwiftDecisionSource = guard ? "engine-fallback" : source;
+      const selectedReasons = guard
+        ? [`Tactical safety override: avoided an immediate ${guard.originalLoss}cp material loss.`, ...reasons]
+        : reasons;
+      const reportedCandidates = guard && !humanCandidates.some((candidate) => candidate.move.uci() === selectedMove.uci())
+        ? [...humanCandidates, generated.scores.find((candidate) => candidate.move.uci() === selectedMove.uci()) ?? {
+          move: selectedMove, score: -this.engine.evaluate(board.makeMove(selectedMove)), ideaKinds: ["defend"] as CandidateScore["ideaKinds"], reasons: selectedReasons,
+        }]
+        : humanCandidates;
+      const mind = this.mind.recordDecision(selectedMove.uci(), selectedReasons[0] ?? `Continue the plan to ${this.mind.planDescription()}.`);
+      const pv = selectedMove.uci() === engineMoveUci ? (result.pv ?? []) : [];
+      return { ...result, ...extra, secondLook, move: selectedMove, pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove], humanCandidates: reportedCandidates, humanProfile: profile, mind, decision: { source: selectedSource, engineMove: engineMoveUci, selectedMove: selectedMove.uci(), engineAgreement: selectedMove.uci() === engineMoveUci, reasons: selectedReasons } };
     };
 
     const tacticalPriority = findTacticalPriority(board, this.engine, result, options.tacticalSearchDepth ?? 5);
-    if (tacticalPriority) return decision(tacticalPriority.move, "tactical", ["A forcing tactical priority overrides the longer-term plan."], []);
+    if (tacticalPriority) return decision(tacticalPriority.move, "tactical", ["A forcing tactical priority overrides the longer-term plan."], [], {}, tacticalPriority.kind === "mate");
 
     if (options.strictBestPlay) {
       const strictBook = openingBookMove(board, options.seed ?? Date.now(), history);
