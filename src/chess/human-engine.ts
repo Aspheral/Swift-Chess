@@ -184,31 +184,43 @@ export class HumanSwiftEngine {
     // Compare every candidate at the same depth with the same search budget.
     // A score from the main root search or a deeper probe is not interchangeable
     // with the shallow consequence scores used by human move selection.
-    const baseline = this.childSearchScore(board, principalMove, basePonderDepth, options.ponderTimeMs);
+    const baselineProbe = this.childSearchScore(board, principalMove, basePonderDepth, options.ponderTimeMs);
+    // A timed-out score at depth zero is static evaluation, NOT verification.
+    // When even a two-ply baseline cannot complete, preserve the stronger
+    // root search instead of allowing an unverified human plan to override it.
+    if (baselineProbe.depth < 2) {
+      this.mind.recordSetback("Safety verification was incomplete.");
+      return decision(principalMove, "engine-fallback", ["Safety search was incomplete; preserving the principal move."], []);
+    }
+    const verifiedDepth = baselineProbe.depth;
+    const baseline = baselineProbe.score;
 
     const book = shouldPreferPlanToBook(observedMind, history.length) ? null : openingBookMove(board, options.seed ?? Date.now(), history);
     if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
       const bookMargin = history.length < 8 ? Math.max(tacticalMargin, 42) : tacticalMargin;
       // Book familiarity cannot bypass concrete verification, even on move one.
-      const bookSafe = this.isSafeCandidate(board, book.move, baseline, bookMargin, basePonderDepth, options.safetyTimeMs);
+      const bookSafe = this.isSafeCandidate(board, book.move, baseline, bookMargin, verifiedDepth, options.safetyTimeMs);
       if (bookSafe) {
         const bookCandidate = candidateScores.find((candidate) => candidate.move.uci() === book.move.uci()) ?? { move: book.move, score: result.score, ideaKinds: ["develop"] as CandidateScore["ideaKinds"], reasons: ["Swift's opening repertoire selected this move."] };
         return decision(book.move, "opening-book", bookCandidate.reasons, [bookCandidate], { opening: book.opening });
       }
     }
 
-    const deepBaselines = new Map<number, number>();
+    const deepBaselines = new Map<number, number | null>();
     const safe = safetyCandidates.flatMap((candidate, index): CandidateScore[] => {
-      const verified = this.assessCandidate(board, candidate, baseline, tacticalMargin, basePonderDepth, options.safetyTimeMs);
+      const verified = this.assessCandidate(board, candidate, baseline, tacticalMargin, verifiedDepth, options.safetyTimeMs);
       if (!verified) return [];
       const deepDepth = candidateDepths[index];
-      if (deepDepth > basePonderDepth && candidate.move.uci() !== engineMoveUci) {
+      if (deepDepth > verifiedDepth && candidate.move.uci() !== engineMoveUci) {
         // The extra selective look is a veto only. Keep the original comparable
         // score for ranking, and check the extra depth against a matching baseline.
         if (!deepBaselines.has(deepDepth)) {
-          deepBaselines.set(deepDepth, this.childSearchScore(board, principalMove, deepDepth, options.ponderTimeMs));
+          const deepProbe = this.childSearchScore(board, principalMove, deepDepth, options.ponderTimeMs);
+          deepBaselines.set(deepDepth, deepProbe.depth >= deepDepth ? deepProbe.score : null);
         }
-        if (!this.isSafeCandidate(board, candidate.move, deepBaselines.get(deepDepth)!, tacticalMargin, deepDepth, options.safetyTimeMs)) return [];
+        const deeperBaseline = deepBaselines.get(deepDepth);
+        if (deeperBaseline === null || deeperBaseline === undefined ||
+          !this.isSafeCandidate(board, candidate.move, deeperBaseline, tacticalMargin, deepDepth, options.safetyTimeMs)) return [];
       }
       return [verified];
     });
@@ -263,9 +275,9 @@ export class HumanSwiftEngine {
     return pieces.length <= 6 || (queens + rooks > 0 && pieces.length <= 8 && !/[pP]/.test(nonKings));
   }
 
-  private childSearchScore(board: Board, move: Move, depth: number, timeMs?: number): number {
-    const child = board.makeMove(move);
-    return -this.safetyEngine.search(child, { depth, timeMs: this.optionsTimeMs(timeMs) }).score;
+  private childSearchScore(board: Board, move: Move, depth: number, timeMs?: number): { score: number; depth: number } {
+    const probe = this.safetyEngine.search(board.makeMove(move), { depth, timeMs: this.optionsTimeMs(timeMs) });
+    return { score: -probe.score, depth: probe.depth };
   }
   private optionsTimeMs(value?: number): number | undefined { return value !== undefined && value > 0 ? Math.floor(value) : undefined; }
   private positionSafetyMargin(baseMargin: number, profile: HumanErrorProfile): number {
@@ -281,7 +293,9 @@ export class HumanSwiftEngine {
       if (replies.some((reply) => child.makeMove(reply).isCheckmate())) return null;
       if (child.isInCheck(opponent) && replies.length === 0) return null;
     }
-    const concreteScore = -this.safetyEngine.search(child, { depth, timeMs: this.optionsTimeMs(timeMs) }).score;
+    const probe = this.safetyEngine.search(child, { depth, timeMs: this.optionsTimeMs(timeMs) });
+    if (probe.depth < depth) return null;
+    const concreteScore = -probe.score;
     if (concreteScore < baseline - margin) return null;
     return { ...candidate, score: concreteScore, reasons: [...candidate.reasons, "Concrete consequence search kept this move inside Swift's safety margin."] };
   }
@@ -293,7 +307,8 @@ export class HumanSwiftEngine {
       if (child.legalMoves().some((reply) => child.makeMove(reply).isCheckmate())) return false;
       if (child.isInCheck(opponent) && child.legalMoves().length === 0) return false;
     }
-    return -this.safetyEngine.search(child, { depth, timeMs: this.optionsTimeMs(timeMs) }).score >= baseline - margin;
+    const probe = this.safetyEngine.search(child, { depth, timeMs: this.optionsTimeMs(timeMs) });
+    return probe.depth >= depth && -probe.score >= baseline - margin;
   }
 
   private wouldRepeatPosition(board: Board, move: Move, positionHistoryKeys: string[]): boolean {
