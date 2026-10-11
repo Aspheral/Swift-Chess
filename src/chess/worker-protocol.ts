@@ -12,6 +12,9 @@ export interface SwiftWorkerSearchRequest {
   moveHistory: string[];
   positionHistoryKeys: string[];
   mode?: "play" | "analyze";
+  /** Real remaining clock values, in milliseconds. Omitted in analysis mode. */
+  clockMs?: number;
+  opponentClockMs?: number;
 }
 
 export interface SwiftWorkerResetRequest {
@@ -19,6 +22,12 @@ export interface SwiftWorkerResetRequest {
 }
 
 export type SwiftWorkerRequest = SwiftWorkerSearchRequest | SwiftWorkerResetRequest;
+
+export interface SwiftWorkerProvisionalResponse {
+  type: "provisional";
+  id: number;
+  move: string;
+}
 
 export interface SwiftWorkerThinkingResponse {
   type: "thinking";
@@ -49,4 +58,4 @@ export interface SwiftWorkerErrorResponse {
   message: string;
 }
 
-export type SwiftWorkerResponse = SwiftWorkerSearchResponse | SwiftWorkerThinkingResponse | SwiftWorkerErrorResponse;
+export type SwiftWorkerResponse = SwiftWorkerSearchResponse | SwiftWorkerProvisionalResponse | SwiftWorkerThinkingResponse | SwiftWorkerErrorResponse;
