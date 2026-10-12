@@ -12,7 +12,7 @@ export interface SwiftWorkerSearchRequest {
   moveHistory: string[];
   positionHistoryKeys: string[];
   mode?: "play" | "analyze";
-  /** Real remaining clock values, in milliseconds. Omitted in analysis mode. */
+  /** Optional remaining clock values for timed modes; omitted in untimed Play and Analyze. */
   clockMs?: number;
   opponentClockMs?: number;
 }

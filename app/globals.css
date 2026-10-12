@@ -6,3 +6,5 @@
 .rapid-clock.active{border-color:#d887aa;background:#30202c;box-shadow:inset 0 0 0 1px #a15d7e}
 .rapid-clock.active strong{color:#ffd0e0}.rapid-clock.low strong{color:#ffb39c}
 .rapid-clock.flagged{border-color:#c84d65;background:#331d25}.rapid-clock.flagged strong{color:#ff92a9}
+
+.untimed-notice{display:flex;flex-direction:column;gap:5px;padding:15px 18px;border-bottom:1px solid #302c32;background:#1c181e}.untimed-notice strong{color:#f0eaee;font:500 17px/1.3 Georgia,serif}.untimed-notice small{color:#a9a0aa;font:11px/1.5 Georgia,serif}
