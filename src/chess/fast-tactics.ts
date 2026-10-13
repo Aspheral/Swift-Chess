@@ -151,5 +151,12 @@ export function findTacticalPriority(
 ): TacticalPriority | null {
   const mate = forcedMate(board, engine, existing, tacticalSearchDepth);
   if (mate) return { move: mate, kind: "mate", score: MATE_SCORE };
-  return bestMaterialCapture(board, isOwnQueenUnderAttack(board));
+  const capture = bestMaterialCapture(board, isOwnQueenUnderAttack(board));
+  // SEE only assesses recaptures on a single square. It cannot justify
+  // overriding a completed multi-ply search that found a different move.
+  // Preserve raw material priorities as a fallback for very shallow or
+  // interrupted searches, and always keep forced mates above this rule.
+  if (capture && existing?.move && existing.depth >= 3 &&
+      existing.move.uci() !== capture.move.uci()) return null;
+  return capture;
 }
