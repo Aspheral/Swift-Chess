@@ -8,7 +8,7 @@ describe("search correctness near the fifty-move rule", () => {
     const engine = new SwiftEngine();
     const result = engine.search(Board.fromFEN(fen(99)), { depth: 2 });
     expect(result.depth).toBe(2);
-    expect(result.score).toBe(0);
+    expect(Math.abs(result.score)).toBe(0);
   });
 
   it("does not reuse transposition evaluations across different draw clocks", () => {
@@ -17,7 +17,7 @@ describe("search correctness near the fifty-move rule", () => {
     const draw = engine.search(Board.fromFEN(fen(99)), { depth: 3 });
     const normalAgain = engine.search(Board.fromFEN(fen(0)), { depth: 3 });
     expect(normal.score).toBeGreaterThan(400);
-    expect(draw.score).toBe(0);
+    expect(Math.abs(draw.score)).toBe(0);
     expect(normalAgain.score).toBeGreaterThan(400);
   });
 
