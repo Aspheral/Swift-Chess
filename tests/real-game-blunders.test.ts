@@ -20,7 +20,10 @@ describe("Swift real-game material-blunder regression", () => {
     const correction = avoidImmediateMajorBlunder(queenHang, blunder!, [], (b) => new SwiftEngine().evaluate(b));
     expect(correction).not.toBeNull();
     expect(correction?.move.uci()).not.toBe("c5e3");
-    expect(correction!.remainingLoss).toBeLessThan(160);
+    // The new guard also sees exposed minor pieces. Saving the queen can
+    // still leave a bishop under attack in this already dangerous position.
+    expect(correction!.remainingLoss).toBeLessThan(500);
+    expect(correction!.remainingLoss).toBeLessThan(correction!.originalLoss - 140);
   });
 
   it("recognizes an unfavorable exchange of rook for bishop on 32...Rg6", () => {
