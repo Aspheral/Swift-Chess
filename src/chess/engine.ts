@@ -139,6 +139,9 @@ export class SwiftEngine {
   private negamax(board: Board, depth: number, alpha: number, beta: number, ply: number, allowNullMove = true): { score: number; pv: Move[] } {
     this.checkTime();
     this.nodes++;
+    // A completed fifty-move draw scores zero, unless the move delivering it
+    // already checkmated the opponent. Never let a cached score override it.
+    if (board.halfmoveClock() >= 100 && !board.isCheckmate()) return { score: 0, pv: [] };
     const inCheck = board.isInCheck(this.sideToMove(board));
     if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta, ply), pv: [] };
     const extension = inCheck && depth > 0 ? 1 : 0;
@@ -215,6 +218,7 @@ export class SwiftEngine {
   private quiescence(board: Board, alpha: number, beta: number, ply: number): number {
     this.checkTime();
     this.nodes++;
+    if (board.halfmoveClock() >= 100 && !board.isCheckmate()) return 0;
     const side = this.sideToMove(board);
     const inCheck = board.isInCheck(side);
     const legal = board.legalMoves();
@@ -288,16 +292,18 @@ export class SwiftEngine {
   private isCapture(board: Board, move: Move): boolean { return move.enPassant || board.pieceAt(move.to) !== null; }
 
   private canNullMove(board: Board): boolean {
+    // Zugzwang danger is about OUR available waiting moves. The opponent's
+    // queen or rooks must not make a pawn-only side eligible for null pruning.
     let nonPawnPieces = 0;
     let rooksQueens = 0;
     for (let square = 0; square < 64; square++) {
       const piece = board.pieceAt(square);
-      if (!piece || piece[1] === "k" || piece[1] === "p") continue;
+      if (!piece || piece[0] !== board.turn() || piece[1] === "k" || piece[1] === "p") continue;
       nonPawnPieces++;
       if (piece[1] === "r" || piece[1] === "q") rooksQueens++;
     }
-    if (nonPawnPieces <= 2) return false;
-    if (rooksQueens === 0 && nonPawnPieces <= 4) return false;
+    if (nonPawnPieces === 0) return false;
+    if (rooksQueens === 0 && nonPawnPieces <= 1) return false;
     return true;
   }
 
@@ -446,7 +452,11 @@ export class SwiftEngine {
   }
 
   private sideToMove(board: Board): Color { return board.turn(); }
-  private key(board: Board): string { return board.searchKey(); }
+  private key(board: Board): string {
+    // Equal piece placements near a fifty-move draw do not have equal values.
+    // Include the draw clock so TT bounds from one context cannot pollute another.
+    return `${board.searchKey()}|${Math.min(100, board.halfmoveClock())}`;
+  }
   private checkTime(): void { if (Date.now() > this.deadline) throw TIMEOUT; }
 }
 
