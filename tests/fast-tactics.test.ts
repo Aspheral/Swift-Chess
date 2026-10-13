@@ -39,7 +39,7 @@ describe("Swift tactical priorities", () => {
     expect(findTacticalPriority(board, new SwiftEngine(), completed, 0)).toBeNull();
 
     // If the completed search agrees, we retain the queen capture.
-    const agreeing = { ...completed, move: capture };
+    const agreeing = { ...completed, move: capture! };
     expect(findTacticalPriority(board, new SwiftEngine(), agreeing, 0)?.move.uci()).toBe("e1d1");
 
     // Shallow searches still have access to the tactical fallback.
