@@ -1,0 +1,61 @@
+name: Swift 2050 Pilot Games
+
+# One experimental PR only. Avoid expensive matches on unrelated PRs.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/swift-2050-pilot.yml"
+
+jobs:
+  pilot:
+    if: github.head_ref == 'experiment/2050-integrated-pilot-20261014'
+    name: integrated-swift-vs-stockfish-2050-first-four
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SWIFT_RUN_STOCKFISH_GATE: "1"
+      SWIFT_STOCKFISH_ELO: "2050"
+      SWIFT_CALIBRATION_MODE: "human"
+      SWIFT_CALIBRATION_BATCH: "0"
+      SWIFT_CALIBRATION_REQUIRE_TARGET: "0"
+      SWIFT_MAX_PLIES: "360"
+      SWIFT_CALIBRATION_OPENING_PAIRS: "2"
+    steps:
+      - name: Checkout integrated candidate
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Install Stockfish
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y stockfish
+          if ! command -v stockfish >/dev/null; then
+            sudo ln -s /usr/games/stockfish /usr/local/bin/stockfish
+          fi
+          printf 'uci\nquit\n' | stockfish | grep -m 1 -E '^id name|^Stockfish'
+
+      - name: Play first four 2050-rated Stockfish games
+        run: pnpm exec vitest run tests/stockfish-gate.test.ts --config vitest.config.mts
+
+      - name: Upload pilot result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-2050-integrated-first-four
+          path: calibration-results/human-elo-2050-batch-0.json
+          if-no-files-found: warn
+          retention-days: 30
