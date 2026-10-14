@@ -15,7 +15,7 @@
 <div align="center">
   <table>
     <tr>
-      <td align="center"><strong>1900 Rapid goal</strong><br><sub>Not yet verified; earlier estimate: 1632</sub></td>
+      <td align="center"><strong>2000 Rapid goal</strong><br><sub>Not yet verified; earlier estimate: 1632</sub></td>
       <td align="center"><strong>AI</strong><br><sub>Not a fixed engine</sub></td>
       <td align="center"><strong>Swift</strong><br><sub>Fast, personal, experimental</sub></td>
     </tr>
@@ -28,7 +28,7 @@ Swift is a chess AI made by Aspheral.
 
 The original idea was pretty simple: I wanted a chess program that could actually feel like it was playing chess, instead of just being a machine that looks through a position and finds the move with the highest number attached to it.
 
-Swift now aims for **1900 rapid Elo**, while keeping its own human-like decision process. The last completed 200-game paired Stockfish ladder gave an earlier build **1632 calibrated Elo** (95% benchmark interval **1580–1684**). That is historical evidence, not a rating for this new build or a Chess.com rapid rating. Swift needs a new calibrated ladder and games against human opponents before we can claim the goal was met.
+Swift now aims for **2000 rapid Elo**, while keeping its own human-like decision process. The last completed 200-game paired Stockfish ladder gave an earlier build **1632 calibrated Elo** (95% benchmark interval **1580–1684**). That is historical evidence, not a rating for this new build or a Chess.com rapid rating. Swift needs a new calibrated ladder and games against human opponents before we can claim the goal was met.
 
 This is not supposed to be Stockfish with a strength limiter.
 
@@ -155,9 +155,9 @@ That is the part we want to build.
 
 > **Early development**
 >
-> Swift is currently an experimental project. The goal is now **1900 rapid Elo**, not yet verified. Its **previous profile** scored **1632 calibrated Elo** across 200 paired games against Stockfish strength levels from 1450 to 1850, with a 95% benchmark interval of **1580–1684**. The updated profile is not covered by that result and must be remeasured.
+> Swift is currently an experimental project. The goal is now **2000 rapid Elo**, not yet verified. Its **previous profile** scored **1632 calibrated Elo** across 200 paired games against Stockfish strength levels from 1450 to 1850, with a 95% benchmark interval of **1580–1684**. The updated profile is not covered by that result and must be remeasured.
 
-The browser build runs Swift in a Web Worker with adaptive thinking time: quick in familiar openings, measured in quiet positions, and longer when the board becomes tactical. Competing final plans can also affect pacing. Swift can notice an unexpected evaluation swing, competing plans, or an urgent position after its first search, then spend a bounded extra calculation pass checking its decision. **Play mode is now untimed:** neither the user nor Swift can lose on the clock, while Swift continues to use position-aware per-move search limits and shows its actual measured think time. The 10+0 rapid clock logic introduced in v15 remains available in the codebase for future timed modes but is no longer active on the public Play board. This is a behavioral model, not a clock-use calibration against human game data. The 1900 Elo target remains unverified; rating methodology and prior ladder results are in [docs/calibration.md](docs/calibration.md).
+The browser build runs Swift in a Web Worker with adaptive thinking time: quick in familiar openings, measured in quiet positions, and longer when the board becomes tactical. Competing final plans can also affect pacing. Swift can notice an unexpected evaluation swing, competing plans, or an urgent position after its first search, then spend a bounded extra calculation pass checking its decision. **Play mode is now untimed:** neither the user nor Swift can lose on the clock, while Swift continues to use position-aware per-move search limits and shows its actual measured think time. The 10+0 rapid clock logic introduced in v15 remains available in the codebase for future timed modes but is no longer active on the public Play board. This is a behavioral model, not a clock-use calibration against human game data. The 2000 Elo target remains unverified; rating methodology and prior ladder results are in [docs/calibration.md](docs/calibration.md).
 
 The architecture is still being built around the idea first, rather than building a conventional engine and trying to bolt a personality onto it afterward.
 
