@@ -124,6 +124,30 @@ export class Board {
     });
   }
 
+  /**
+   * Legal captures and promotions for quiet-position quiescence search.
+   *
+   * Only tactical moves require a full king-safety test once any legal move
+   * has been found. The hasLegalMove flag preserves stalemate recognition:
+   * no legal captures does not imply the side is stalemated.
+   *
+   * Checking positions must continue to use legalMoves(), because a legal
+   * quiet evasion can be the only way out of check.
+   */
+  legalTactics(): { moves: Move[]; hasLegalMove: boolean } {
+    const tactical: Move[] = [];
+    let hasLegalMove = false;
+    for (const move of this.pseudoLegalMoves()) {
+      const isTactical = move.enPassant || !!move.promotion || this.state.board[move.to] !== null;
+      if (!isTactical && hasLegalMove) continue;
+      const next = this.makeMove(move);
+      if (next.isInCheck(this.state.turn)) continue;
+      hasLegalMove = true;
+      if (isTactical) tactical.push(move);
+    }
+    return { moves: tactical, hasLegalMove };
+  }
+
   isCheckmate(): boolean { return this.isInCheck(this.state.turn) && this.legalMoves().length === 0; }
   isStalemate(): boolean { return !this.isInCheck(this.state.turn) && this.legalMoves().length === 0; }
   isInCheck(color: Color): boolean {
