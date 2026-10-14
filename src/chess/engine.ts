@@ -393,7 +393,7 @@ export class SwiftEngine {
 
     const kingHome = color === "w" ? 4 : 60;
     const kingUncastled = board.pieceAt(kingHome) === `${color}k`;
-    return Math.min(180, (advance - 3) * (20 + undeveloped * 8 + (kingUncastled ? 5 : 0)));
+    return Math.min(180, (advance - 3) * (20 + undeveloped * 8 + (kingUncastled ? 12 : 0)));
   }
 
   private pawnStructure(pawns: number[], color: Color, enemyPawns: number[]): number {
