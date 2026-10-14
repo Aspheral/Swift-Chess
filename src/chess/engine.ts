@@ -315,6 +315,7 @@ export class SwiftEngine {
     let whiteBishops = 0, blackBishops = 0;
     let whiteKing = -1, blackKing = -1;
     let totalPieces = 0, queens = 0;
+    let whiteQueen = -1, blackQueen = -1;
 
     for (let square = 0; square < 64; square++) {
       const piece = board.pieceAt(square);
@@ -322,7 +323,11 @@ export class SwiftEngine {
       const white = piece[0] === "w";
       const type = piece[1] as PieceType;
       totalPieces++;
-      if (type === "q") queens++;
+      if (type === "q") {
+        queens++;
+        if (white) whiteQueen = square;
+        else blackQueen = square;
+      }
       const sign = white ? 1 : -1;
       score += sign * pieceValues[type];
 
@@ -348,7 +353,47 @@ export class SwiftEngine {
     score -= this.rookActivity(blackRooks, "b", blackPawns, whitePawns);
     score += this.kingSafetyFromSquare(board, whiteKing, "w", castling, totalPieces, queens > 0);
     score += this.kingSafetyFromSquare(board, blackKing, "b", castling, totalPieces, queens > 0);
+    score -= this.prematureQueenRaidPenalty(board, whiteQueen, "w", totalPieces);
+    score += this.prematureQueenRaidPenalty(board, blackQueen, "b", totalPieces);
     return score;
+  }
+
+  /**
+   * Discourage premature deep queen raids while the army is still at home.
+   *
+   * In Swift's first 2050-Stockfish pilot, a queen pawn grab on b7 invited a
+   * multi-move chase that cost substantial material. SEE cannot see a quiet
+   * rook lift several moves before the queen becomes trapped. This is a
+   * modest positional preference, not a prohibition: a winning capture or
+   * forcing tactical line can outweigh the penalty.
+   *
+   * It fades completely after minor-piece development or simplification so
+   * active queens remain welcome in genuine middlegames and endgames.
+   */
+  private prematureQueenRaidPenalty(
+    board: Board,
+    queenSquare: number,
+    color: Color,
+    totalPieces: number,
+  ): number {
+    if (queenSquare < 0 || totalPieces < 18) return 0;
+    const rank = Math.floor(queenSquare / 8);
+    const advance = color === "w" ? rank : 7 - rank;
+    if (advance <= 3) return 0;
+
+    const homes = color === "w"
+      ? [1, 6, 2, 5]   // b1/g1 knights, c1/f1 bishops
+      : [57, 62, 58, 61]; // b8/g8 knights, c8/f8 bishops
+    const types: PieceType[] = ["n", "n", "b", "b"];
+    let undeveloped = 0;
+    for (let i = 0; i < homes.length; i++) {
+      if (board.pieceAt(homes[i]) === `${color}${types[i]}`) undeveloped++;
+    }
+    if (undeveloped === 0) return 0;
+
+    const kingHome = color === "w" ? 4 : 60;
+    const kingUncastled = board.pieceAt(kingHome) === `${color}k`;
+    return Math.min(180, (advance - 3) * (20 + undeveloped * 8 + (kingUncastled ? 5 : 0)));
   }
 
   private pawnStructure(pawns: number[], color: Color, enemyPawns: number[]): number {
