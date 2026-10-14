@@ -89,6 +89,9 @@ export class Board {
 
   turn(): Color { return this.state.turn; }
 
+  /** Halfmoves since the most recent pawn move or capture (fifty-move rule). */
+  halfmoveClock(): number { return this.state.halfmove; }
+
   castlingRights(): string { return this.state.castling; }
 
   searchKey(): string {
