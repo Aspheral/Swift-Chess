@@ -117,7 +117,7 @@ export class HumanSwiftEngine {
     }, options.adaptiveThinking);
     if (extension) {
       options.onSecondLook?.(extension.reason);
-      const deeper = this.engine.search(board, { depth: extension.depth, timeMs: extension.timeMs });
+      const deeper = this.engine.search(board, { depth: extension.depth, timeMs: extension.timeMs, positionHistoryKeys: options.positionHistoryKeys });
       const improvedDepth = !!deeper.move && deeper.depth > result.depth;
       if (improvedDepth) result = deeper;
       secondLook = { ...extension, initialDepth, finalDepth: result.depth, improvedDepth };
@@ -130,7 +130,10 @@ export class HumanSwiftEngine {
       // A short timed search may return at depth zero. Independent SEE of the
       // opponent's immediate legal captures must veto an obvious queen/rook hang
       // even if the human plan, book or principal search initially chose it.
-      const guard = forcedMate || result.score >= 98_000 ? null : avoidImmediateMajorBlunder(
+      const finalizesDraw = this.wouldRepeatPosition(board, move, options.positionHistoryKeys ?? []);
+      // Never 'save' a piece by changing a move that already ended the game
+      // with a legal threefold draw. The follow-up capture cannot happen.
+      const guard = forcedMate || finalizesDraw || result.score >= 98_000 ? null : avoidImmediateMajorBlunder(
         board, move,
         [principalMove, ...humanCandidates.map((candidate) => candidate.move), ...generated.scores.map((candidate) => candidate.move)],
         (position) => this.engine.evaluate(position),
@@ -152,6 +155,14 @@ export class HumanSwiftEngine {
 
     const tacticalPriority = findTacticalPriority(board, this.engine, result, options.tacticalSearchDepth ?? 5);
     if (tacticalPriority) return decision(tacticalPriority.move, "tactical", ["A forcing tactical priority overrides the longer-term plan."], [], {}, tacticalPriority.kind === "mate");
+
+    // The completed root search already compares this guaranteed draw at
+    // 0cp with possible wins. Do not let a stylistic opening/plan preference
+    // throw away a drawing escape, especially when Swift is defending.
+    if (this.wouldRepeatPosition(board, principalMove, options.positionHistoryKeys ?? [])) {
+      return decision(principalMove, "engine-fallback",
+        ["Recognized a legal threefold repetition; preserving the searched drawing continuation."], []);
+    }
 
     if (options.strictBestPlay) {
       const strictBook = openingBookMove(board, options.seed ?? Date.now(), history);
