@@ -1,7 +1,13 @@
 import { Board, Color, Move, PieceType } from "./board";
+import { Game } from "./game";
 import { canDeltaPrune } from "./tactics";
 
-export interface SearchOptions { depth?: number; timeMs?: number; }
+export interface SearchOptions {
+  depth?: number;
+  timeMs?: number;
+  /** Actual game-position identities, including current board, for third-repetition draws. */
+  positionHistoryKeys?: string[];
+}
 export interface SearchStability {
   /** Difference between the last two completed iterative-deepening scores, in centipawns. */
   scoreSwingCp: number;
@@ -37,12 +43,26 @@ export class SwiftEngine {
   private readonly history = new Map<string, number>();
   private nodes = 0;
   private deadline = Infinity;
+  /** Root moves that end the actual game immediately by threefold repetition. */
+  private rootThreefoldMoves = new Set<string>();
 
   search(board: Board, options: SearchOptions = {}): SearchResult {
     const maxDepth = Math.max(1, Math.floor(options.depth ?? 4));
     this.nodes = 0;
     this.deadline = options.timeMs && options.timeMs > 0 ? Date.now() + options.timeMs : Infinity;
     const legal = board.legalMoves();
+    this.rootThreefoldMoves = new Set<string>();
+    if (options.positionHistoryKeys?.length) {
+      const counts = new Map<string, number>();
+      for (const key of options.positionHistoryKeys) counts.set(key, (counts.get(key) ?? 0) + 1);
+      for (const move of legal) {
+        const child = board.makeMove(move);
+        const repetitions = counts.get(Game.positionKey(child)) ?? 0;
+        // Game adjudicates mate before repetition. Do not convert a mating
+        // move into a draw, even if an invalid history happens to contain it.
+        if (repetitions >= 2 && !child.isCheckmate()) this.rootThreefoldMoves.add(move.uci());
+      }
+    }
     if (legal.length === 0) return { move: null, score: board.isInCheck(this.sideToMove(board)) ? -MATE : 0, depth: 0, nodes: this.nodes, pv: [] };
     let bestMove = legal[0], bestScore = this.evaluate(board), completedDepth = 0, bestPv: Move[] = [bestMove];
     let scoreSwingCp = 0;
@@ -112,14 +132,19 @@ export class SwiftEngine {
       const child = board.makeMove(move);
       let childResult: { score: number; pv: Move[] };
 
-      if (index === 0) {
+      const immediateDraw = this.rootThreefoldMoves.has(move.uci());
+      if (immediateDraw) {
+        // This game ends on the move itself, regardless of static material
+        // or an old transposition-table score.
+        childResult = { score: 0, pv: [] };
+      } else if (index === 0) {
         childResult = this.negamax(child, depth - 1, -beta, -alpha, 1);
       } else {
         childResult = this.negamax(child, depth - 1, -alpha - 1, -alpha, 1);
       }
       let score = -childResult.score;
 
-      if (index > 0 && score > alpha && score < beta) {
+      if (index > 0 && !immediateDraw && score > alpha && score < beta) {
         childResult = this.negamax(child, depth - 1, -beta, -alpha, 1);
         score = -childResult.score;
       }
