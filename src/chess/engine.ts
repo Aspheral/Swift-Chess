@@ -246,9 +246,11 @@ export class SwiftEngine {
     if (board.halfmoveClock() >= 100 && !board.isCheckmate()) return 0;
     const side = this.sideToMove(board);
     const inCheck = board.isInCheck(side);
-    const legal = board.legalMoves();
-    if (legal.length === 0) return inCheck ? -MATE + ply : 0;
     if (inCheck) {
+      // Every check evasion matters. Captures-only generation is only safe
+      // when we are NOT already in check.
+      const legal = board.legalMoves();
+      if (legal.length === 0) return -MATE + ply;
       let best = -INF;
       for (const move of this.orderMoves(board, legal, undefined, 0)) {
         const score = -this.quiescence(board.makeMove(move), -beta, -alpha, ply + 1);
@@ -257,11 +259,14 @@ export class SwiftEngine {
       }
       return best;
     }
+    const tactical = board.legalTactics();
+    // A position without legal moves is a draw, even with a favorable static
+    // score. A position without CAPTURES can still have legal quiet moves.
+    if (!tactical.hasLegalMove) return 0;
     const standPat = this.evaluate(board);
     if (standPat >= beta) return beta;
     if (standPat > alpha) alpha = standPat;
-    const tactical = legal.filter((move) => this.isCapture(board, move) || !!move.promotion);
-    const captures = this.orderMoves(board, tactical, undefined, 0);
+    const captures = this.orderMoves(board, tactical.moves, undefined, 0);
     for (const move of captures) {
       this.checkTime();
       const child = board.makeMove(move);
