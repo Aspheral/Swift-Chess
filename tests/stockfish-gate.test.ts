@@ -281,7 +281,7 @@ function swiftMove(
 
 const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
 
-(runStockfishGate ? describe : describe.skip)(`Swift 1650 calibration (${MODE})`, () => {
+(runStockfishGate ? describe : describe.skip)(`Swift ${STOCKFISH_ELO} calibration (${MODE})`, () => {
   let stockfish: UciStockfish;
 
   beforeAll(async () => {
