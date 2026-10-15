@@ -39,7 +39,12 @@ const OPENING_PAIR_COUNT = Math.max(1, Math.min(
   ALL_OPENING_PAIRS.length,
   Number.parseInt(process.env.SWIFT_CALIBRATION_OPENING_PAIRS ?? "10", 10) || 10,
 ));
-const OPENING_PAIRS = ALL_OPENING_PAIRS.slice(0, OPENING_PAIR_COUNT);
+const OPENING_START = Math.max(0, Number.parseInt(process.env.SWIFT_CALIBRATION_OPENING_START ?? "0", 10) || 0)
+  % ALL_OPENING_PAIRS.length;
+const OPENING_PAIRS = Array.from(
+  { length: OPENING_PAIR_COUNT },
+  (_, index) => ALL_OPENING_PAIRS[(OPENING_START + index) % ALL_OPENING_PAIRS.length],
+);
 const GAMES = OPENING_PAIRS.length * 2;
 const TARGET_SCORE = GAMES * 0.5;
 
@@ -393,7 +398,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
     }
 
     console.log(`Swift calibration configuration: mode=${MODE} batch=${BATCH} opponent=Stockfish-${STOCKFISH_ELO} ` +
-      `stockfishMoveMs=${STOCKFISH_MOVETIME_MS} maxPlies=${MAX_PLIES} ` +
+      `stockfishMoveMs=${STOCKFISH_MOVETIME_MS} maxPlies=${MAX_PLIES} openingStart=${OPENING_START} openingPairs=${OPENING_PAIR_COUNT} ` +
       (MODE === "human" ? `swiftProfile=${SWIFT_PLAY_PROFILE}` : `swiftMaxDepth=${STRICT_OPTIONS.depth} swiftMoveMs=${STRICT_OPTIONS.timeMs}`));
     console.log(statsLine("Overall", overall));
     console.log(statsLine("White", byColor.White));
@@ -430,6 +435,8 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
           opponentElo: STOCKFISH_ELO,
           stockfishMoveMs: STOCKFISH_MOVETIME_MS,
           maxPlies: MAX_PLIES,
+          openingStart: OPENING_START,
+          openingPairs: OPENING_PAIRS.map((opening) => opening.name),
           swift: MODE === "human" ? { profile: SWIFT_PLAY_PROFILE } : STRICT_OPTIONS,
         },
         overall,
