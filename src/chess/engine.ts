@@ -526,8 +526,18 @@ export class SwiftEngine {
       for (const df of [-1, 0, 1]) {
         const shieldFile = file + df;
         if (shieldFile < 0 || shieldFile > 7) continue;
-        const square = kingSquare + direction + df;
-        if (square >= 0 && square < 64 && board.pieceAt(square) === `${color}p`) score += 4;
+        const immediate = kingSquare + direction + df;
+        const advanced = kingSquare + direction * 2 + df;
+        const firstRankShield = immediate >= 0 && immediate < 64 &&
+          board.pieceAt(immediate) === `${color}p`;
+        const secondRankShield = advanced >= 0 && advanced < 64 &&
+          board.pieceAt(advanced) === `${color}p`;
+        // A missing shield pawn creates lasting mating-net weaknesses that
+        // material and piece-square tables alone overlook. A pawn advanced
+        // one step still gives partial cover (especially in a fianchetto).
+        // Use a modest, symmetric positional score, not a forced tactical
+        // veto: genuine attacks and gambits can still justify pawn advances.
+        score += firstRankShield ? 11 : secondRankShield ? 5 : -9;
       }
       if (!castled && rights === 0 && rank === homeRank && (file === 3 || file === 4)) score -= 18;
       if (rank !== homeRank && !castled) score -= 10;
