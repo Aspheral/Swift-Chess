@@ -1,13 +1,17 @@
-name: Swift 2050 32-Game Challenge
+name: Swift 2050 32-Game Validation
 
-# Launch the expensive, exploratory 32-game challenge only when this workflow
-# changes in the designated experimental PR. Do not run on ordinary commits.
+# Run a one-off 32-game validation when this experimental workflow changes.
+# Keep the 200-game gate dispatch-only. Ordinary source edits do not re-run it.
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/swift-2050-pilot.yml"
 
 jobs:
   match:
-    if: github.head_ref == 'experiment/2050-integrated-pilot-20261014'
+    if: github.event_name == 'pull_request' && github.head_ref == 'experiment/2050-integrated-pilot-20261014'
     name: 2050-human-batch-${{ matrix.batch }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
