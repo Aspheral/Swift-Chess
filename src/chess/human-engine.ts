@@ -10,7 +10,7 @@ import { deriveSeed } from "./random";
 import { SwiftMind, SwiftMindSnapshot } from "./mind";
 import { selectiveCandidateDepths } from "./selective-calculation";
 import { AdaptiveThinkingOptions, planAdaptiveSecondLook, SwiftSecondLook, SwiftSecondLookReason } from "./adaptive-thinking";
-import { avoidImmediateMajorBlunder } from "./blunder-guard";
+import { avoidImmediateMajorBlunder, avoidImmediateCheckmate } from "./blunder-guard";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   safetyMargin?: number;
@@ -138,11 +138,28 @@ export class HumanSwiftEngine {
         [principalMove, ...humanCandidates.map((candidate) => candidate.move), ...generated.scores.map((candidate) => candidate.move)],
         (position) => this.engine.evaluate(position),
       );
-      const selectedMove = guard?.move ?? move;
-      const selectedSource: SwiftDecisionSource = guard ? "engine-fallback" : source;
-      const selectedReasons = guard
-        ? [`Tactical safety override: avoided an immediate ${guard.originalLoss}cp material loss.`, ...reasons]
-        : reasons;
+      const materialSafeMove = guard?.move ?? move;
+      // Completed multi-ply principal searches already examine the opponent's
+      // next move. Extra mate verification is valuable primarily for an
+      // interrupted/shallow search or a *different* human-plan/book selection.
+      // Skip this check on terminal draws, which admit no opponent reply.
+      const requiresMateVerification = !forcedMate && !finalizesDraw &&
+        (materialSafeMove.uci() !== engineMoveUci || result.depth < 4);
+      const mateGuard = requiresMateVerification
+        ? avoidImmediateCheckmate(
+          board, materialSafeMove,
+          [principalMove, ...humanCandidates.map((candidate) => candidate.move),
+            ...generated.scores.map((candidate) => candidate.move)],
+          (position) => this.engine.evaluate(position),
+        )
+        : null;
+      const selectedMove = mateGuard?.move ?? materialSafeMove;
+      const selectedSource: SwiftDecisionSource = guard || mateGuard ? "engine-fallback" : source;
+      const selectedReasons = [
+        ...(mateGuard ? ["Tactical safety override: rejected an avoidable mate in one."] : []),
+        ...(guard ? [`Tactical safety override: avoided an immediate ${guard.originalLoss}cp material loss.`] : []),
+        ...reasons,
+      ];
       const reportedCandidates = guard && !humanCandidates.some((candidate) => candidate.move.uci() === selectedMove.uci())
         ? [...humanCandidates, generated.scores.find((candidate) => candidate.move.uci() === selectedMove.uci()) ?? {
           move: selectedMove, score: -this.engine.evaluate(board.makeMove(selectedMove)), ideaKinds: ["defend"] as CandidateScore["ideaKinds"], reasons: selectedReasons,
