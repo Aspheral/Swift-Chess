@@ -458,5 +458,5 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
     if (REQUIRE_TARGET) {
       expect(overall.score).toBeGreaterThanOrEqual(TARGET_SCORE);
     }
-  }, 1_800_000);
+  }, Math.max(1_800_000, Number.parseInt(process.env.SWIFT_CALIBRATION_TEST_TIMEOUT_MS ?? "1800000", 10) || 1_800_000));
 });
