@@ -3,7 +3,7 @@ import { Board, HumanSwiftEngine, Move, SwiftEngine } from "../src";
 import { allowsMateInOne, avoidImmediateCheckmate } from "../src/chess/blunder-guard";
 import type { SearchOptions, SearchResult } from "../src/chess/engine";
 
-const threatened = Board.fromFEN("k5r1/8/8/6q1/8/8/5PPP/R6K w - - 0 1");
+const threatened = Board.fromFEN("1k4r1/8/8/6q1/8/8/5PPP/R6K w - - 0 1");
 const find = (board: Board, uci: string) => {
   const move = board.legalMoves().find((m) => m.uci() === uci);
   expect(move, `${uci} should be legal`).toBeDefined();
