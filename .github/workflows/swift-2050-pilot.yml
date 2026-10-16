@@ -3,10 +3,7 @@ name: Swift 2050 32-Game Challenge
 # Launch the expensive, exploratory 32-game challenge only when this workflow
 # changes in the designated experimental PR. Do not run on ordinary commits.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/swift-2050-pilot.yml"
+  workflow_dispatch:
 
 jobs:
   match:
