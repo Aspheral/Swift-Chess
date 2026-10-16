@@ -90,3 +90,60 @@ export function avoidImmediateMajorBlunder(
   }
   return best ? { move: best.move, originalLoss: loss, remainingLoss: best.loss } : null;
 }
+
+/**
+ * A human-plan or interrupted-search override can occasionally discard a
+ * sound principal move and allow a one-move checkmate with no material loss.
+ * That is not a human-like mistake Swift should make deliberately.
+ *
+ * Use this only for uncertain or non-principal decisions: looking for
+ * opponent checking replies is more expensive than the routine SEE guard.
+ */
+export function allowsMateInOne(board: Board, move: Move): boolean {
+  const child = board.makeMove(move);
+  if (child.isCheckmate() || child.isStalemate()) return false;
+  const defendingSide = board.turn();
+  for (const reply of child.legalMoves()) {
+    const after = child.makeMove(reply);
+    // Most moves are not checks. Do not enumerate follow-up replies unless
+    // the king is actually in check.
+    if (after.isInCheck(defendingSide) && after.legalMoves().length === 0) return true;
+  }
+  return false;
+}
+
+export interface MateInOneAvoidance {
+  move: Move;
+  previousMove: Move;
+}
+
+/**
+ * Rescue only a genuinely avoidable next-move checkmate.
+ * Prefer already searched candidates, but never accept a second move that
+ * still permits mate. The main engine still chooses normal moves.
+ */
+export function avoidImmediateCheckmate(
+  board: Board,
+  proposed: Move,
+  preferredAlternatives: Move[] = [],
+  evaluate?: (next: Board) => number,
+): MateInOneAvoidance | null {
+  if (!allowsMateInOne(board, proposed)) return null;
+  const legal = board.legalMoves();
+  const preferred = new Set(preferredAlternatives.map((move) => move.uci()));
+  const seen = new Set<string>([proposed.uci()]);
+  let best: { move: Move; score: number } | null = null;
+  for (const suggestion of [...preferredAlternatives, ...legal]) {
+    const key = suggestion.uci();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const candidate = legal.find((move) => move.uci() === key);
+    if (!candidate || allowsMateInOne(board, candidate)) continue;
+    const materialLoss = immediateMaterialLoss(board, candidate);
+    const score = (preferred.has(key) ? 40 : 0) +
+      (evaluate ? -evaluate(board.makeMove(candidate)) : 0) -
+      materialLoss * 2;
+    if (!best || score > best.score) best = { move: candidate, score };
+  }
+  return best ? { move: best.move, previousMove: proposed } : null;
+}
