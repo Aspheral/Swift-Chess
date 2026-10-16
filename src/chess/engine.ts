@@ -233,11 +233,35 @@ export class SwiftEngine {
       moveIndex++;
     }
     const bound: Bound = best <= alphaOriginal ? "upper" : best >= beta ? "lower" : "exact";
-    // Bound the per-worker search cache over long rapid games.
-    // Keep existing keys in place, clear only when a new position would overflow.
-    if (!this.table.has(key) && this.table.size >= MAX_TRANSPOSITIONS) this.table.clear();
-    this.table.set(key, { depth: effectiveDepth, score: this.scoreToTable(best, ply), bound, move: bestMove });
+    this.storeTransposition(key, {
+      depth: effectiveDepth, score: this.scoreToTable(best, ply), bound, move: bestMove,
+    });
     return { score: best, pv: bestPv.slice(0, MAX_PV) };
+  }
+
+  /**
+   * Preserve stronger cached searches. A shallow or bounded re-search should
+   * not overwrite a deeper entry found earlier in the same position.
+   *
+   * Evict one quarter of the oldest entries when full rather than discarding
+   * all 80,000 positions. This retains recent analysis between rapid moves,
+   * while bounding the cache for a long-lived browser worker.
+   */
+  private storeTransposition(key: string, entry: TTEntry): void {
+    const previous = this.table.get(key);
+    if (previous && (
+      previous.depth > entry.depth ||
+      (previous.depth === entry.depth && previous.bound === "exact" && entry.bound !== "exact")
+    )) return;
+    if (previous) this.table.delete(key);
+    if (this.table.size >= MAX_TRANSPOSITIONS) {
+      let remaining = Math.ceil(MAX_TRANSPOSITIONS / 4);
+      for (const oldKey of this.table.keys()) {
+        this.table.delete(oldKey);
+        if (--remaining === 0) break;
+      }
+    }
+    this.table.set(key, entry);
   }
 
   private quiescence(board: Board, alpha: number, beta: number, ply: number): number {
