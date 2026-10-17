@@ -7,7 +7,9 @@ describe("Swift browser play timing", () => {
   it("plays familiar opening positions quickly", () => {
     const profile = swiftPlayProfile(Board.start(), []);
     expect(profile.kind).toBe("opening");
-    expect(profile.options.timeMs).toBeLessThan(400);
+    expect(profile.options.timeMs).toBeGreaterThanOrEqual(600);
+    expect(profile.options.timeMs).toBeLessThanOrEqual(850);
+    expect(profile.options.depth).toBe(7);
     expect(profile.minimumThinkMs).toBeLessThan(250);
   });
 
@@ -26,16 +28,16 @@ describe("Swift browser play timing", () => {
     expect(tactical.kind).toBe("tactical");
     expect(tactical.options.timeMs ?? 0).toBeGreaterThan(calm.options.timeMs ?? 0);
     expect(tactical.minimumThinkMs).toBeGreaterThan(calm.minimumThinkMs);
-    expect(tactical.options.depth).toBe(7);
-    expect(tactical.options.adaptiveThinking).toEqual({ maxExtraMs: 2000, extraDepth: 2 });
+    expect(tactical.options.depth).toBe(9);
+    expect(tactical.options.adaptiveThinking).toEqual({ maxExtraMs: 2600, extraDepth: 2 });
   });
 
   it("uses an endgame budget instead of the full tactical budget in quiet endings", () => {
     const board = Board.fromFEN("7k/8/8/8/8/8/8/K7 w - - 0 1");
     const profile = swiftPlayProfile(board, Array(30).fill("h1h2"));
     expect(profile.kind).toBe("endgame");
-    expect(profile.options.timeMs).toBeLessThan(950);
-    expect(profile.options.depth).toBe(7);
+    expect(profile.options.timeMs).toBeGreaterThanOrEqual(1300);
+    expect(profile.options.depth).toBe(9);
     expect(profile.options.safetyDepth).toBe(4);
   });
 

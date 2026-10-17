@@ -10,7 +10,7 @@ import { deriveSeed } from "./random";
 import { SwiftMind, SwiftMindSnapshot } from "./mind";
 import { selectiveCandidateDepths } from "./selective-calculation";
 import { AdaptiveThinkingOptions, planAdaptiveSecondLook, SwiftSecondLook, SwiftSecondLookReason } from "./adaptive-thinking";
-import { avoidImmediateMajorBlunder } from "./blunder-guard";
+import { avoidImmediateMajorBlunder, avoidImmediateCheckmate } from "./blunder-guard";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   safetyMargin?: number;
@@ -117,7 +117,7 @@ export class HumanSwiftEngine {
     }, options.adaptiveThinking);
     if (extension) {
       options.onSecondLook?.(extension.reason);
-      const deeper = this.engine.search(board, { depth: extension.depth, timeMs: extension.timeMs });
+      const deeper = this.engine.search(board, { depth: extension.depth, timeMs: extension.timeMs, positionHistoryKeys: options.positionHistoryKeys });
       const improvedDepth = !!deeper.move && deeper.depth > result.depth;
       if (improvedDepth) result = deeper;
       secondLook = { ...extension, initialDepth, finalDepth: result.depth, improvedDepth };
@@ -126,20 +126,45 @@ export class HumanSwiftEngine {
     // Preserve a legal root move even if a later search failed to complete.
     const principalMove: Move = result.move ?? initialMove;
     const engineMoveUci = principalMove.uci();
-    const decision = (move: Move, source: SwiftDecisionSource, reasons: string[], humanCandidates: CandidateScore[], extra: Partial<HumanSearchResult> = {}, forcedMate = false): HumanSearchResult => {
+    const decision = (move: Move, source: SwiftDecisionSource, reasons: string[], humanCandidates: CandidateScore[], extra: Partial<HumanSearchResult> = {}): HumanSearchResult => {
       // A short timed search may return at depth zero. Independent SEE of the
       // opponent's immediate legal captures must veto an obvious queen/rook hang
       // even if the human plan, book or principal search initially chose it.
-      const guard = forcedMate || result.score >= 98_000 ? null : avoidImmediateMajorBlunder(
+      const finalizesDraw = this.wouldRepeatPosition(board, move, options.positionHistoryKeys ?? []);
+      // Never 'save' a piece by changing a move that already ended the game
+      // with a legal threefold draw. The follow-up capture cannot happen.
+      // Only an actual checkmate on the board is immune from tactical
+      // safety overrides. A very high *reported* search score or a claimed
+      // forced mate several moves away is not proof that this move cannot
+      // hang material or permit an immediate counter-checkmate.
+      const checkmatesNow = board.makeMove(move).isCheckmate();
+      const guard = checkmatesNow || finalizesDraw ? null : avoidImmediateMajorBlunder(
         board, move,
         [principalMove, ...humanCandidates.map((candidate) => candidate.move), ...generated.scores.map((candidate) => candidate.move)],
         (position) => this.engine.evaluate(position),
       );
-      const selectedMove = guard?.move ?? move;
-      const selectedSource: SwiftDecisionSource = guard ? "engine-fallback" : source;
-      const selectedReasons = guard
-        ? [`Tactical safety override: avoided an immediate ${guard.originalLoss}cp material loss.`, ...reasons]
-        : reasons;
+      const materialSafeMove = guard?.move ?? move;
+      // The completed main search should identify mate in one, but a deep
+      // reported depth is not a proof of tactical safety. A stale TT result,
+      // pruning error, or final human override can still select a losing move.
+      // Verify the actual selected move regardless of its apparent depth.
+      // Skip only forced wins and immediate terminal draws.
+      const requiresMateVerification = !checkmatesNow && !finalizesDraw;
+      const mateGuard = requiresMateVerification
+        ? avoidImmediateCheckmate(
+          board, materialSafeMove,
+          [principalMove, ...humanCandidates.map((candidate) => candidate.move),
+            ...generated.scores.map((candidate) => candidate.move)],
+          (position) => this.engine.evaluate(position),
+        )
+        : null;
+      const selectedMove = mateGuard?.move ?? materialSafeMove;
+      const selectedSource: SwiftDecisionSource = guard || mateGuard ? "engine-fallback" : source;
+      const selectedReasons = [
+        ...(mateGuard ? ["Tactical safety override: rejected an avoidable mate in one."] : []),
+        ...(guard ? [`Tactical safety override: avoided an immediate ${guard.originalLoss}cp material loss.`] : []),
+        ...reasons,
+      ];
       const reportedCandidates = guard && !humanCandidates.some((candidate) => candidate.move.uci() === selectedMove.uci())
         ? [...humanCandidates, generated.scores.find((candidate) => candidate.move.uci() === selectedMove.uci()) ?? {
           move: selectedMove, score: -this.engine.evaluate(board.makeMove(selectedMove)), ideaKinds: ["defend"] as CandidateScore["ideaKinds"], reasons: selectedReasons,
@@ -151,7 +176,15 @@ export class HumanSwiftEngine {
     };
 
     const tacticalPriority = findTacticalPriority(board, this.engine, result, options.tacticalSearchDepth ?? 5);
-    if (tacticalPriority) return decision(tacticalPriority.move, "tactical", ["A forcing tactical priority overrides the longer-term plan."], [], {}, tacticalPriority.kind === "mate");
+    if (tacticalPriority) return decision(tacticalPriority.move, "tactical", ["A forcing tactical priority overrides the longer-term plan."], []);
+
+    // The completed root search already compares this guaranteed draw at
+    // 0cp with possible wins. Do not let a stylistic opening/plan preference
+    // throw away a drawing escape, especially when Swift is defending.
+    if (this.wouldRepeatPosition(board, principalMove, options.positionHistoryKeys ?? [])) {
+      return decision(principalMove, "engine-fallback",
+        ["Recognized a legal threefold repetition; preserving the searched drawing continuation."], []);
+    }
 
     if (options.strictBestPlay) {
       const strictBook = openingBookMove(board, options.seed ?? Date.now(), history);

@@ -34,7 +34,23 @@ export interface PositionState {
   enPassant: number | null;
   halfmove: number;
   fullmove: number;
+  /** Tracked king locations eliminate a full 64-square scan at every node. */
+  whiteKing: number;
+  blackKing: number;
 }
+
+// One shared set of attack directions. These are queried on every legality
+// test and must not be allocated afresh for each search node.
+const KNIGHT_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1],
+];
+const KING_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1],
+];
+const SLIDER_ATTACK_RAYS: ReadonlyArray<readonly [number, number, readonly PieceType[]]> = [
+  [1,0,["r","q"]],[-1,0,["r","q"]],[0,1,["r","q"]],[0,-1,["r","q"]],
+  [1,1,["b","q"]],[-1,1,["b","q"]],[1,-1,["b","q"]],[-1,-1,["b","q"]],
+];
 
 export class Board {
   private searchKeyCache?: string;
@@ -63,7 +79,7 @@ export class Board {
     }
     if (fields[1] !== "w" && fields[1] !== "b") throw new Error("Invalid FEN side to move");
     const ep = fields[3] === "-" ? null : Board.squareIndex(fields[3]);
-    return new Board({ board, turn: fields[1], castling: fields[2] === "-" ? "" : fields[2], enPassant: ep, halfmove: Number(fields[4]), fullmove: Number(fields[5]) });
+    return new Board({ board, turn: fields[1], castling: fields[2] === "-" ? "" : fields[2], enPassant: ep, halfmove: Number(fields[4]), fullmove: Number(fields[5]), whiteKing: board.indexOf("wk"), blackKing: board.indexOf("bk") });
   }
 
   toFEN(): string {
@@ -89,6 +105,9 @@ export class Board {
 
   turn(): Color { return this.state.turn; }
 
+  /** Halfmoves since the most recent pawn move or capture (fifty-move rule). */
+  halfmoveClock(): number { return this.state.halfmove; }
+
   castlingRights(): string { return this.state.castling; }
 
   searchKey(): string {
@@ -105,11 +124,35 @@ export class Board {
     });
   }
 
+  /**
+   * Legal captures and promotions for quiet-position quiescence search.
+   *
+   * Only tactical moves require a full king-safety test once any legal move
+   * has been found. The hasLegalMove flag preserves stalemate recognition:
+   * no legal captures does not imply the side is stalemated.
+   *
+   * Checking positions must continue to use legalMoves(), because a legal
+   * quiet evasion can be the only way out of check.
+   */
+  legalTactics(): { moves: Move[]; hasLegalMove: boolean } {
+    const tactical: Move[] = [];
+    let hasLegalMove = false;
+    for (const move of this.pseudoLegalMoves()) {
+      const isTactical = move.enPassant || !!move.promotion || this.state.board[move.to] !== null;
+      if (!isTactical && hasLegalMove) continue;
+      const next = this.makeMove(move);
+      if (next.isInCheck(this.state.turn)) continue;
+      hasLegalMove = true;
+      if (isTactical) tactical.push(move);
+    }
+    return { moves: tactical, hasLegalMove };
+  }
+
   isCheckmate(): boolean { return this.isInCheck(this.state.turn) && this.legalMoves().length === 0; }
   isStalemate(): boolean { return !this.isInCheck(this.state.turn) && this.legalMoves().length === 0; }
   isInCheck(color: Color): boolean {
-    const king = this.state.board.findIndex((piece) => piece === `${color}k`);
-    return king >= 0 && this.isSquareAttacked(king, opposite(color));
+    const king = color === "w" ? this.state.whiteKing : this.state.blackKing;
+    return king >= 0 && this.isSquareAttackedIndex(king, opposite(color));
   }
 
   /** Public attack-map query used by tactical and human decision layers. */
@@ -126,6 +169,8 @@ export class Board {
       enPassant: null,
       halfmove: this.state.halfmove + 1,
       fullmove: this.state.fullmove + (this.state.turn === "b" ? 1 : 0),
+      whiteKing: this.state.whiteKing,
+      blackKing: this.state.blackKing,
     });
   }
 
@@ -161,7 +206,13 @@ export class Board {
     if (captured === "br" && move.to === 63) remove("k");
     let ep: number | null = null;
     if (movingType === "p" && Math.abs(move.to - move.from) === 16) ep = (move.to + move.from) / 2;
-    return new Board({ board, turn: opposite(this.state.turn), castling, enPassant: ep, halfmove: movingType === "p" || captured ? 0 : this.state.halfmove + 1, fullmove: this.state.fullmove + (this.state.turn === "b" ? 1 : 0) });
+    return new Board({
+      board, turn: opposite(this.state.turn), castling, enPassant: ep,
+      halfmove: movingType === "p" || captured ? 0 : this.state.halfmove + 1,
+      fullmove: this.state.fullmove + (this.state.turn === "b" ? 1 : 0),
+      whiteKing: captured === "wk" ? -1 : movingType === "k" && this.state.turn === "w" ? move.to : this.state.whiteKing,
+      blackKing: captured === "bk" ? -1 : movingType === "k" && this.state.turn === "b" ? move.to : this.state.blackKing,
+    });
   }
 
   material(): number {
@@ -207,7 +258,7 @@ export class Board {
   }
 
   private knightMoves(from: number, moves: Move[]) {
-    for (const [df, dr] of [[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]]) this.addStep(from, df, dr, moves);
+    for (const [df, dr] of KNIGHT_OFFSETS) this.addStep(from, df, dr, moves);
   }
   private kingMoves(from: number, moves: Move[]) {
     for (const df of [-1,0,1]) for (const dr of [-1,0,1]) if (df || dr) this.addStep(from, df, dr, moves);
@@ -236,12 +287,8 @@ export class Board {
     const file = square & 7, rank = Math.floor(square / 8);
     const pawnRank = rank + (by === "w" ? -1 : 1);
     for (const df of [-1,1]) { const f=file+df; if (f>=0&&f<8&&pawnRank>=0&&pawnRank<8&&this.state.board[pawnRank*8+f]===`${by}p`) return true; }
-    for (const [df,dr] of [[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]]) { const f=file+df,r=rank+dr; if(f>=0&&f<8&&r>=0&&r<8&&this.state.board[r*8+f]===`${by}n`) return true; }
-    const sliderAttacks: Array<[number, number, PieceType[]]> = [
-      [1,0,["r","q"]], [-1,0,["r","q"]], [0,1,["r","q"]], [0,-1,["r","q"]],
-      [1,1,["b","q"]], [-1,1,["b","q"]], [1,-1,["b","q"]], [-1,-1,["b","q"]],
-    ];
-    for (const [df,dr,types] of sliderAttacks) {
+    for (const [df,dr] of KNIGHT_OFFSETS) { const f=file+df,r=rank+dr; if(f>=0&&f<8&&r>=0&&r<8&&this.state.board[r*8+f]===`${by}n`) return true; }
+    for (const [df,dr,types] of SLIDER_ATTACK_RAYS) {
       let f=file+df,r=rank+dr;
       while(f>=0&&f<8&&r>=0&&r<8){
         const p=this.state.board[r*8+f];
@@ -249,7 +296,7 @@ export class Board {
         f+=df;r+=dr;
       }
     }
-    for (const df of [-1,0,1]) for (const dr of [-1,0,1]) if(df||dr){const f=file+df,r=rank+dr;if(f>=0&&f<8&&r>=0&&r<8&&this.state.board[r*8+f]===`${by}k`)return true;}
+    for (const [df,dr] of KING_OFFSETS) { const f=file+df,r=rank+dr; if(f>=0&&f<8&&r>=0&&r<8&&this.state.board[r*8+f]===`${by}k`)return true; }
     return false;
   }
 
