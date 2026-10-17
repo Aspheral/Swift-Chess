@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   report:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'experiment/2050-integrated-pilot-20261014'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
