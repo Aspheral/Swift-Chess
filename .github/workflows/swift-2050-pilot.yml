@@ -75,7 +75,7 @@ jobs:
   summarize:
     name: validate-and-summarize-32-games
     needs: match
-    if: always()
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout aggregation tool
