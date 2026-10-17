@@ -65,4 +65,24 @@ describe("Roblox Oct 17 early king hunt regression", () => {
     expect(result.decision?.source).toBe("engine-fallback");
     expect(result.decision?.reasons[0]).toContain("mate in one");
   });
+  it("rejects the same mating blunder even if a wrong search claims a forced mate", () => {
+    class BogusMateClaim extends SwiftEngine {
+      override search(board: Board, _options: SearchOptions = {}): SearchResult {
+        const bad = forcedMove(board, "f4e6");
+        return {
+          move: bad, score: 99_500, depth: 8, nodes: 30_000, pv: [bad],
+          stability: { scoreSwingCp: 0, moveChanged: false, interrupted: false },
+        };
+      }
+    }
+    const game = replay();
+    const answer = new HumanSwiftEngine(new BogusMateClaim()).search(game.board(), {
+      depth: 8, adaptiveThinking: false, strictBestPlay: true,
+      tacticalSearchDepth: 0, randomness: 0, errorBudget: 0,
+      moveHistory: game.moveHistory(), positionHistoryKeys: game.positionHistoryKeys(),
+    });
+    expect(answer.move).not.toBeNull();
+    expect(answer.move!.uci()).not.toBe("f4e6");
+    expect(allowsMateInOne(game.board(), answer.move!)).toBe(false);
+  });
 });
