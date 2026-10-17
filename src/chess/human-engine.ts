@@ -126,7 +126,7 @@ export class HumanSwiftEngine {
     // Preserve a legal root move even if a later search failed to complete.
     const principalMove: Move = result.move ?? initialMove;
     const engineMoveUci = principalMove.uci();
-    const decision = (move: Move, source: SwiftDecisionSource, reasons: string[], humanCandidates: CandidateScore[], extra: Partial<HumanSearchResult> = {}, forcedMate = false): HumanSearchResult => {
+    const decision = (move: Move, source: SwiftDecisionSource, reasons: string[], humanCandidates: CandidateScore[], extra: Partial<HumanSearchResult> = {}): HumanSearchResult => {
       // A short timed search may return at depth zero. Independent SEE of the
       // opponent's immediate legal captures must veto an obvious queen/rook hang
       // even if the human plan, book or principal search initially chose it.
@@ -176,7 +176,7 @@ export class HumanSwiftEngine {
     };
 
     const tacticalPriority = findTacticalPriority(board, this.engine, result, options.tacticalSearchDepth ?? 5);
-    if (tacticalPriority) return decision(tacticalPriority.move, "tactical", ["A forcing tactical priority overrides the longer-term plan."], [], {}, tacticalPriority.kind === "mate");
+    if (tacticalPriority) return decision(tacticalPriority.move, "tactical", ["A forcing tactical priority overrides the longer-term plan."], []);
 
     // The completed root search already compares this guaranteed draw at
     // 0cp with possible wins. Do not let a stylistic opening/plan preference
