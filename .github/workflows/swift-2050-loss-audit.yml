@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   analyze:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'experiment/2050-integrated-pilot-20261014'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -54,7 +54,7 @@ jobs:
           retention-days: 30
 
   report:
-    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.head_ref == 'experiment/2050-integrated-pilot-20261014') }}
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
     needs: analyze
     runs-on: ubuntu-latest
     timeout-minutes: 15
