@@ -139,12 +139,12 @@ export class HumanSwiftEngine {
         (position) => this.engine.evaluate(position),
       );
       const materialSafeMove = guard?.move ?? move;
-      // Completed multi-ply principal searches already examine the opponent's
-      // next move. Extra mate verification is valuable primarily for an
-      // interrupted/shallow search or a *different* human-plan/book selection.
-      // Skip this check on terminal draws, which admit no opponent reply.
-      const requiresMateVerification = !forcedMate && !finalizesDraw &&
-        (materialSafeMove.uci() !== engineMoveUci || result.depth < 4);
+      // The completed main search should identify mate in one, but a deep
+      // reported depth is not a proof of tactical safety. A stale TT result,
+      // pruning error, or final human override can still select a losing move.
+      // Verify the actual selected move regardless of its apparent depth.
+      // Skip only forced wins and immediate terminal draws.
+      const requiresMateVerification = !forcedMate && !finalizesDraw;
       const mateGuard = requiresMateVerification
         ? avoidImmediateCheckmate(
           board, materialSafeMove,
