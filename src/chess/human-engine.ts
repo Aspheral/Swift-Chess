@@ -133,7 +133,12 @@ export class HumanSwiftEngine {
       const finalizesDraw = this.wouldRepeatPosition(board, move, options.positionHistoryKeys ?? []);
       // Never 'save' a piece by changing a move that already ended the game
       // with a legal threefold draw. The follow-up capture cannot happen.
-      const guard = forcedMate || finalizesDraw || result.score >= 98_000 ? null : avoidImmediateMajorBlunder(
+      // Only an actual checkmate on the board is immune from tactical
+      // safety overrides. A very high *reported* search score or a claimed
+      // forced mate several moves away is not proof that this move cannot
+      // hang material or permit an immediate counter-checkmate.
+      const checkmatesNow = board.makeMove(move).isCheckmate();
+      const guard = checkmatesNow || finalizesDraw ? null : avoidImmediateMajorBlunder(
         board, move,
         [principalMove, ...humanCandidates.map((candidate) => candidate.move), ...generated.scores.map((candidate) => candidate.move)],
         (position) => this.engine.evaluate(position),
@@ -144,7 +149,7 @@ export class HumanSwiftEngine {
       // pruning error, or final human override can still select a losing move.
       // Verify the actual selected move regardless of its apparent depth.
       // Skip only forced wins and immediate terminal draws.
-      const requiresMateVerification = !forcedMate && !finalizesDraw;
+      const requiresMateVerification = !checkmatesNow && !finalizesDraw;
       const mateGuard = requiresMateVerification
         ? avoidImmediateCheckmate(
           board, materialSafeMove,
