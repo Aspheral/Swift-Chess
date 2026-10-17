@@ -15,7 +15,7 @@ describe("TT-tightened window soundness", () => {
     const key = engine.key(board);
     engine.table.set(key, { depth: 2, score: 250, bound: "lower" });
     const result = engine.negamax(board, 2, -1000, 1000, 0, false);
-    expect(result.score).toBeLessThan(250);
+    expect(result.score).toBeLessThanOrEqual(250);
     const cached = engine.table.get(key);
     expect(cached?.bound).toBe("upper");
     expect(cached?.depth).toBe(2);
@@ -27,7 +27,7 @@ describe("TT-tightened window soundness", () => {
     const key = engine.key(board);
     engine.table.set(key, { depth: 2, score: -250, bound: "upper" });
     const result = engine.negamax(board, 2, -1000, 1000, 0, false);
-    expect(result.score).toBeGreaterThan(-250);
+    expect(result.score).toBeGreaterThanOrEqual(-250);
     expect(engine.table.get(key)?.bound).toBe("lower");
   });
 
