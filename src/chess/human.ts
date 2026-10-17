@@ -69,7 +69,14 @@ export function humanErrorProfile(board: Board, baseBudget = 0.35): HumanErrorPr
   const understanding = understandPosition(board);
   const legalMoves = Math.max(1, understanding.space[understanding.sideToMove]);
   const complexity = clamp((legalMoves - 8) / 28);
-  const tacticalPressure = clamp(understanding.tactics.forcingMoves / legalMoves);
+  // Do not wait until Swift is already in check to recognize a king hunt.
+  // Its OWN forcing moves may be zero while the opponent threatens checks,
+  // including mate. A turn-swapped view identifies these available threats.
+  const opponent = understanding.sideToMove === "w" ? "b" : "w";
+  const ownForcingPressure = understanding.tactics.forcingMoves / legalMoves;
+  const incomingCheckingPressure = 4 * understanding.tactics.incomingChecks /
+    Math.max(1, understanding.space[opponent]);
+  const tacticalPressure = clamp(Math.max(ownForcingPressure, incomingCheckingPressure));
   // Game phase depends on *major and minor* material, not total pieces.
   // The old formula (16 - totalPieces) / 10 stayed at 0 through much of
   // the middlegame: a queen trade with 30 pieces still on the board was
