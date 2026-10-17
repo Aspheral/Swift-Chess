@@ -92,18 +92,22 @@ export function avoidImmediateMajorBlunder(
 }
 
 /**
- * A human-plan or interrupted-search override can occasionally discard a
- * sound principal move and allow a one-move checkmate with no material loss.
- * That is not a human-like mistake Swift should make deliberately.
+ * Independent one-ply checkmate verification of the move Swift will play.
+ * A principal search with a completed depth is not a proof of correctness;
+ * protect its recommendation and any later human/book override alike.
  *
- * Use this only for uncertain or non-principal decisions: looking for
- * opponent checking replies is more expensive than the routine SEE guard.
+ * Generate the opponent's legal replies only once. The previous code
+ * independently tested isCheckmate, isStalemate, then legalMoves, duplicating
+ * move generation on every decision.
  */
 export function allowsMateInOne(board: Board, move: Move): boolean {
   const child = board.makeMove(move);
-  if (child.isCheckmate() || child.isStalemate()) return false;
+  const replies = child.legalMoves();
+  // If our move already ended the game by mate or stalemate, there is no
+  // opponent reply. Draws by repetition/50 moves are screened by the caller.
+  if (replies.length === 0) return false;
   const defendingSide = board.turn();
-  for (const reply of child.legalMoves()) {
+  for (const reply of replies) {
     const after = child.makeMove(reply);
     // Most moves are not checks. Do not enumerate follow-up replies unless
     // the king is actually in check.
