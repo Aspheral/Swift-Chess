@@ -85,8 +85,12 @@ function pieceUnderstanding(board: Board, color: Color, ownMoves: ReturnType<Boa
   return boardArray(board).flatMap((piece, square) => {
     if (!piece || colorOf(piece) !== color || typeOf(piece) === "p" || typeOf(piece) === "k") return [];
     const mobility = ownMoves.filter((move) => move.from === square).length;
-    const defended = ownMoves.some((move) => move.to === square && move.from !== square);
-    const attackedByEnemy = enemyMoves.some((move) => move.to === square);
+    // Legal moves never land on a square occupied by a friendly piece.
+    // Using legalMoves() here made 'defended' false for EVERY piece, even a
+    // rook protected by its own pawn or bishop. Attack maps, unlike playable
+    // moves, describe protection of occupied friendly squares.
+    const defended = board.isSquareAttacked(square, color);
+    const attackedByEnemy = board.isSquareAttacked(square, opposite(color));
     return [{ square: squareName(square), type: typeOf(piece), activity: Math.min(10, mobility), mobility, defended, vulnerable: attackedByEnemy && !defended }];
   });
 }
