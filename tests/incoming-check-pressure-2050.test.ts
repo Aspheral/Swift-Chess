@@ -26,7 +26,7 @@ describe("defensive time and opponent checks", () => {
     expect(profile.tacticalPressure).toBeGreaterThanOrEqual(0.12);
     const choice = swiftPlayProfile(board, ["e2e4", "e7e5", "d2d4", "d7d5"]);
     expect(choice.kind).toBe("tactical");
-    expect(choice.options.depth).toBe(7);
+    expect(choice.options.depth).toBe(9);
     expect(choice.options.timeMs).toBeGreaterThanOrEqual(1000);
   });
 
