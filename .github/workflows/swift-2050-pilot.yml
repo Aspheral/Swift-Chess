@@ -11,7 +11,7 @@ on:
 
 jobs:
   match:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.head_ref == 'experiment/2050-integrated-pilot-20261014')
+    if: github.event_name == 'workflow_dispatch'
     name: 2050-human-batch-${{ matrix.batch }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -75,7 +75,7 @@ jobs:
   summarize:
     name: validate-and-summarize-32-games
     needs: match
-    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.head_ref == 'experiment/2050-integrated-pilot-20261014') }}
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout aggregation tool
