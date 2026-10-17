@@ -81,7 +81,7 @@ function kingUnderstanding(board: Board, color: Color): KingUnderstanding {
   return { square: squareName(square), pawnShield, escapeSquares: ownMoves.filter((move) => move.from === square).length, attackers, openFilesNearKing, exposed: pawnShield <= 1 || attackers > 0 || openFilesNearKing > 0 };
 }
 
-function pieceUnderstanding(board: Board, color: Color, ownMoves: ReturnType<Board["legalMoves"]>, enemyMoves: ReturnType<Board["legalMoves"]>): PieceUnderstanding[] {
+function pieceUnderstanding(board: Board, color: Color, ownMoves: ReturnType<Board["legalMoves"]>): PieceUnderstanding[] {
   return boardArray(board).flatMap((piece, square) => {
     if (!piece || colorOf(piece) !== color || typeOf(piece) === "p" || typeOf(piece) === "k") return [];
     const mobility = ownMoves.filter((move) => move.from === square).length;
@@ -105,7 +105,7 @@ export function understandPosition(board: Board): PositionUnderstanding {
   const captures = legal.filter((move) => move.enPassant || board.pieceAt(move.to) !== null);
   const promotions = legal.filter((move) => !!move.promotion);
   const pawns = { w: pawnStructure(board, "w"), b: pawnStructure(board, "b") };
-  const pieces = { w: pieceUnderstanding(board, "w", whiteMoves, blackMoves), b: pieceUnderstanding(board, "b", blackMoves, whiteMoves) };
+  const pieces = { w: pieceUnderstanding(board, "w", whiteMoves), b: pieceUnderstanding(board, "b", blackMoves) };
   const development = {
     w: pieces.w.filter((piece) => ["n", "b"].includes(piece.type) && !["b1", "c1", "f1", "g1"].includes(piece.square)).length,
     b: pieces.b.filter((piece) => ["n", "b"].includes(piece.type) && !["b8", "c8", "f8", "g8"].includes(piece.square)).length,
