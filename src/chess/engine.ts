@@ -173,7 +173,7 @@ export class SwiftEngine {
     const effectiveDepth = depth + extension;
     if (effectiveDepth <= 0) return { score: this.quiescence(board, alpha, beta, ply), pv: [] };
 
-    const key = this.key(board), cached = this.table.get(key), alphaOriginal = alpha, betaOriginal = beta;
+    const key = this.key(board), cached = this.table.get(key);
     if (cached && cached.depth >= effectiveDepth) {
       const cachedScore = this.scoreFromTable(cached.score, ply);
       if (cached.bound === "exact") return { score: cachedScore, pv: cached.move ? [cached.move] : [] };
@@ -182,6 +182,10 @@ export class SwiftEngine {
       if (alpha >= beta) return { score: cachedScore, pv: cached.move ? [cached.move] : [] };
     }
 
+    // The transposition probe may tighten either bound. Classify the final
+    // score against the window ACTUALLY searched, not the original caller
+    // window: a TT-assisted fail-low/high must not be stored as an exact value.
+    const searchAlpha = alpha, searchBeta = beta;
     const legal = board.legalMoves();
     if (legal.length === 0) return { score: inCheck ? -MATE + ply : 0, pv: [] };
 
@@ -232,10 +236,7 @@ export class SwiftEngine {
       if (alpha >= beta) { if (quiet) this.recordKiller(move, ply, effectiveDepth); break; }
       moveIndex++;
     }
-    // Save a bound relative to the ORIGINAL search window. TT probes may
-    // shrink beta, but that narrowed window cannot certify a lower bound for
-    // the caller. Mislabelled TT entries can poison later move choices.
-    const bound: Bound = best <= alphaOriginal ? "upper" : best >= betaOriginal ? "lower" : "exact";
+    const bound: Bound = best <= searchAlpha ? "upper" : best >= searchBeta ? "lower" : "exact";
     this.storeTransposition(key, {
       depth: effectiveDepth, score: this.scoreToTable(best, ply), bound, move: bestMove,
     });
