@@ -3,7 +3,7 @@ import { Board, Color, PieceType } from "./board";
 export interface PieceUnderstanding { square: string; type: PieceType; activity: number; mobility: number; defended: boolean; vulnerable: boolean; }
 export interface PawnStructureUnderstanding { isolated: number; doubled: number; backward: number; passed: number; chains: number; openFiles: number[]; semiOpenFiles: number[]; }
 export interface KingUnderstanding { square: string; pawnShield: number; escapeSquares: number; attackers: number; openFilesNearKing: number; exposed: boolean; }
-export interface TacticalUnderstanding { checks: number; captures: number; promotions: number; forcingMoves: number; }
+export interface TacticalUnderstanding { checks: number; captures: number; promotions: number; forcingMoves: number; incomingChecks: number; }
 export interface PositionUnderstanding {
   sideToMove: Color;
   material: number;
@@ -98,9 +98,18 @@ function pieceUnderstanding(board: Board, color: Color, ownMoves: ReturnType<Boa
 export function understandPosition(board: Board): PositionUnderstanding {
   const sideToMove = board.turn();
   const material = board.material();
-  const whiteMoves = sideBoard(board, "w").legalMoves();
-  const blackMoves = sideBoard(board, "b").legalMoves();
+  const whiteView = sideBoard(board, "w");
+  const blackView = sideBoard(board, "b");
+  const whiteMoves = whiteView.legalMoves();
+  const blackMoves = blackView.legalMoves();
   const legal = sideToMove === "w" ? whiteMoves : blackMoves;
+  // Detect checks the opponent would have if it could move now.
+  // Attacks one move away matter before Swift's king is actually in check.
+  // Both colors' legal move sets were already computed for understanding.
+  const enemyView = sideToMove === "w" ? blackView : whiteView;
+  const enemyMoves = sideToMove === "w" ? blackMoves : whiteMoves;
+  const incomingChecks = enemyMoves.filter((move) =>
+    enemyView.makeMove(move).isInCheck(sideToMove)).length;
   const tacticalMoves = legal.filter((move) => board.makeMove(move).isInCheck(opposite(sideToMove)));
   const captures = legal.filter((move) => move.enPassant || board.pieceAt(move.to) !== null);
   const promotions = legal.filter((move) => !!move.promotion);
@@ -113,7 +122,7 @@ export function understandPosition(board: Board): PositionUnderstanding {
   return {
     sideToMove, material, materialAdvantage: material > 0 ? "white" : material < 0 ? "black" : "equal",
     king: { w: kingUnderstanding(board, "w"), b: kingUnderstanding(board, "b") }, pieces, pawns,
-    tactics: { checks: tacticalMoves.length, captures: captures.length, promotions: promotions.length, forcingMoves: tacticalMoves.length + captures.length + promotions.length },
+    tactics: { checks: tacticalMoves.length, captures: captures.length, promotions: promotions.length, forcingMoves: tacticalMoves.length + captures.length + promotions.length, incomingChecks },
     space: { w: whiteMoves.length, b: blackMoves.length }, development,
   };
 }
