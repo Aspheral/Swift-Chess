@@ -284,6 +284,18 @@ export class HumanSwiftEngine {
       return decision(principalMove, "engine-fallback", ["Human selection did not return a verified candidate."], movementSafe);
     }
 
+    // A human plan may look equal in its shallow consequence search yet lose
+    // to a move evaluated by the main engine several plies deeper. Challenge
+    // only true plan divergences with matched-depth independent child searches.
+    // Failure to complete either verification is NOT evidence of equivalence.
+    if (selectedMove.uci() !== engineMoveUci &&
+        !this.verifyPlanOverride(board, principalMove, selectedMove, result.depth, tacticalMargin, options.timeMs)) {
+      this.mind.recordSetback("A deeper matched search did not confirm the human-plan deviation.");
+      return decision(principalMove, "engine-fallback",
+        ["Deeper verification rejected an unproven human-plan move; retaining the principal search choice."],
+        movementSafe);
+    }
+
     const selectedCandidate = movementSafe.find((candidate) => candidate.move.uci() === selectedMove.uci());
     if (observedMind.plan && selectedCandidate && !selectedCandidate.ideaKinds.includes(observedMind.plan)) this.mind.recordSetback("The current plan had no convincing continuation, so Swift changed course for this move.");
     const reasons = selectedCandidate?.reasons.length ? selectedCandidate.reasons : [`This move supports Swift's continuing plan to ${this.mind.planDescription()}.`];
@@ -306,6 +318,31 @@ export class HumanSwiftEngine {
     const queens = (nonKings.match(/[qQ]/g) ?? []).length;
     const rooks = (nonKings.match(/[rR]/g) ?? []).length;
     return pieces.length <= 6 || (queens + rooks > 0 && pieces.length <= 8 && !/[pP]/.test(nonKings));
+  }
+
+  /**
+   * Cross-check a move chosen for human-plan reasons against the deeper main
+   * search. Only runs on deviations, which are a small minority of decisions.
+   * Both children must finish an identical depth before their scores can be
+   * compared. Short, interrupted probes conservatively keep the principal.
+   */
+  private verifyPlanOverride(
+    board: Board,
+    principal: Move,
+    selected: Move,
+    mainDepth: number,
+    margin: number,
+    rootTimeMs?: number,
+  ): boolean {
+    if (selected.uci() === principal.uci()) return true;
+    if (mainDepth < 5) return false;
+    const comparisonDepth = Math.min(5, mainDepth - 1);
+    const comparisonMs = Math.max(250, Math.min(650, Math.floor((rootTimeMs ?? 900) * 0.4)));
+    const reference = this.childSearchScore(board, principal, comparisonDepth, comparisonMs);
+    if (reference.depth < comparisonDepth) return false;
+    const challenger = this.childSearchScore(board, selected, comparisonDepth, comparisonMs);
+    if (challenger.depth < comparisonDepth) return false;
+    return challenger.score >= reference.score - Math.min(18, margin);
   }
 
   private childSearchScore(board: Board, move: Move, depth: number, timeMs?: number): { score: number; depth: number } {
