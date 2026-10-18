@@ -27,9 +27,14 @@ describe("Roblox 2026-10-18 blitz loss: exact reported positions", () => {
         depth: answer.depth, nodes: answer.nodes }));
       expect(board.legalMoves().some((move) => move.uci() === entry.bad)).toBe(true);
       expect(answer.move).not.toBeNull();
+      // These are mistakes confirmed in the original full PGN by independent
+      // Stockfish at depth 15. Keep their FENs as durable negative tests.
+      if (entry.ply >= 31) {
+        expect(answer.move?.uci(), entry.label).not.toBe(entry.bad);
+      }
       if (entry.ply === 87) {
         expect(allowsMateInOne(board, board.legalMoves().find((move)=>move.uci()===entry.bad)!)).toBe(true);
-        expect(answer.move?.uci()).not.toBe(entry.bad);
+        expect(allowsMateInOne(board, answer.move!)).toBe(false);
       }
     }, 40_000);
   }
