@@ -11,6 +11,7 @@ import { SwiftMind, SwiftMindSnapshot } from "./mind";
 import { selectiveCandidateDepths } from "./selective-calculation";
 import { AdaptiveThinkingOptions, planAdaptiveSecondLook, SwiftSecondLook, SwiftSecondLookReason } from "./adaptive-thinking";
 import { avoidImmediateMajorBlunder, avoidImmediateCheckmate } from "./blunder-guard";
+import { avoidShortCheckingMate } from "./mate-threat";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   safetyMargin?: number;
@@ -168,9 +169,23 @@ export class HumanSwiftEngine {
           (position) => this.engine.evaluate(position),
         )
         : null;
-      const selectedMove = mateGuard?.move ?? materialSafeMove;
-      const selectedSource: SwiftDecisionSource = guard || mateGuard ? "engine-fallback" : source;
+      const mateOneSafeMove = mateGuard?.move ?? materialSafeMove;
+      // Final verdict MUST examine the actual move after any book, strategic,
+      // material or mate-in-one override. Mate-in-one alone cannot prevent a
+      // forced mate in two or three, a source of documented weak games.
+      // Only a proven checking sequence may trigger this bounded veto.
+      const longerMateGuard = !checkmatesNow && !finalizesDraw
+        ? avoidShortCheckingMate(
+          board, mateOneSafeMove,
+          [principalMove, ...humanCandidates.map((candidate) => candidate.move),
+            ...generated.scores.map((candidate) => candidate.move)],
+          (position) => this.engine.evaluate(position),
+        )
+        : null;
+      const selectedMove = longerMateGuard?.move ?? mateOneSafeMove;
+      const selectedSource: SwiftDecisionSource = guard || mateGuard || longerMateGuard ? "engine-fallback" : source;
       const selectedReasons = [
+        ...(longerMateGuard ? [`Tactical safety override: avoided a proven checking mate in ${longerMateGuard.attackerMoves}.`] : []),
         ...(mateGuard ? ["Tactical safety override: rejected an avoidable mate in one."] : []),
         ...(guard ? [`Tactical safety override: avoided an immediate ${guard.originalLoss}cp material loss.`] : []),
         ...reasons,
