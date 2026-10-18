@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Board, HumanSwiftEngine, SwiftEngine } from "../src";
+import { allowsMateInOne } from "../src/chess/blunder-guard";
 import type { SearchOptions, SearchResult } from "../src/chess/engine";
 
 class BusyButTimedEngine extends SwiftEngine {
@@ -36,6 +37,24 @@ describe("shared rapid clock budget", () => {
     expect(answer.decision?.reasons[0]).toContain("clock budget expired");
     expect(main.calls).toHaveLength(1);
     expect(main.calls[0].timeMs).toBeLessThanOrEqual(3);
+  });
+
+  it("still vetoes an immediate checkmate when Swift has nearly no time left", () => {
+    const threatened = Board.fromFEN("1k4r1/8/8/6q1/8/8/5PPP/R6K w - - 0 1");
+    class FastButWrong extends SwiftEngine {
+      override search(board: Board, _options: SearchOptions = {}): SearchResult {
+        const bad = board.legalMoves().find((m) => m.uci() === "a1a2")!;
+        return { move: bad, depth: 7, score: 100, nodes: 1, pv: [bad] };
+      }
+    }
+    const result = new HumanSwiftEngine(new FastButWrong()).search(threatened, {
+      depth: 9, timeMs: 1500, totalTimeMs: 1,
+      adaptiveThinking: false, strictBestPlay: true, tacticalSearchDepth: 0,
+    });
+    expect(result.move).not.toBeNull();
+    expect(result.move?.uci()).not.toBe("a1a2");
+    expect(allowsMateInOne(threatened, result.move!)).toBe(false);
+    expect(result.decision?.source).toBe("engine-fallback");
   });
 
   it("clamps root search time even when the individual search requests more", () => {
