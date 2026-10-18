@@ -37,6 +37,9 @@ context.onmessage = (event) => {
     }) : null;
     const result = activeEngine.search(board, {
       ...(rapid?.options ?? profile.options),
+      // Account for root, verification, plan probes and second looks together.
+      // A 3+2 clock cannot afford independent uncoordinated time budgets.
+      totalTimeMs: rapid?.targetTotalMs,
       adaptiveThinking: request.mode === "analyze" ? false : (rapid?.options.adaptiveThinking ?? profile.options.adaptiveThinking),
       onInitialMove: (move) => context.postMessage({ type: "provisional", id: request.id, move: move.uci() }),
       onSecondLook: (reason) => context.postMessage({ type: "thinking", id: request.id, reason }),
