@@ -39,17 +39,20 @@ function inspect(uciMoves: string[], label: string) {
   return result;
 }
 
-describe("2050 loss-audit historical positions (diagnostic)",()=>{
+describe("2050 loss-audit historical positions (regressions)",()=>{
   it("examines the Scotch 8...Bd4 early tactical error",()=>{
     const r=inspect(openingScotch,"Scotch move 8 Black");
-    expect(r.move).not.toBeNull();
-  },30_000);
+    expect(r.move?.uci()).toBe("c6e5");
+    expect(r.decision?.engineAgreement).toBe(true);
+  },45_000);
   it("examines the Scotch 9...Bxf2+ attack",()=>{
     const r=inspect(afterBd4,"Scotch move 9 Black");
-    expect(r.move).not.toBeNull();
-  },30_000);
+    expect(r.move?.uci()).toBe("d8e7");
+    expect(r.decision?.engineAgreement).toBe(true);
+  },45_000);
   it("examines QGD 12...Qe7 moderate-error accumulation",()=>{
     const r=inspect(quietQgd,"QGD move 12 Black");
-    expect(r.move).not.toBeNull();
-  },30_000);
+    expect(r.move?.uci()).toBe("d8d5");
+    expect(r.decision?.engineAgreement).toBe(true);
+  },45_000);
 });
