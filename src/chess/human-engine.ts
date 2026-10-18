@@ -24,6 +24,8 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
   concreteCandidateLimit?: number;
   /** Cap the tactical mate search; 0 keeps immediate/SEE priorities only. */
   tacticalSearchDepth?: number;
+  /** Soft total elapsed-time budget for clocked play, across all search phases. */
+  totalTimeMs?: number;
   /** Optional time budget for the consequence-search safety checks. */
   safetyTimeMs?: number;
   /** Optional time budget for the baseline ponder search. */
@@ -83,6 +85,16 @@ export class HumanSwiftEngine {
   }
 
   search(board: Board, options: HumanEngineOptions = {}): HumanSearchResult {
+    // Every auxiliary search needs to share the same clock. Bounding each
+    // sub-search separately can still spend 10+ seconds on a 3+2 game.
+    // Untimed play deliberately retains the original unrestricted behavior.
+    const deadline = options.totalTimeMs === undefined ? Infinity
+      : Date.now() + Math.max(1, Math.floor(options.totalTimeMs));
+    const remainingMs = (): number => Math.max(0, deadline - Date.now());
+    const cappedTime = (requested?: number): number | undefined =>
+      Number.isFinite(deadline)
+        ? Math.max(10, Math.floor(Math.min(requested ?? Infinity, remainingMs())))
+        : requested;
     const history = options.moveHistory ?? options.history ?? [];
     const technicalEndgame = this.isTechnicalEndgame(board);
     const queenUnderAttack = isOwnQueenUnderAttack(board);
@@ -94,7 +106,9 @@ export class HumanSwiftEngine {
     const generated = scoreCandidates(board, options.concreteCandidateLimit, ideaGeneration);
 
     const searchDepth = this.positionSearchDepth(board, options.depth ?? 4, queenUnderAttack);
-    let result = this.engine.search(board, { ...options, depth: searchDepth });
+    let result = this.engine.search(board, {
+      ...options, depth: searchDepth, timeMs: cappedTime(options.timeMs),
+    });
     if (!result.move) {
       return { ...result, humanCandidates: [], humanProfile: profile, mind: observedMind, decision: { source: "engine-fallback", engineMove: null, selectedMove: null, engineAgreement: true, reasons: ["No legal move was available."] } };
     }
@@ -116,9 +130,12 @@ export class HumanSwiftEngine {
       mind: observedMind,
       candidates: generated.scores,
     }, options.adaptiveThinking);
-    if (extension) {
+    if (extension && remainingMs() >= 100) {
       options.onSecondLook?.(extension.reason);
-      const deeper = this.engine.search(board, { depth: extension.depth, timeMs: extension.timeMs, positionHistoryKeys: options.positionHistoryKeys });
+      const deeper = this.engine.search(board, {
+        depth: extension.depth, timeMs: cappedTime(extension.timeMs),
+        positionHistoryKeys: options.positionHistoryKeys,
+      });
       const improvedDepth = !!deeper.move && deeper.depth > result.depth;
       if (improvedDepth) result = deeper;
       secondLook = { ...extension, initialDepth, finalDepth: result.depth, improvedDepth };
@@ -152,7 +169,9 @@ export class HumanSwiftEngine {
       // shallow searches and human/book overrides, retain the emergency guard.
       const guard = proposedGuard && (
         move.uci() !== engineMoveUci || result.depth < 4 ||
-        this.verifyMaterialOverride(board, move, proposedGuard.move, result.depth, options.timeMs)
+        (remainingMs() >= 170 &&
+          this.verifyMaterialOverride(board, move, proposedGuard.move, result.depth,
+            cappedTime(options.timeMs)))
       ) ? proposedGuard : null;
       const materialSafeMove = guard?.move ?? move;
       // The completed main search should identify mate in one, but a deep
@@ -205,7 +224,8 @@ export class HumanSwiftEngine {
     const tacticalBudgetMs = options.timeMs === undefined ? undefined
       : Math.max(40, Math.min(220, Math.floor(options.timeMs * 0.15)));
     const tacticalPriority = findTacticalPriority(
-      board, this.engine, result, options.tacticalSearchDepth ?? 5, tacticalBudgetMs,
+      board, this.engine, result, options.tacticalSearchDepth ?? 5,
+      cappedTime(tacticalBudgetMs),
     );
     if (tacticalPriority) return decision(tacticalPriority.move, "tactical", ["A forcing tactical priority overrides the longer-term plan."], []);
 
@@ -222,6 +242,11 @@ export class HumanSwiftEngine {
       if (strictBook && history.length <= 5 && !this.wouldRepeatPosition(board, strictBook.move, options.positionHistoryKeys ?? [])) return decision(strictBook.move, "strict", ["The strict opening repertoire selected this move."], [], { opening: strictBook.opening });
       return decision(principalMove, "strict", ["Strict mode follows the concrete principal move."], []);
     }
+
+    // Optional human-plan comparisons must not exhaust the playing clock.
+    // Returning the root move still runs both independent mating safeguards.
+    if (remainingMs() < 160) return decision(principalMove, "engine-fallback",
+      ["The clock budget expired; preserving Swift's searched move and final mating checks."], []);
 
     const safetyMargin = Math.max(0, options.safetyMargin ?? (technicalEndgame ? 25 : 60));
     const safetyDepth = Math.max(1, Math.min(4, Math.floor(options.safetyDepth ?? (technicalEndgame ? 4 : 3))));
@@ -248,7 +273,8 @@ export class HumanSwiftEngine {
     // Compare every candidate at the same depth with the same search budget.
     // A score from the main root search or a deeper probe is not interchangeable
     // with the shallow consequence scores used by human move selection.
-    const baselineProbe = this.childSearchScore(board, principalMove, basePonderDepth, options.ponderTimeMs);
+    const baselineProbe = this.childSearchScore(board, principalMove, basePonderDepth,
+      cappedTime(options.ponderTimeMs));
     // A timed-out score at depth zero is static evaluation, NOT verification.
     // When even a two-ply baseline cannot complete, preserve the stronger
     // root search instead of allowing an unverified human plan to override it.
@@ -263,7 +289,8 @@ export class HumanSwiftEngine {
     if (book && !this.wouldRepeatPosition(board, book.move, options.positionHistoryKeys ?? [])) {
       const bookMargin = history.length < 8 ? Math.max(tacticalMargin, 42) : tacticalMargin;
       // Book familiarity cannot bypass concrete verification, even on move one.
-      const bookSafe = this.isSafeCandidate(board, book.move, baseline, bookMargin, verifiedDepth, options.safetyTimeMs);
+      const bookSafe = remainingMs() >= 60 && this.isSafeCandidate(
+        board, book.move, baseline, bookMargin, verifiedDepth, cappedTime(options.safetyTimeMs));
       if (bookSafe) {
         const bookCandidate = candidateScores.find((candidate) => candidate.move.uci() === book.move.uci()) ?? { move: book.move, score: result.score, ideaKinds: ["develop"] as CandidateScore["ideaKinds"], reasons: ["Swift's opening repertoire selected this move."] };
         return decision(book.move, "opening-book", bookCandidate.reasons, [bookCandidate], { opening: book.opening });
@@ -272,19 +299,23 @@ export class HumanSwiftEngine {
 
     const deepBaselines = new Map<number, number | null>();
     const safe = safetyCandidates.flatMap((candidate, index): CandidateScore[] => {
-      const verified = this.assessCandidate(board, candidate, baseline, tacticalMargin, verifiedDepth, options.safetyTimeMs);
+      if (remainingMs() < 60) return [];
+      const verified = this.assessCandidate(board, candidate, baseline, tacticalMargin,
+        verifiedDepth, cappedTime(options.safetyTimeMs));
       if (!verified) return [];
       const deepDepth = candidateDepths[index];
       if (deepDepth > verifiedDepth && candidate.move.uci() !== engineMoveUci) {
         // The extra selective look is a veto only. Keep the original comparable
         // score for ranking, and check the extra depth against a matching baseline.
         if (!deepBaselines.has(deepDepth)) {
-          const deepProbe = this.childSearchScore(board, principalMove, deepDepth, options.ponderTimeMs);
+          const deepProbe = this.childSearchScore(board, principalMove, deepDepth,
+            cappedTime(options.ponderTimeMs));
           deepBaselines.set(deepDepth, deepProbe.depth >= deepDepth ? deepProbe.score : null);
         }
         const deeperBaseline = deepBaselines.get(deepDepth);
         if (deeperBaseline === null || deeperBaseline === undefined ||
-          !this.isSafeCandidate(board, candidate.move, deeperBaseline, tacticalMargin, deepDepth, options.safetyTimeMs)) return [];
+          !this.isSafeCandidate(board, candidate.move, deeperBaseline, tacticalMargin,
+            deepDepth, cappedTime(options.safetyTimeMs))) return [];
       }
       return [verified];
     });
@@ -320,7 +351,9 @@ export class HumanSwiftEngine {
     // only true plan divergences with matched-depth independent child searches.
     // Failure to complete either verification is NOT evidence of equivalence.
     if (selectedMove.uci() !== engineMoveUci &&
-        !this.verifyPlanOverride(board, principalMove, selectedMove, result.depth, tacticalMargin, options.timeMs)) {
+        !(remainingMs() >= 170 &&
+          this.verifyPlanOverride(board, principalMove, selectedMove, result.depth,
+            tacticalMargin, cappedTime(options.timeMs)))) {
       this.mind.recordSetback("A deeper matched search did not confirm the human-plan deviation.");
       return decision(principalMove, "engine-fallback",
         ["Deeper verification rejected an unproven human-plan move; retaining the principal search choice."],
