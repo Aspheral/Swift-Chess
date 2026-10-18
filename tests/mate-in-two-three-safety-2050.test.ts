@@ -61,6 +61,21 @@ describe("independent mate-in-two and mate-in-three protection", () => {
     }
   });
 
+  it("never presents an interrupted proof as an established mate", () => {
+    const proposed = move(mateThree, "h7h6");
+    const limited = allowsCheckingMate(mateThree, proposed, 3, {
+      maxNodes: 1, timeMs: 2000,
+    });
+    expect(limited.complete).toBe(false);
+    expect(limited.found).toBe(false);
+  });
+
+  it("requires an actual defender-side attack, not just a misleading score", () => {
+    const initial = Board.start();
+    const wrongSide = proveCheckingMate(initial, "b", 3);
+    expect(wrongSide).toEqual({ found: false, complete: true, nodes: 0 });
+  });
+
   it("does not invent mate in a normal opening", () => {
     const board = Board.start();
     const proof = allowsCheckingMate(board, move(board, "e2e4"), 3, { maxNodes: 5000, timeMs: 1000 });
