@@ -1,0 +1,92 @@
+name: Swift Multi-Strength Elo Calibration
+
+# Manual runs except the initial, specifically gated experiment. A below-target
+# rating is a VALID result, never a reason to discard or rerun a match.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/swift-elo-ladder.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ladder:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'experiment/2050-integrated-pilot-20261014'
+    name: elo-${{ matrix.elo }}-batch-${{ matrix.batch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        elo: [1900, 2050, 2200]
+        batch: [0, 1, 2, 3]
+    env:
+      SWIFT_RUN_STOCKFISH_GATE: "1"
+      SWIFT_STOCKFISH_ELO: ${{ matrix.elo }}
+      SWIFT_CALIBRATION_MODE: "human"
+      SWIFT_CALIBRATION_BATCH: ${{ matrix.batch }}
+      SWIFT_CALIBRATION_REQUIRE_TARGET: "0"
+      SWIFT_CALIBRATION_OPENING_PAIRS: "10"
+      SWIFT_CALIBRATION_OPENING_START: ${{ (matrix.batch * 3) % 10 }}
+      SWIFT_MAX_PLIES: "500"
+      SWIFT_CALIBRATION_TEST_TIMEOUT_MS: "6600000"
+    steps:
+      - name: Checkout exact calibration revision
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Install independent Stockfish
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y stockfish
+          if ! command -v stockfish >/dev/null; then
+            sudo ln -s /usr/games/stockfish /usr/local/bin/stockfish
+          fi
+          printf 'uci\nquit\n' | stockfish | grep -m 1 -E '^id name|^Stockfish'
+      - name: Play 20 completed color-reversed games
+        run: pnpm exec vitest run tests/stockfish-gate.test.ts --config vitest.config.mts
+      - name: Preserve original PGNs via UCI moves and game metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: elo-ladder-${{ matrix.elo }}-batch-${{ matrix.batch }}
+          path: calibration-results/human-elo-${{ matrix.elo }}-batch-${{ matrix.batch }}.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  aggregate:
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.head_ref == 'experiment/2050-integrated-pilot-20261014') }}
+    needs: ladder
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all twelve historical game batches
+        uses: actions/download-artifact@v4
+        with:
+          pattern: elo-ladder-*
+          path: calibration-downloads
+          merge-multiple: true
+      - name: Validate and fit Elo-equivalent strength
+        run: node scripts/aggregate-elo-ladder.mjs calibration-downloads calibration-results/elo-ladder-summary.json
+      - name: Save uncertainty-aware rating summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-elo-ladder-complete-rating
+          path: calibration-results/elo-ladder-summary.json
+          if-no-files-found: warn
+          retention-days: 30
