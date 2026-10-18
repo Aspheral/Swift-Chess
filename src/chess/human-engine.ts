@@ -138,11 +138,21 @@ export class HumanSwiftEngine {
       // forced mate several moves away is not proof that this move cannot
       // hang material or permit an immediate counter-checkmate.
       const checkmatesNow = board.makeMove(move).isCheckmate();
-      const guard = checkmatesNow || finalizesDraw ? null : avoidImmediateMajorBlunder(
+      const proposedGuard = checkmatesNow || finalizesDraw ? null : avoidImmediateMajorBlunder(
         board, move,
         [principalMove, ...humanCandidates.map((candidate) => candidate.move), ...generated.scores.map((candidate) => candidate.move)],
         (position) => this.engine.evaluate(position),
       );
+      // A one-square exchange calculation can mistake a sound positional
+      // sacrifice for a blunder. In the 200-game audit it even replaced three
+      // correctly searched principal moves with losing "safe" alternatives.
+      // Deep principal choices must not be replaced without matching-depth
+      // evidence that the replacement is actually better. For uncertain
+      // shallow searches and human/book overrides, retain the emergency guard.
+      const guard = proposedGuard && (
+        move.uci() !== engineMoveUci || result.depth < 4 ||
+        this.verifyMaterialOverride(board, move, proposedGuard.move, result.depth, options.timeMs)
+      ) ? proposedGuard : null;
       const materialSafeMove = guard?.move ?? move;
       // The completed main search should identify mate in one, but a deep
       // reported depth is not a proof of tactical safety. A stale TT result,
@@ -343,6 +353,33 @@ export class HumanSwiftEngine {
     const challenger = this.childSearchScore(board, selected, comparisonDepth, comparisonMs);
     if (challenger.depth < comparisonDepth) return false;
     return challenger.score >= reference.score - Math.min(18, margin);
+  }
+
+  /**
+   * A short SEE test must not overrule a completed principal search merely
+   * because the principal line gives up material on ONE square. Recheck the
+   * original and the suggested "safe" move with identical child search depth
+   * and time. Only a verified improvement may replace the principal.
+   *
+   * Interrupted probes are inconclusive, so retain the deep principal and
+   * still apply the independent mate-in-one check afterward.
+   */
+  private verifyMaterialOverride(
+    board: Board,
+    principal: Move,
+    replacement: Move,
+    rootDepth: number,
+    rootTimeMs?: number,
+  ): boolean {
+    if (replacement.uci() === principal.uci()) return false;
+    if (rootDepth < 4) return true;
+    const depth = Math.min(5, rootDepth - 1);
+    const timeMs = Math.max(250, Math.min(650, Math.floor((rootTimeMs ?? 900) * 0.4)));
+    const original = this.childSearchScore(board, principal, depth, timeMs);
+    if (original.depth < depth) return false;
+    const candidate = this.childSearchScore(board, replacement, depth, timeMs);
+    if (candidate.depth < depth) return false;
+    return candidate.score >= original.score + 10;
   }
 
   private childSearchScore(board: Board, move: Move, depth: number, timeMs?: number): { score: number; depth: number } {
