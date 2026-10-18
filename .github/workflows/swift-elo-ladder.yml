@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   ladder:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'experiment/2050-integrated-pilot-20261014'
+    if: github.event_name == 'workflow_dispatch'
     name: elo-${{ matrix.elo }}-batch-${{ matrix.batch }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -79,7 +79,7 @@ jobs:
           retention-days: 30
 
   aggregate:
-    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.head_ref == 'experiment/2050-integrated-pilot-20261014') }}
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
     needs: ladder
     runs-on: ubuntu-latest
     timeout-minutes: 15
