@@ -93,7 +93,7 @@ export class HumanSwiftEngine {
     const remainingMs = (): number => Math.max(0, deadline - Date.now());
     const cappedTime = (requested?: number): number | undefined =>
       Number.isFinite(deadline)
-        ? Math.max(10, Math.floor(Math.min(requested ?? Infinity, remainingMs())))
+        ? Math.max(1, Math.floor(Math.min(requested ?? Infinity, remainingMs())))
         : requested;
     const history = options.moveHistory ?? options.history ?? [];
     const technicalEndgame = this.isTechnicalEndgame(board);
