@@ -200,7 +200,13 @@ export class HumanSwiftEngine {
       return { ...result, ...extra, secondLook, move: selectedMove, pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove], humanCandidates: reportedCandidates, humanProfile: profile, mind, decision: { source: selectedSource, engineMove: engineMoveUci, selectedMove: selectedMove.uci(), engineAgreement: selectedMove.uci() === engineMoveUci, reasons: selectedReasons } };
     };
 
-    const tacticalPriority = findTacticalPriority(board, this.engine, result, options.tacticalSearchDepth ?? 5);
+    // A second tactical search follows the timed principal search only if
+    // necessary. Never let that optional look run without a clock deadline.
+    const tacticalBudgetMs = options.timeMs === undefined ? undefined
+      : Math.max(40, Math.min(220, Math.floor(options.timeMs * 0.15)));
+    const tacticalPriority = findTacticalPriority(
+      board, this.engine, result, options.tacticalSearchDepth ?? 5, tacticalBudgetMs,
+    );
     if (tacticalPriority) return decision(tacticalPriority.move, "tactical", ["A forcing tactical priority overrides the longer-term plan."], []);
 
     // The completed root search already compares this guaranteed draw at
