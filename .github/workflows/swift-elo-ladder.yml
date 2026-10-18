@@ -22,8 +22,19 @@ jobs:
       fail-fast: false
       max-parallel: 12
       matrix:
-        elo: [1900, 2050, 2200]
-        batch: [0, 1, 2, 3]
+        include:
+          - { elo: 1900, batch: 0, opening_start: 0 }
+          - { elo: 1900, batch: 1, opening_start: 3 }
+          - { elo: 1900, batch: 2, opening_start: 6 }
+          - { elo: 1900, batch: 3, opening_start: 9 }
+          - { elo: 2050, batch: 0, opening_start: 0 }
+          - { elo: 2050, batch: 1, opening_start: 3 }
+          - { elo: 2050, batch: 2, opening_start: 6 }
+          - { elo: 2050, batch: 3, opening_start: 9 }
+          - { elo: 2200, batch: 0, opening_start: 0 }
+          - { elo: 2200, batch: 1, opening_start: 3 }
+          - { elo: 2200, batch: 2, opening_start: 6 }
+          - { elo: 2200, batch: 3, opening_start: 9 }
     env:
       SWIFT_RUN_STOCKFISH_GATE: "1"
       SWIFT_STOCKFISH_ELO: ${{ matrix.elo }}
@@ -31,7 +42,7 @@ jobs:
       SWIFT_CALIBRATION_BATCH: ${{ matrix.batch }}
       SWIFT_CALIBRATION_REQUIRE_TARGET: "0"
       SWIFT_CALIBRATION_OPENING_PAIRS: "10"
-      SWIFT_CALIBRATION_OPENING_START: ${{ (matrix.batch * 3) % 10 }}
+      SWIFT_CALIBRATION_OPENING_START: ${{ matrix.opening_start }}
       SWIFT_MAX_PLIES: "500"
       SWIFT_CALIBRATION_TEST_TIMEOUT_MS: "6600000"
     steps:
