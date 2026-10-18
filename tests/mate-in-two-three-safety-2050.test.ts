@@ -30,6 +30,18 @@ describe("independent mate-in-two and mate-in-three protection", () => {
     expect(proof.found).toBe(true);
   });
 
+  it("catches the same two-move mating net with Black attacking White", () => {
+    const reversed = Board.fromFEN("k7/8/8/2b5/3q2n1/8/P5PP/5R1K w - - 0 1");
+    const bad = move(reversed, "a2a3");
+    const proof = allowsCheckingMate(reversed, bad, 2, { maxNodes: 10000, timeMs: 2000 });
+    expect(proof.complete).toBe(true);
+    expect(proof.found).toBe(true);
+    const after = reversed.makeMove(bad);
+    const afterCheck = after.makeMove(move(after, "d4g1"));
+    const afterCapture = afterCheck.makeMove(move(afterCheck, "f1g1"));
+    expect(afterCapture.makeMove(move(afterCapture, "g4f2")).isCheckmate()).toBe(true);
+  });
+
   it("finds a genuine three-move mate which is not already forced in two", () => {
     const bad = move(mateThree, "h7h6");
     const after = mateThree.makeMove(bad);
