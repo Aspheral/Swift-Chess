@@ -15,8 +15,18 @@ export const expected = (swiftRating, opponentRating) =>
 /** Solve observed-points = expected-points at the chosen Elo scale. */
 export function fitElo(games, lower = 1000, upper = 3000) {
   if (!games.length) throw new Error("No completed calibration games");
-  const points = games.reduce((sum, g) => sum + score(g.result), 0);
-  const projected = (r) => games.reduce((sum, g) => sum + expected(r, g.opponentElo), 0);
+  // Many bootstrap samples contain hundreds of games but only three distinct
+  // opponent ratings. Aggregate before solving to keep 4,000 clustered
+  // resamples fast and deterministic, without changing the fitted equation.
+  const groups = new Map();
+  let points = 0;
+  for (const game of games) {
+    if (!Number.isFinite(game.opponentElo)) throw new Error("Invalid opponent Elo");
+    points += score(game.result);
+    groups.set(game.opponentElo, (groups.get(game.opponentElo) ?? 0) + 1);
+  }
+  const projected = (r) => [...groups].reduce((sum, [elo, count]) =>
+    sum + count * expected(r, elo), 0);
   // Guard against invalid quasi-infinite ratings in all-W/all-L samples.
   if (points <= projected(lower)) return lower;
   if (points >= projected(upper)) return upper;
