@@ -97,3 +97,55 @@ export function allowsCheckingMate(
   if (child.halfmoveClock() >= 100) return { found: false, complete: true, nodes: 0 };
   return proveCheckingMate(child, child.turn(), attackerMoves, limits);
 }
+
+export interface CheckingMateAvoidance {
+  move: Move;
+  previousMove: Move;
+  attackerMoves: 2 | 3;
+}
+
+/**
+ * Final tactical gate. Unlike static material guards, it changes a move only
+ * after proving a concrete forced checking mate against the proposed move.
+ * Check alternative moves too, or the "rescue" could walk into another mate.
+ */
+export function avoidShortCheckingMate(
+  board: Board,
+  proposed: Move,
+  preferredAlternatives: Move[] = [],
+  evaluate?: (position: Board) => number,
+): CheckingMateAvoidance | null {
+  const firstThreat = allowsCheckingMate(board, proposed, 2, { maxNodes: 4500, timeMs: 55 });
+  const secondThreat = !firstThreat.found && firstThreat.complete
+    ? allowsCheckingMate(board, proposed, 3, { maxNodes: 9000, timeMs: 120 })
+    : firstThreat;
+  if (!secondThreat.found && !firstThreat.found) return null;
+  const attackMoves: 2 | 3 = firstThreat.found ? 2 : 3;
+
+  const legal = board.legalMoves();
+  const legalByUci = new Map(legal.map((move) => [move.uci(), move]));
+  const keys = [...new Set([
+    ...preferredAlternatives.map((move) => move.uci()),
+    ...legal.map((move) => move.uci()),
+  ])].filter((key) => key !== proposed.uci());
+  const preferred = new Set(preferredAlternatives.map((move) => move.uci()));
+  let best: { move: Move; score: number } | null = null;
+
+  // An emergency mating net merits some extra work, but never unbounded work.
+  const deadline = Date.now() + 500;
+  let inspected = 0;
+  for (const key of keys) {
+    if (inspected++ >= 14 || Date.now() >= deadline) break;
+    const candidate = legalByUci.get(key);
+    if (!candidate) continue;
+    const next = board.makeMove(candidate);
+    if (!next.isCheckmate()) {
+      const proof = allowsCheckingMate(board, candidate, 3, { maxNodes: 6500, timeMs: 75 });
+      if (!proof.complete || proof.found) continue;
+    }
+    const score = (evaluate ? -evaluate(next) : 0) +
+      (preferred.has(key) ? 30 : 0);
+    if (!best || score > best.score) best = { move: candidate, score };
+  }
+  return best ? { move: best.move, previousMove: proposed, attackerMoves: attackMoves } : null;
+}
