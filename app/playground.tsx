@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Game, Move, Piece, SwiftOpening } from "../src";
 import type { SwiftMindSnapshot } from "../src";
 import type { SwiftWorkerResponse } from "../src/chess/worker-protocol";
+import { safeEmergencyProvisional } from "../src/chess/provisional-safety";
 
 const files = "abcdefgh";
 const pieceNames: Record<Piece, string> = {
@@ -131,7 +132,14 @@ export default function Playground() {
     if (!active?.provisional || active.version !== gameVersion.current || active.game !== gameRef.current) return;
     if (analysisModeRef.current || active.game.turn() === playerSideRef.current || active.game.result() !== "ongoing") return;
     const move = active.game.legalMoves().find((candidate) => candidate.uci() === active.provisional);
-    if (!move) return;
+    // Defense in depth: never play a provisional root move that skipped
+    // mate checks, even if a stale or buggy worker sent it.
+    if (!move || !safeEmergencyProvisional(active.game.board(), move)) {
+      activeSearchRef.current = null;
+      setSearchError("Swift could not verify its emergency move. Retry instead of risking a forced mate.");
+      setThinking(false);
+      return;
+    }
     active.game.play(move);
     setBoard(active.game.board());
     setLastMove({ from: move.from, to: move.to });
