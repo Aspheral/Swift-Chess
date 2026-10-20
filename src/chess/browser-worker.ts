@@ -2,6 +2,7 @@ import { Board } from "./board";
 import { HumanSwiftEngine } from "./human-engine";
 import { decisionThinkPaceMs, swiftPlayProfile } from "./play-profile";
 import { allocateRapidThink } from "./rapid-time";
+import { safeEmergencyProvisional } from "./provisional-safety";
 import { SwiftWorkerRequest, SwiftWorkerResponse } from "./worker-protocol";
 
 type WorkerContext = {
@@ -41,7 +42,12 @@ context.onmessage = (event) => {
       // A 3+2 clock cannot afford independent uncoordinated time budgets.
       totalTimeMs: rapid?.targetTotalMs,
       adaptiveThinking: request.mode === "analyze" ? false : (rapid?.options.adaptiveThinking ?? profile.options.adaptiveThinking),
-      onInitialMove: (move) => context.postMessage({ type: "provisional", id: request.id, move: move.uci() }),
+      // A failed worker must never fall back to an unverified root move.
+      onInitialMove: (move) => {
+        if (safeEmergencyProvisional(board, move)) {
+          context.postMessage({ type: "provisional", id: request.id, move: move.uci() });
+        }
+      },
       onSecondLook: (reason) => context.postMessage({ type: "thinking", id: request.id, reason }),
       seed: request.seed,
       moveHistory: request.moveHistory,
