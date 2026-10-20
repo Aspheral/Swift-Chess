@@ -94,7 +94,7 @@ export default function Playground() {
   const openingSeed = useRef(Date.now() & 0xffffffff);
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
-  const searchWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchWatchdogRef = useRef<number | null>(null);
   const activeSearchRef = useRef<{ id: number; version: number; game: Game; startedAt: number; provisional?: string } | null>(null);
   const playerSideRef = useRef<Side>("w");
   const analysisModeRef = useRef(false);
