@@ -56,6 +56,14 @@ describe("material fallback must not discard sound deep principal moves", () => 
     expect(independent.calls).toHaveLength(1);
   });
 
+  it("honors a small shared blitz allowance rather than forcing two 250ms probes", () => {
+    const { board, independent, engine, principal, alternative } = fixture();
+    engine.verifyMaterialOverride(board, principal, alternative, 8, 180);
+    expect(independent.calls).toEqual([
+      { depth: 5, timeMs: 72 }, { depth: 5, timeMs: 72 },
+    ]);
+  });
+
   it("retains emergency material protection for genuinely shallow searches", () => {
     const { board, independent, engine, principal, alternative } = fixture();
     expect(engine.verifyMaterialOverride(board, principal, alternative, 2, 100)).toBe(true);
