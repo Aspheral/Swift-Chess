@@ -401,7 +401,7 @@ export class HumanSwiftEngine {
     if (selected.uci() === principal.uci()) return true;
     if (mainDepth < 5) return false;
     const comparisonDepth = Math.min(5, mainDepth - 1);
-    const comparisonMs = Math.max(250, Math.min(650, Math.floor((rootTimeMs ?? 900) * 0.4)));
+    const comparisonMs = Math.max(1, Math.min(650, Math.floor((rootTimeMs ?? 900) * 0.4)));
     const reference = this.childSearchScore(board, principal, comparisonDepth, comparisonMs);
     if (reference.depth < comparisonDepth) return false;
     const challenger = this.childSearchScore(board, selected, comparisonDepth, comparisonMs);
@@ -428,7 +428,7 @@ export class HumanSwiftEngine {
     if (replacement.uci() === principal.uci()) return false;
     if (rootDepth < 4) return true;
     const depth = Math.min(5, rootDepth - 1);
-    const timeMs = Math.max(250, Math.min(650, Math.floor((rootTimeMs ?? 900) * 0.4)));
+    const timeMs = Math.max(1, Math.min(650, Math.floor((rootTimeMs ?? 900) * 0.4)));
     const original = this.childSearchScore(board, principal, depth, timeMs);
     if (original.depth < depth) return false;
     const candidate = this.childSearchScore(board, replacement, depth, timeMs);
