@@ -44,6 +44,9 @@ context.onmessage = (event) => {
       adaptiveThinking: request.mode === "analyze" ? false : (rapid?.options.adaptiveThinking ?? profile.options.adaptiveThinking),
       // A failed worker must never fall back to an unverified root move.
       onInitialMove: (move) => {
+        // Analysis mode has no fallback move to play: avoid expensive
+        // emergency checks while users inspect positions.
+        if (request.mode === "analyze") return;
         if (safeEmergencyProvisional(board, move)) {
           context.postMessage({ type: "provisional", id: request.id, move: move.uci() });
         }
