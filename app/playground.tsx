@@ -136,6 +136,8 @@ export default function Playground() {
     // mate checks, even if a stale or buggy worker sent it.
     if (!move || !safeEmergencyProvisional(active.game.board(), move)) {
       activeSearchRef.current = null;
+      workerRef.current?.terminate();
+      workerRef.current = null;
       setSearchError("Swift could not verify its emergency move. Retry instead of risking a forced mate.");
       setThinking(false);
       return;
@@ -180,6 +182,8 @@ export default function Playground() {
           return;
         }
         activeSearchRef.current = null;
+        workerRef.current?.terminate();
+        workerRef.current = null;
         setSearchError("Swift could not finish this search. Start a new game or retry.");
         setThinking(false);
         return;
@@ -239,6 +243,8 @@ export default function Playground() {
         return;
       }
       activeSearchRef.current = null;
+      workerRef.current?.terminate();
+      workerRef.current = null;
       setSearchError("The chess worker stopped unexpectedly. Retry or start a new game.");
       setThinking(false);
     };
