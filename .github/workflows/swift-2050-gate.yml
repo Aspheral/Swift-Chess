@@ -1,0 +1,99 @@
+name: Swift 2050 Strength Gate
+
+# PR events can appear for a branch where the workflow file differs from main,
+# even when the newest commit modified only code. Both jobs are restricted to
+# workflow_dispatch so additional pushes cannot launch an expensive match.
+# The original completed 200-game result is preserved as an immutable Actions run.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/swift-2050-gate.yml"
+
+jobs:
+  match:
+    if: github.event_name == 'workflow_dispatch'
+    name: human-2050-batch-${{ matrix.batch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        batch: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    env:
+      SWIFT_RUN_STOCKFISH_GATE: "1"
+      SWIFT_STOCKFISH_ELO: "2050"
+      SWIFT_CALIBRATION_MODE: "human"
+      SWIFT_CALIBRATION_BATCH: ${{ matrix.batch }}
+      SWIFT_CALIBRATION_REQUIRE_TARGET: "0"
+      SWIFT_MAX_PLIES: "500"
+      SWIFT_CALIBRATION_TEST_TIMEOUT_MS: "5400000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Install Stockfish
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y stockfish
+          # Ubuntu's distro package may install the executable in /usr/games.
+          if ! command -v stockfish >/dev/null; then
+            sudo ln -s /usr/games/stockfish /usr/local/bin/stockfish
+          fi
+          printf 'uci\nquit\n' | stockfish | grep -m 1 -E '^id name|^Stockfish'
+
+      - name: Play 20 completed games, ten paired openings
+        run: pnpm exec vitest run tests/stockfish-gate.test.ts --config vitest.config.mts
+
+      - name: Upload game records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-2050-human-batch-${{ matrix.batch }}
+          path: calibration-results/human-elo-2050-batch-${{ matrix.batch }}.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  aggregate:
+    name: verify-200-game-2050-gate
+    needs: match
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download batch records
+        uses: actions/download-artifact@v4
+        with:
+          pattern: swift-2050-human-batch-*
+          path: calibration-downloads
+          merge-multiple: true
+
+      - name: Aggregate and enforce 50% score
+        run: node scripts/aggregate-2050-gate.mjs calibration-downloads calibration-results/stockfish-2050-summary.json
+
+      - name: Upload 2050 gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-2050-strength-gate-summary
+          path: calibration-results/stockfish-2050-summary.json
+          if-no-files-found: warn
+          retention-days: 30

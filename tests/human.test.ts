@@ -157,7 +157,7 @@ describe("Swift human move selection", () => {
 
   it("classifies positions into opening, middlegame, and endgame flow stages", () => {
     const opening = humanErrorProfile(Board.start());
-    const middlegame = humanErrorProfile(Board.fromFEN("4k3/pppp4/8/8/8/8/PPPP4/4K3 w - - 0 1"));
+    const middlegame = humanErrorProfile(Board.fromFEN("r1b1k1n1/pppp4/8/8/8/8/PPPP4/R1B1K1N1 w Qq - 0 1"));
     const endgame = humanErrorProfile(Board.fromFEN("4k3/8/8/8/8/8/8/4K3 w - - 0 1"));
 
     expect(opening.gameStage).toBe("opening");
@@ -166,7 +166,7 @@ describe("Swift human move selection", () => {
   });
 
   it("gives middlegame pawn breaks a practical preference", () => {
-    const board = Board.fromFEN("4k3/pppp4/8/8/8/8/PPPP4/4K3 w - - 0 1");
+    const board = Board.fromFEN("r1b1k1n1/pppp4/8/8/8/8/PPPP4/R1B1K1N1 w Qq - 0 1");
     const pawnMoves = board.legalMoves().filter((move) => board.pieceAt(move.from)?.[1] === "p");
     const pawnBreak: CandidateScore = { move: pawnMoves[0], score: 100, ideaKinds: ["pawn-break"], reasons: ["challenge the structure"] };
     const quiet: CandidateScore = { move: pawnMoves[1], score: 100, ideaKinds: ["improve-piece"], reasons: ["improve"] };

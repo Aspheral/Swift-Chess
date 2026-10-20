@@ -97,6 +97,7 @@ function forcedMate(
   engine: SwiftEngine,
   existing?: SearchResult,
   tacticalSearchDepth = 5,
+  tacticalSearchTimeMs?: number,
 ): Move | null {
   const immediate = immediateMate(board);
   if (immediate) return immediate;
@@ -114,7 +115,13 @@ function forcedMate(
 
   const depth = Math.max(1, Math.floor(tacticalSearchDepth));
   if (existing?.depth && existing.depth >= depth) return null;
-  const result = engine.search(board, { depth });
+  // This is an EXTRA search after a full root search. It must obey a
+  // separate deadline in timed games; otherwise an interrupted root can
+  // trigger another unlimited depth-four search and burn the blitz clock.
+  const result = engine.search(board, {
+    depth, ...(tacticalSearchTimeMs !== undefined
+      ? { timeMs: Math.max(1, Math.floor(tacticalSearchTimeMs)) } : {}),
+  });
   return result.move && result.score >= MATE_SCORE ? result.move : null;
 }
 
@@ -148,8 +155,16 @@ export function findTacticalPriority(
   engine: SwiftEngine,
   existing?: SearchResult,
   tacticalSearchDepth = 5,
+  tacticalSearchTimeMs?: number,
 ): TacticalPriority | null {
-  const mate = forcedMate(board, engine, existing, tacticalSearchDepth);
+  const mate = forcedMate(board, engine, existing, tacticalSearchDepth, tacticalSearchTimeMs);
   if (mate) return { move: mate, kind: "mate", score: MATE_SCORE };
-  return bestMaterialCapture(board, isOwnQueenUnderAttack(board));
+  const capture = bestMaterialCapture(board, isOwnQueenUnderAttack(board));
+  // SEE only assesses recaptures on a single square. It cannot justify
+  // overriding a completed multi-ply search that found a different move.
+  // Preserve raw material priorities as a fallback for very shallow or
+  // interrupted searches, and always keep forced mates above this rule.
+  if (capture && existing?.move && existing.depth >= 3 &&
+      existing.move.uci() !== capture.move.uci()) return null;
+  return capture;
 }

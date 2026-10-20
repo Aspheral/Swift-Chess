@@ -26,6 +26,27 @@ describe("Swift tactical priorities", () => {
     expect(result?.move.uci()).toBe("e1d1");
   });
 
+  it("trusts a completed concrete search over a conflicting single-square queen grab", () => {
+    const board = Board.fromFEN("8/8/8/8/8/8/Q7/3qR1K1 w - - 0 1");
+    const quiet = board.legalMoves().find((move) => move.uci() === "a2a3");
+    const capture = board.legalMoves().find((move) => move.uci() === "e1d1");
+    expect(quiet).toBeDefined();
+    expect(capture).toBeDefined();
+
+    // Even when SEE likes Rxd1, a full search could see a wider-board threat.
+    // The tactic heuristic may not discard that completed root decision.
+    const completed = { move: quiet!, score: 90, depth: 5, nodes: 1000 };
+    expect(findTacticalPriority(board, new SwiftEngine(), completed, 0)).toBeNull();
+
+    // If the completed search agrees, we retain the queen capture.
+    const agreeing = { ...completed, move: capture! };
+    expect(findTacticalPriority(board, new SwiftEngine(), agreeing, 0)?.move.uci()).toBe("e1d1");
+
+    // Shallow searches still have access to the tactical fallback.
+    const shallow = { ...completed, depth: 1 };
+    expect(findTacticalPriority(board, new SwiftEngine(), shallow, 0)?.move.uci()).toBe("e1d1");
+  });
+
   it("does not auto-grab the enemy queen when our queen is attacked", () => {
     const board = Board.fromFEN("3r2k1/4q3/8/8/8/8/3Q4/4R1K1 w - - 0 1");
 
