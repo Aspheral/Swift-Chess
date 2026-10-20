@@ -64,6 +64,14 @@ describe("deep human-plan move verification", () => {
     expect(safety.calls).toHaveLength(1);
   });
 
+  it("does not force 250ms per comparison on a 180ms remaining clock", () => {
+    const { board, human, safety, principal, alternative } = setup();
+    human.verifyPlanOverride(board, principal, alternative, 8, 30, 180);
+    expect(safety.calls).toEqual([
+      { depth: 5, timeMs: 72 }, { depth: 5, timeMs: 72 },
+    ]);
+  });
+
   it("does not spend extra time when the human plan already agrees or root search is shallow", () => {
     const { board, human, safety, principal, alternative } = setup();
     expect(human.verifyPlanOverride(board, principal, principal, 8, 24, 900)).toBe(true);
