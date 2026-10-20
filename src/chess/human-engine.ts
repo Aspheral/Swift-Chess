@@ -164,11 +164,13 @@ export class HumanSwiftEngine {
       // A one-square exchange calculation can mistake a sound positional
       // sacrifice for a blunder. In the 200-game audit it even replaced three
       // correctly searched principal moves with losing "safe" alternatives.
-      // Deep principal choices must not be replaced without matching-depth
-      // evidence that the replacement is actually better. For uncertain
-      // shallow searches and human/book overrides, retain the emergency guard.
+      // A completed search cannot justify a shallow heuristic replacement,
+      // regardless of whether the final move came from the principal search,
+      // a human plan, or the opening repertoire. The old exception for
+      // non-principal moves let the material guard repeat the exact error
+      // fixed for principal moves. Shallow depth still uses emergency SEE.
       const guard = proposedGuard && (
-        move.uci() !== engineMoveUci || result.depth < 4 ||
+        result.depth < 4 ||
         (remainingMs() >= 170 &&
           this.verifyMaterialOverride(board, move, proposedGuard.move, result.depth,
             cappedTime(options.timeMs)))
