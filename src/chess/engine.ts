@@ -444,6 +444,16 @@ export class SwiftEngine {
       }
       const sign = white ? 1 : -1;
       score += sign * pieceValues[type];
+      if (type !== "p" && type !== "k" &&
+          this.attackedByEnemyPawn(board, square, white ? "b" : "w")) {
+        // A direct pawn attack forces a valuable piece to respond. This is
+        // genuine positional pressure, but not a captured piece: give it a
+        // modest tempo penalty rather than the full material value.
+        const pressure: Record<"n" | "b" | "r" | "q", number> = {
+          n: 38, b: 42, r: 55, q: 95,
+        };
+        score -= sign * pressure[type as "n" | "b" | "r" | "q"];
+      }
 
       if (type !== "k") {
         const tableSquare = white ? (square ^ 56) : square;
@@ -484,6 +494,19 @@ export class SwiftEngine {
    * It fades completely after minor-piece development or simplification so
    * active queens remain welcome in genuine middlegames and endgames.
    */
+  /** Fast pawn-only attack map for evaluation, independent of piece mobility. */
+  private attackedByEnemyPawn(board: Board, square: number, by: Color): boolean {
+    const file = square & 7;
+    const attackerRank = (square >>> 3) + (by === "w" ? -1 : 1);
+    if (attackerRank < 0 || attackerRank > 7) return false;
+    for (const df of [-1, 1]) {
+      const attackerFile = file + df;
+      if (attackerFile < 0 || attackerFile > 7) continue;
+      if (board.pieceAt(attackerRank * 8 + attackerFile) === `${by}p`) return true;
+    }
+    return false;
+  }
+
   private prematureQueenRaidPenalty(
     board: Board,
     queenSquare: number,
