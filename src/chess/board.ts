@@ -54,6 +54,8 @@ const SLIDER_ATTACK_RAYS: ReadonlyArray<readonly [number, number, readonly Piece
 
 export class Board {
   private searchKeyCache?: string;
+  /** Immutable board snapshots may share a legal-list computation safely. */
+  private legalMovesCache?: Move[];
 
   private constructor(private readonly state: PositionState) {}
 
@@ -118,10 +120,15 @@ export class Board {
   }
 
   legalMoves(): Move[] {
-    return this.pseudoLegalMoves().filter((move) => {
-      const next = this.makeMove(move);
-      return !next.isInCheck(this.state.turn);
-    });
+    if (this.legalMovesCache === undefined) {
+      this.legalMovesCache = this.pseudoLegalMoves().filter((move) => {
+        const next = this.makeMove(move);
+        return !next.isInCheck(this.state.turn);
+      });
+    }
+    // Never expose the cached array: user/UI callers may sort, shift or
+    // splice their own legal-move list without changing engine search order.
+    return this.legalMovesCache.slice();
   }
 
   /**
@@ -135,6 +142,16 @@ export class Board {
    * quiet evasion can be the only way out of check.
    */
   legalTactics(includeQuietChecks = false): { moves: Move[]; hasLegalMove: boolean } {
+    // The planner, mate checks and game adjudication frequently already
+    // requested all legal moves for this same immutable Board.
+    if (this.legalMovesCache !== undefined) {
+      return {
+        hasLegalMove: this.legalMovesCache.length > 0,
+        moves: this.legalMovesCache.filter((move) =>
+          move.enPassant || !!move.promotion || this.state.board[move.to] !== null ||
+          (includeQuietChecks && this.makeMove(move).isInCheck(opposite(this.state.turn)))),
+      };
+    }
     const tactical: Move[] = [];
     let hasLegalMove = false;
     for (const move of this.pseudoLegalMoves()) {
