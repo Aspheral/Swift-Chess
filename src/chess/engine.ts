@@ -212,7 +212,12 @@ export class SwiftEngine {
       const opponent = this.sideToMove(child);
       const forcing = this.isCapture(board, move) || !!move.promotion || child.isInCheck(opponent);
       const quiet = !forcing;
-      const canReduce = effectiveDepth >= 3 && moveIndex >= 3 && quiet && !inCheck;
+      // LMR must not throw away forcing threats just because they are quiet.
+      // In the user's Scotch game, ...d5 was a central defensive break and
+      // Qa4 attacked a loose knight without capturing immediately.
+      const criticalQuiet = quiet && this.isCriticalQuietMove(board, move, child);
+      const canReduce = effectiveDepth >= 3 && moveIndex >= 3 &&
+        quiet && !inCheck && !criticalQuiet;
       let score: number;
       let childResult: { score: number; pv: Move[] };
       if (canReduce) {
@@ -251,6 +256,35 @@ export class SwiftEngine {
    * all 80,000 positions. This retains recent analysis between rapid moves,
    * while bounding the cache for a long-lived browser worker.
    */
+  /**
+   * Late-move reductions are safe for routine quiet play, not for defensive
+   * central pawn breaks, improving king moves, or new queen attacks on pieces.
+   * Guard only the moves already eligible for reduction so the full legal
+   * tree does not pay an extra threat-analysis cost.
+   */
+  private isCriticalQuietMove(board: Board, move: Move, child: Board): boolean {
+    const moving = board.pieceAt(move.from);
+    if (!moving) return false;
+    if (moving[1] === "k") return true;
+    if (moving[1] === "p") {
+      const file = move.to & 7;
+      const rank = move.to >>> 3;
+      return (file === 3 || file === 4) && rank >= 2 && rank <= 5;
+    }
+    if (moving[1] !== "q") return false;
+    const color = board.turn();
+    const enemy = color === "w" ? "b" : "w";
+    for (let square = 0; square < 64; square++) {
+      const target = child.pieceAt(square);
+      if (!target || target[0] !== enemy ||
+        (target[1] !== "n" && target[1] !== "b" &&
+         target[1] !== "r" && target[1] !== "q")) continue;
+      if (child.isSquareAttacked(square, color) &&
+          !board.isSquareAttacked(square, color)) return true;
+    }
+    return false;
+  }
+
   private storeTransposition(key: string, entry: TTEntry): void {
     const previous = this.table.get(key);
     if (previous && (
