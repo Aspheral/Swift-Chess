@@ -363,6 +363,12 @@ export class SwiftEngine {
   private isCapture(board: Board, move: Move): boolean { return move.enPassant || board.pieceAt(move.to) !== null; }
 
   private canNullMove(board: Board): boolean {
+    // Passing is not a legal chess move. Close to a fifty-move claim, a
+    // synthetic null move increments the draw counter and can manufacture an
+    // artificial draw inside the null-window search. Disable this pruning
+    // shortcut before the draw horizon, while ordinary legal search remains
+    // responsible for adjudicating actual fifty-move outcomes.
+    if (board.halfmoveClock() >= 90) return false;
     // Zugzwang danger is about OUR available waiting moves. The opponent's
     // queen or rooks must not make a pawn-only side eligible for null pruning.
     let nonPawnPieces = 0;
