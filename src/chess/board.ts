@@ -132,6 +132,30 @@ export class Board {
   }
 
   /**
+   * A noncapturing pawn move that attacks a more valuable opposing piece is
+   * forcing even though it neither captures nor checks. Examples include a
+   * central ...d5 attacking a bishop on c4, or ...b6 chasing Qa5.
+   * No pseudo-legal future captures or expensive search are required.
+   */
+  createsPawnPieceThreat(move: Move): boolean {
+    const pawn = this.state.board[move.from];
+    if (!pawn || pawn[1] !== "p" || this.state.board[move.to] !== null) return false;
+    const color = pawn[0];
+    const file = move.to & 7;
+    const direction = color === "w" ? 8 : -8;
+    for (const shift of [-1, 1]) {
+      if (file + shift < 0 || file + shift > 7) continue;
+      const index = move.to + direction + shift;
+      if (index < 0 || index >= 64) continue;
+      const target = this.state.board[index];
+      if (target && target[0] !== color &&
+          (target[1] === "n" || target[1] === "b" ||
+           target[1] === "r" || target[1] === "q")) return true;
+    }
+    return false;
+  }
+
+  /**
    * Legal captures and promotions for quiet-position quiescence search.
    *
    * Only tactical moves require a full king-safety test once any legal move
@@ -141,7 +165,7 @@ export class Board {
    * Checking positions must continue to use legalMoves(), because a legal
    * quiet evasion can be the only way out of check.
    */
-  legalTactics(includeQuietChecks = false): { moves: Move[]; hasLegalMove: boolean } {
+  legalTactics(includeQuietChecks = false, includePawnThreats = false): { moves: Move[]; hasLegalMove: boolean } {
     // The planner, mate checks and game adjudication frequently already
     // requested all legal moves for this same immutable Board.
     if (this.legalMovesCache !== undefined) {
@@ -149,20 +173,24 @@ export class Board {
         hasLegalMove: this.legalMovesCache.length > 0,
         moves: this.legalMovesCache.filter((move) =>
           move.enPassant || !!move.promotion || this.state.board[move.to] !== null ||
-          (includeQuietChecks && this.makeMove(move).isInCheck(opposite(this.state.turn)))),
+          (includeQuietChecks && this.makeMove(move).isInCheck(opposite(this.state.turn))) ||
+          (includePawnThreats && this.createsPawnPieceThreat(move))),
       };
     }
     const tactical: Move[] = [];
     let hasLegalMove = false;
     for (const move of this.pseudoLegalMoves()) {
       const isTactical = move.enPassant || !!move.promotion || this.state.board[move.to] !== null;
-      if (!isTactical && hasLegalMove && !includeQuietChecks) continue;
+      if (!isTactical && hasLegalMove && !includeQuietChecks &&
+          !(includePawnThreats && this.createsPawnPieceThreat(move))) continue;
       const next = this.makeMove(move);
       if (next.isInCheck(this.state.turn)) continue;
       hasLegalMove = true;
       // At the first quiescence horizon, a forcing QUIET check deserves one
       // bounded look. Evasions and every capture remain legally validated.
-      if (isTactical || (includeQuietChecks && next.isInCheck(next.turn()))) tactical.push(move);
+      if (isTactical ||
+          (includeQuietChecks && next.isInCheck(next.turn())) ||
+          (includePawnThreats && this.createsPawnPieceThreat(move))) tactical.push(move);
     }
     return { moves: tactical, hasLegalMove };
   }
