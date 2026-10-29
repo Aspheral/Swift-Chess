@@ -38,6 +38,16 @@ describe("forcing pawn attacks from the October 29 Scotch game", () => {
     expect(b.createsPawnPieceThreat(legal(b,"d2d4"))).toBe(false);
     expect(b.legalTactics(true,true).moves.map(m=>m.uci())).not.toContain("d2d4");
   });
+  it("really searches a quiet pawn attack at quiescence, rather than delta-pruning it",()=>{
+    const b=Board.fromFEN("7k/3p4/8/8/2B5/8/8/K7 b - - 0 1");
+    expect(b.legalTactics(true,true).moves.map(m=>m.uci())).toContain("d7d5");
+    const e = new SwiftEngine() as unknown as {
+      quiescence(board: Board, alpha: number, beta: number, ply: number): number;
+      nodes: number;
+    };
+    e.quiescence(b,-1_000_000,1_000_000,0);
+    expect(e.nodes).toBeGreaterThan(1);
+  });
   it("gives tactical order priority to a noncapturing pawn piece attack",()=>{
     const b=Board.fromFEN(cases[1].fen);
     const engine=new SwiftEngine() as unknown as {
