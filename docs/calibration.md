@@ -1,6 +1,6 @@
 # Swift rating calibration
 
-An earlier Swift configuration was calibrated at approximately **1632 Elo** against Stockfish's UCI strength limiter. The current `adaptive-human-v15` candidate aims for **1900 rapid Elo**, but has not yet been calibrated.
+An earlier Swift configuration was calibrated at approximately **1632 Elo** against Stockfish's UCI strength limiter. The current `adaptive-human-v15` candidate aims for **2000 rapid Elo**, but has not yet been calibrated.
 
 This is a benchmark estimate, not an official human federation or online-platform rating.
 
@@ -41,4 +41,4 @@ The final ladder uses a 360-ply safety ceiling after one legitimate game remaine
 
 It should not be described as a verified human Elo. Stockfish's `UCI_LimitStrength` is a useful reproducible calibration opponent, but its rating scale is still a proxy. Hardware, time controls, opponent pool, and the mapping between engine-limited Elo and human ratings all matter.
 
-For public-facing copy, use **1900 rapid target (unverified)**, and separately label the previous **1632 calibrated Elo** result as historical. A new 200-game ladder is required to support a new calibrated estimate.
+For public-facing copy, use **2000 rapid target (unverified)**, and separately label the previous **1632 calibrated Elo** result as historical. A new 200-game ladder is required to support a new calibrated estimate.

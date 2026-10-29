@@ -1,0 +1,51 @@
+name: Swift 2050 Loss Audit Report
+
+# Aggregate independent evaluations from the completed audit, without
+# re-running 200 matches or re-analyzing individual moves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/swift-2050-loss-report.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  report:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python chess module for report script
+        run: python -m pip install chess==1.11.2
+      - name: Retrieve the ten successfully analyzed batches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p calibration-audit/previous calibration-audit/results
+          gh run download 39079956472 --repo '${{ github.repository }}' \
+            --pattern 'swift-2050-loss-audit-batch-*' --dir calibration-audit/previous
+          find calibration-audit/previous -name 'audit-batch-*.json' -exec cp {} calibration-audit/results/ \;
+          test "$(find calibration-audit/results -name 'audit-batch-*.json' | wc -l)" -eq 10
+      - name: Aggregate all 200 game evaluations
+        run: |
+          python scripts/audit-2050-losses.py aggregate \
+            --input calibration-audit/results \
+            --output calibration-audit/summary-200-games.json
+      - name: Upload audit report and complete per-move CSV
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-2050-complete-move-quality-report
+          path: |
+            calibration-audit/summary-200-games.json
+            calibration-audit/swift-2050-audit-moves.csv
+          if-no-files-found: warn
+          retention-days: 30

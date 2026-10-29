@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Game, Move, Piece, SwiftOpening } from "../src";
 import type { SwiftMindSnapshot } from "../src";
 import type { SwiftWorkerResponse } from "../src/chess/worker-protocol";
+import { safeEmergencyProvisional } from "../src/chess/provisional-safety";
 
 const files = "abcdefgh";
 const pieceNames: Record<Piece, string> = {
@@ -93,6 +94,7 @@ export default function Playground() {
   const openingSeed = useRef(Date.now() & 0xffffffff);
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
+  const searchWatchdogRef = useRef<number | null>(null);
   const activeSearchRef = useRef<{ id: number; version: number; game: Game; startedAt: number; provisional?: string } | null>(null);
   const playerSideRef = useRef<Side>("w");
   const analysisModeRef = useRef(false);
@@ -126,12 +128,29 @@ export default function Playground() {
     (index % 2 === 0 ? "w" : "b") === playerSide,
   );
 
+  function clearSearchWatchdog() {
+    if (searchWatchdogRef.current !== null) {
+      window.clearTimeout(searchWatchdogRef.current);
+      searchWatchdogRef.current = null;
+    }
+  }
+
   function finishFallbackMove(nowMs: number) {
     const active = activeSearchRef.current;
     if (!active?.provisional || active.version !== gameVersion.current || active.game !== gameRef.current) return;
+    clearSearchWatchdog();
     if (analysisModeRef.current || active.game.turn() === playerSideRef.current || active.game.result() !== "ongoing") return;
     const move = active.game.legalMoves().find((candidate) => candidate.uci() === active.provisional);
-    if (!move) return;
+    // Defense in depth: never play a provisional root move that skipped
+    // mate checks, even if a stale or buggy worker sent it.
+    if (!move || !safeEmergencyProvisional(active.game.board(), move)) {
+      activeSearchRef.current = null;
+      workerRef.current?.terminate();
+      workerRef.current = null;
+      setSearchError("Swift could not verify its emergency move. Retry instead of risking a forced mate.");
+      setThinking(false);
+      return;
+    }
     active.game.play(move);
     setBoard(active.game.board());
     setLastMove({ from: move.from, to: move.to });
@@ -155,6 +174,7 @@ export default function Playground() {
       const response = event.data;
       const active = activeSearchRef.current;
       if (!active || response.id !== active.id) return;
+      if (response.type === "result" || response.type === "error") clearSearchWatchdog();
 
       if (response.type === "provisional") {
         active.provisional = response.move;
@@ -172,6 +192,8 @@ export default function Playground() {
           return;
         }
         activeSearchRef.current = null;
+        workerRef.current?.terminate();
+        workerRef.current = null;
         setSearchError("Swift could not finish this search. Start a new game or retry.");
         setThinking(false);
         return;
@@ -225,12 +247,15 @@ export default function Playground() {
       else finish();
     };
     worker.onerror = () => {
+      clearSearchWatchdog();
       const active = activeSearchRef.current;
       if (active?.provisional && !analysisModeRef.current) {
         finishFallbackMove(performance.now());
         return;
       }
       activeSearchRef.current = null;
+      workerRef.current?.terminate();
+      workerRef.current = null;
       setSearchError("The chess worker stopped unexpectedly. Retry or start a new game.");
       setThinking(false);
     };
@@ -239,6 +264,7 @@ export default function Playground() {
   }
 
   function restartWorker() {
+    clearSearchWatchdog();
     setSecondLookReason(null);
     setSecondLookDepth(null);
     workerRef.current?.terminate();
@@ -248,6 +274,7 @@ export default function Playground() {
 
   function runSwift(version: number, game: Game) {
     if (version !== gameVersion.current || gameRef.current !== game || (!analysisModeRef.current && game.turn() === playerSideRef.current)) return;
+    clearSearchWatchdog();
     const id = ++requestIdRef.current;
     activeSearchRef.current = { id, version, game, startedAt: performance.now() };
     setThinking(true);
@@ -263,6 +290,25 @@ export default function Playground() {
       positionHistoryKeys: game.positionHistoryKeys(),
       mode: analysisModeRef.current ? "analyze" : "play",
     });
+    // A worker can stall without emitting an error or result. Keep the board
+    // responsive and retain the move only if it passes emergency verification.
+    // Match both request ID and game version: an old timeout cannot affect a
+    // new game, an undo, a side change or a newer analysis.
+    searchWatchdogRef.current = window.setTimeout(() => {
+      const pending = activeSearchRef.current;
+      if (!pending || pending.id !== id || pending.version !== version ||
+          pending.game !== game || gameVersion.current !== version) return;
+      if (!analysisModeRef.current && pending.provisional) {
+        finishFallbackMove(performance.now());
+        return;
+      }
+      activeSearchRef.current = null;
+      workerRef.current?.terminate();
+      workerRef.current = null;
+      searchWatchdogRef.current = null;
+      setSearchError("Swift's search exceeded its time limit. Retry to start a fresh search.");
+      setThinking(false);
+    }, 30_000);
   }
 
   function setGameMode(nextMode: GameMode) {
@@ -395,7 +441,10 @@ export default function Playground() {
     runSwift(gameVersion.current, gameRef.current);
   }, [turn, playerSide, terminal, thinking, analysisMode, searchError]);
 
-  useEffect(() => () => workerRef.current?.terminate(), []);
+  useEffect(() => () => {
+    if (searchWatchdogRef.current !== null) window.clearTimeout(searchWatchdogRef.current);
+    workerRef.current?.terminate();
+  }, []);
 
   return (
     <section className="playground" id="play">

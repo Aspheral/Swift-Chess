@@ -20,7 +20,7 @@ const MODE = process.env.SWIFT_CALIBRATION_MODE === "human" ? "human" : "strict"
 const REQUIRE_TARGET = process.env.SWIFT_CALIBRATION_REQUIRE_TARGET === "1";
 const BATCH = Math.max(0, Number.parseInt(process.env.SWIFT_CALIBRATION_BATCH ?? "0", 10) || 0);
 
-const OPENING_PAIRS = [
+const ALL_OPENING_PAIRS = [
   { name: "Reti / ...d5", moves: ["g1f3", "d7d5", "c2c4", "e7e6"] },
   { name: "Reti / kingside fianchetto", moves: ["g1f3", "g8f6", "g2g3", "g7g6"] },
   { name: "Queen's Gambit Declined", moves: ["d2d4", "d7d5", "c2c4", "e7e6", "b1c3", "g8f6"] },
@@ -33,6 +33,18 @@ const OPENING_PAIRS = [
   { name: "Italian structure", moves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5"] },
 ] as const;
 
+// The full 2050 gate uses all ten opening pairs. An explicit smaller count
+// supports a quick smoke test without changing the full match protocol.
+const OPENING_PAIR_COUNT = Math.max(1, Math.min(
+  ALL_OPENING_PAIRS.length,
+  Number.parseInt(process.env.SWIFT_CALIBRATION_OPENING_PAIRS ?? "10", 10) || 10,
+));
+const OPENING_START = Math.max(0, Number.parseInt(process.env.SWIFT_CALIBRATION_OPENING_START ?? "0", 10) || 0)
+  % ALL_OPENING_PAIRS.length;
+const OPENING_PAIRS = Array.from(
+  { length: OPENING_PAIR_COUNT },
+  (_, index) => ALL_OPENING_PAIRS[(OPENING_START + index) % ALL_OPENING_PAIRS.length],
+);
 const GAMES = OPENING_PAIRS.length * 2;
 const TARGET_SCORE = GAMES * 0.5;
 
@@ -281,7 +293,7 @@ function swiftMove(
 
 const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
 
-(runStockfishGate ? describe : describe.skip)(`Swift 1650 calibration (${MODE})`, () => {
+(runStockfishGate ? describe : describe.skip)(`Swift ${STOCKFISH_ELO} calibration (${MODE})`, () => {
   let stockfish: UciStockfish;
 
   beforeAll(async () => {
@@ -386,7 +398,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
     }
 
     console.log(`Swift calibration configuration: mode=${MODE} batch=${BATCH} opponent=Stockfish-${STOCKFISH_ELO} ` +
-      `stockfishMoveMs=${STOCKFISH_MOVETIME_MS} maxPlies=${MAX_PLIES} ` +
+      `stockfishMoveMs=${STOCKFISH_MOVETIME_MS} maxPlies=${MAX_PLIES} openingStart=${OPENING_START} openingPairs=${OPENING_PAIR_COUNT} ` +
       (MODE === "human" ? `swiftProfile=${SWIFT_PLAY_PROFILE}` : `swiftMaxDepth=${STRICT_OPTIONS.depth} swiftMoveMs=${STRICT_OPTIONS.timeMs}`));
     console.log(statsLine("Overall", overall));
     console.log(statsLine("White", byColor.White));
@@ -423,6 +435,8 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
           opponentElo: STOCKFISH_ELO,
           stockfishMoveMs: STOCKFISH_MOVETIME_MS,
           maxPlies: MAX_PLIES,
+          openingStart: OPENING_START,
+          openingPairs: OPENING_PAIRS.map((opening) => opening.name),
           swift: MODE === "human" ? { profile: SWIFT_PLAY_PROFILE } : STRICT_OPTIONS,
         },
         overall,
@@ -444,5 +458,5 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
     if (REQUIRE_TARGET) {
       expect(overall.score).toBeGreaterThanOrEqual(TARGET_SCORE);
     }
-  }, 1_800_000);
+  }, Math.max(1_800_000, Number.parseInt(process.env.SWIFT_CALIBRATION_TEST_TIMEOUT_MS ?? "1800000", 10) || 1_800_000));
 });
