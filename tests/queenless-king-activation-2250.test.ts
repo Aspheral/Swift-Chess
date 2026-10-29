@@ -13,7 +13,7 @@ const board = Board.fromFEN(
 const inspect = new SwiftEngine() as unknown as KingEvaluationInspector;
 const relativeKingScore = (square: string, color: "w" | "b", pieces: number, queens: boolean) => {
   const score = inspect.kingSafetyFromSquare(
-    board, Board.squareIndex(square), color, board.castlingRights(), pieces, queens,
+    board, ("abcdefgh".indexOf(square[0]) + 8 * (Number(square[1]) - 1)), color, board.castlingRights(), pieces, queens,
   );
   return color === "w" ? score : -score;
 };
