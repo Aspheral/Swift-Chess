@@ -41,8 +41,7 @@ describe("Chess.com 186133372340: exact PGN turning-point diagnostics", () => {
         seed:41,adaptiveThinking:false,
       });
       const root = new SwiftEngine().search(board,{depth:8,timeMs:1700});
-      const deep = [5,8,13,26].some(n=>item.label.startsWith(n+"..."))
-        ? new SwiftEngine().search(board,{depth:11,timeMs:7000}) : null;
+
       console.log("CHESSCOM-REPLAY",JSON.stringify({
         label:item.label,profile:profile.kind,
         humanMove:result.move?.uci(),humanSource:result.decision?.source,
@@ -51,8 +50,7 @@ describe("Chess.com 186133372340: exact PGN turning-point diagnostics", () => {
         humanDepth:result.depth,
         independentRoot:root.move?.uci(),independentDepth:root.depth,
         independentScore:root.score,
-        deepRoot:deep?.move?.uci(),deepDepth:deep?.depth,deepScore:deep?.score,
-        deepNodes:deep?.nodes,
+
       }));
       expect(result.move).not.toBeNull();
       // The first three independent Stockfish-verified forcing defenses
