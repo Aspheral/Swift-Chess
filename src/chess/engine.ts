@@ -267,6 +267,7 @@ export class SwiftEngine {
     if (!moving) return false;
     if (moving[1] === "k") return true;
     if (moving[1] === "p") {
+      if (board.createsPawnPieceThreat(move)) return true;
       const file = move.to & 7;
       const rank = move.to >>> 3;
       return (file === 3 || file === 4) && rank >= 2 && rank <= 5;
@@ -332,7 +333,7 @@ export class SwiftEngine {
     // Explore quiet checks only on the FIRST layer after main search. This
     // catches the mate-in-one and forcing-check horizon without permitting
     // recursive quiet-check expansion at every capture node.
-    const tactical = board.legalTactics(qPly === 0);
+    const tactical = board.legalTactics(qPly === 0, qPly === 0);
     // A position without legal moves is a draw, even with a favorable static
     // score. A position without CAPTURES can still have legal quiet moves.
     if (!tactical.hasLegalMove) return 0;
@@ -372,6 +373,7 @@ export class SwiftEngine {
       score += 1_000_000 + victim * 10 - attacker;
     }
     if (move.castle) score += 100;
+    if (board.createsPawnPieceThreat(move)) score += 400_000;
     if (!this.isCapture(board, move) && !move.promotion) {
       const key = move.uci();
       const [killer1, killer2] = this.killers[ply] ?? [null, null];
