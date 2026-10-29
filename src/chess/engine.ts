@@ -288,16 +288,22 @@ export class SwiftEngine {
   private isCapture(board: Board, move: Move): boolean { return move.enPassant || board.pieceAt(move.to) !== null; }
 
   private canNullMove(board: Board): boolean {
-    let nonPawnPieces = 0;
-    let rooksQueens = 0;
+    // Null-move pruning assumes the side to move can safely pass.
+    // Counting BOTH armies wrongly enables it for a bare king/pawn side
+    // facing an opponent with several pieces, which is unsafe in endings.
+    let ownNonPawnPieces = 0;
+    let ownRooksQueens = 0;
+    const side = board.turn();
     for (let square = 0; square < 64; square++) {
       const piece = board.pieceAt(square);
-      if (!piece || piece[1] === "k" || piece[1] === "p") continue;
-      nonPawnPieces++;
-      if (piece[1] === "r" || piece[1] === "q") rooksQueens++;
+      if (!piece || piece[0] !== side || piece[1] === "k" || piece[1] === "p") continue;
+      ownNonPawnPieces++;
+      if (piece[1] === "r" || piece[1] === "q") ownRooksQueens++;
     }
-    if (nonPawnPieces <= 2) return false;
-    if (rooksQueens === 0 && nonPawnPieces <= 4) return false;
+    // Use a conservative material threshold before attempting a pass.
+    // In particular, never null-prune king-and-pawn or lone-minor-piece endings.
+    if (ownNonPawnPieces <= 2) return false;
+    if (ownRooksQueens === 0 && ownNonPawnPieces <= 4) return false;
     return true;
   }
 
