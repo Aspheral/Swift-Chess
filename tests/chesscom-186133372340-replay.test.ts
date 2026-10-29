@@ -55,6 +55,11 @@ describe("Chess.com 186133372340: exact PGN turning-point diagnostics", () => {
         deepNodes:deep?.nodes,
       }));
       expect(result.move).not.toBeNull();
+      // The first three independent Stockfish-verified forcing defenses
+      // must no longer be overlooked by the current human decision pipeline.
+      if (!item.label.startsWith("26...")) {
+        expect(result.move?.uci(), item.label).toBe(item.stockfish);
+      }
     },45_000);
   }
 });
