@@ -3,7 +3,9 @@ import { dirname, join } from "node:path";
 
 const INPUT = process.argv[2] ?? "calibration-downloads";
 const OUTPUT = process.argv[3] ?? "calibration-results/swift-2050-32-summary.json";
-const ELO = 2050;
+const ELO = Number.parseInt(process.env.SWIFT_STOCKFISH_ELO ?? "2050", 10);
+if (!Number.isInteger(ELO) || ELO < 1320 || ELO > 3190)
+  throw new Error("Invalid requested Stockfish UCI_Elo for rating pilot");
 const BATCHES = 4;
 const GAMES_PER_BATCH = 8;
 const OPENINGS = [
