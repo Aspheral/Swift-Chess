@@ -4,7 +4,7 @@ import { SearchOptions, SearchResult, SwiftEngine } from "./engine";
 import { CandidateScore, scoreCandidates } from "./scoring";
 import { generateIdeas } from "./ideas";
 import { HumanErrorProfile, humanErrorProfile, selectHumanMove, HumanSelectionOptions } from "./human";
-import { SwiftOpening, openingBookMove } from "./openings";
+import { SwiftOpening, openingBookMove, verifiedScotchDefence } from "./openings";
 import { findTacticalPriority, isOwnQueenUnderAttack } from "./fast-tactics";
 import { deriveSeed } from "./random";
 import { SwiftMind, SwiftMindSnapshot } from "./mind";
@@ -220,6 +220,17 @@ export class HumanSwiftEngine {
       const pv = selectedMove.uci() === engineMoveUci ? (result.pv ?? []) : [];
       return { ...result, ...extra, secondLook, move: selectedMove, pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove], humanCandidates: reportedCandidates, humanProfile: profile, mind, decision: { source: selectedSource, engineMove: engineMoveUci, selectedMove: selectedMove.uci(), engineAgreement: selectedMove.uci() === engineMoveUci, reasons: selectedReasons } };
     };
+
+    // Opening knowledge earned from independent analysis should not be
+    // defeated by shallow horizon blindness. This applies only to a
+    // recognized forcing Scotch Gambit pawn break/queen chase and the move
+    // still runs the full final material/mate safeguards in decision().
+    const knownScotchResponse = verifiedScotchDefence(board, history);
+    if (knownScotchResponse &&
+        !this.wouldRepeatPosition(board, knownScotchResponse, options.positionHistoryKeys ?? [])) {
+      return decision(knownScotchResponse, "opening-book",
+        ["Recognized the Scotch Gambit's forcing central pawn counterplay."], []);
+    }
 
     // A second tactical search follows the timed principal search only if
     // necessary. Never let that optional look run without a clock deadline.
