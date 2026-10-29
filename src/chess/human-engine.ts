@@ -156,7 +156,14 @@ export class HumanSwiftEngine {
       // forced mate several moves away is not proof that this move cannot
       // hang material or permit an immediate counter-checkmate.
       const checkmatesNow = board.makeMove(move).isCheckmate();
-      const proposedGuard = checkmatesNow || finalizesDraw ? null : avoidImmediateMajorBlunder(
+      // Independent depth-16 game analysis confirmed two Scotch defensive
+      // pawn attacks. The static exchange guard can misread a deliberately
+      // offered pawn as a 220cp loss and incorrectly replace ...d5 with
+      // ...Ng4. Only the exact independently checked repertoire response
+      // bypasses this material-only guard; all mate checks still apply.
+      const verifiedTheory = source === "opening-book" &&
+        verifiedScotchDefence(board, history)?.uci() === move.uci();
+      const proposedGuard = checkmatesNow || finalizesDraw || verifiedTheory ? null : avoidImmediateMajorBlunder(
         board, move,
         [principalMove, ...humanCandidates.map((candidate) => candidate.move), ...generated.scores.map((candidate) => candidate.move)],
         (position) => this.engine.evaluate(position),
