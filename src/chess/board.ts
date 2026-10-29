@@ -134,16 +134,18 @@ export class Board {
    * Checking positions must continue to use legalMoves(), because a legal
    * quiet evasion can be the only way out of check.
    */
-  legalTactics(): { moves: Move[]; hasLegalMove: boolean } {
+  legalTactics(includeQuietChecks = false): { moves: Move[]; hasLegalMove: boolean } {
     const tactical: Move[] = [];
     let hasLegalMove = false;
     for (const move of this.pseudoLegalMoves()) {
       const isTactical = move.enPassant || !!move.promotion || this.state.board[move.to] !== null;
-      if (!isTactical && hasLegalMove) continue;
+      if (!isTactical && hasLegalMove && !includeQuietChecks) continue;
       const next = this.makeMove(move);
       if (next.isInCheck(this.state.turn)) continue;
       hasLegalMove = true;
-      if (isTactical) tactical.push(move);
+      // At the first quiescence horizon, a forcing QUIET check deserves one
+      // bounded look. Evasions and every capture remain legally validated.
+      if (isTactical || (includeQuietChecks && next.isInCheck(next.turn()))) tactical.push(move);
     }
     return { moves: tactical, hasLegalMove };
   }
