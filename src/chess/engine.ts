@@ -268,12 +268,20 @@ export class SwiftEngine {
     this.table.set(key, entry);
   }
 
-  private quiescence(board: Board, alpha: number, beta: number, ply: number): number {
+  private quiescence(board: Board, alpha: number, beta: number, ply: number, qPly = 0): number {
     this.checkTime();
     this.nodes++;
     if (board.halfmoveClock() >= 100 && !board.isCheckmate()) return 0;
     const side = this.sideToMove(board);
     const inCheck = board.isInCheck(side);
+    // Quiescence follows forced replies, but must not recurse forever through
+    // quiet checking and evasion cycles in a browser worker. Terminal states
+    // still take priority at the emergency cap.
+    if (qPly >= 24) {
+      const legal = board.legalMoves();
+      if (!legal.length) return inCheck ? -MATE + ply : 0;
+      return this.evaluate(board);
+    }
     if (inCheck) {
       // Every check evasion matters. Captures-only generation is only safe
       // when we are NOT already in check.
@@ -281,13 +289,16 @@ export class SwiftEngine {
       if (legal.length === 0) return -MATE + ply;
       let best = -INF;
       for (const move of this.orderMoves(board, legal, undefined, 0)) {
-        const score = -this.quiescence(board.makeMove(move), -beta, -alpha, ply + 1);
+        const score = -this.quiescence(board.makeMove(move), -beta, -alpha, ply + 1, qPly + 1);
         best = Math.max(best, score); alpha = Math.max(alpha, score);
         if (alpha >= beta) break;
       }
       return best;
     }
-    const tactical = board.legalTactics();
+    // Explore quiet checks only on the FIRST layer after main search. This
+    // catches the mate-in-one and forcing-check horizon without permitting
+    // recursive quiet-check expansion at every capture node.
+    const tactical = board.legalTactics(qPly === 0);
     // A position without legal moves is a draw, even with a favorable static
     // score. A position without CAPTURES can still have legal quiet moves.
     if (!tactical.hasLegalMove) return 0;
@@ -299,8 +310,10 @@ export class SwiftEngine {
       this.checkTime();
       const child = board.makeMove(move);
       const checking = child.isInCheck(this.sideToMove(child));
+      // Never delta-prune a quiet check: its captured value is zero but it
+      // may force checkmate. Captures still use conservative delta bounds.
       if (!checking && canDeltaPrune(board, move, standPat, alpha)) continue;
-      const score = -this.quiescence(child, -beta, -alpha, ply + 1);
+      const score = -this.quiescence(child, -beta, -alpha, ply + 1, qPly + 1);
       if (score >= beta) return beta;
       if (score > alpha) alpha = score;
     }
