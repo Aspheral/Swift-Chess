@@ -1,5 +1,6 @@
 import { Board } from "./board";
 import { HumanSwiftEngine } from "./human-engine";
+import { safeProvisionalMove } from "./blunder-guard";
 import { decisionThinkPaceMs, swiftPlayProfile } from "./play-profile";
 import { allocateRapidThink } from "./rapid-time";
 import { SwiftWorkerRequest, SwiftWorkerResponse } from "./worker-protocol";
@@ -38,7 +39,10 @@ context.onmessage = (event) => {
     const result = activeEngine.search(board, {
       ...(rapid?.options ?? profile.options),
       adaptiveThinking: request.mode === "analyze" ? false : (rapid?.options.adaptiveThinking ?? profile.options.adaptiveThinking),
-      onInitialMove: (move) => context.postMessage({ type: "provisional", id: request.id, move: move.uci() }),
+      onInitialMove: (move, completedDepth) => {
+        const provisional = safeProvisionalMove(board, move, completedDepth, (position) => activeEngine.evaluate(position));
+        if (provisional) context.postMessage({ type: "provisional", id: request.id, move: provisional.uci() });
+      },
       onSecondLook: (reason) => context.postMessage({ type: "thinking", id: request.id, reason }),
       seed: request.seed,
       moveHistory: request.moveHistory,

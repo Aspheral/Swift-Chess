@@ -137,7 +137,7 @@ export default function Playground() {
     setLastMove({ from: move.from, to: move.to });
     setHistory(active.game.moveHistory());
     setActualThinkSeconds(Math.max(0, (nowMs - active.startedAt) / 1000));
-    setSecondLookDepth("Swift used its verified first-pass move as a fallback.");
+    setSecondLookDepth("Swift used an emergency fallback after its search stopped.");
     setThinking(false);
     setSecondLookReason(null);
     setThoughtArrows([]);
