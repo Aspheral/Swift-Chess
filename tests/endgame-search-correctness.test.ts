@@ -44,4 +44,16 @@ describe("null-move pruning eligibility", () => {
     const board = Board.fromFEN("7k/6p1/8/8/8/8/6P1/KQRR4 w - - 0 1");
     expect(canNullMove(board)).toBe(true);
   });
+
+  it("never manufactures a fifty-move draw by allowing an illegal synthetic pass", () => {
+    const fen = (halfmove: number) =>
+      Board.fromFEN(`7k/6p1/8/8/8/8/6P1/KQRR4 w - - ${halfmove} 1`);
+    expect(canNullMove(fen(89))).toBe(true);
+    expect(canNullMove(fen(90))).toBe(false);
+    expect(canNullMove(fen(99))).toBe(false);
+    // A real queen capture or pawn move resets the counter and remains legal.
+    const winning = fen(99).legalMoves().find((move) => move.uci() === "g2g4");
+    expect(winning).toBeDefined();
+    expect(fen(99).makeMove(winning!).halfmoveClock()).toBe(0);
+  });
 });
