@@ -11,7 +11,7 @@ on:
 
 jobs:
   match:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.head_ref == 'experiment/2050-integrated-pilot-20261014')
     name: 2250-human-batch-${{ matrix.batch }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -65,7 +65,7 @@ jobs:
 
   aggregate:
     needs: match
-    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.head_ref == 'experiment/2050-integrated-pilot-20261014') }}
     runs-on: ubuntu-latest
     env:
       SWIFT_STOCKFISH_ELO: "2250"
