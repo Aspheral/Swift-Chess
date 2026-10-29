@@ -543,7 +543,13 @@ export class SwiftEngine {
       : kingSquare === 62 || kingSquare === 58;
     const middlegame = queensPresent && totalPieces >= 14;
 
-    let score = castled ? 30 : rights * (middlegame ? 10 : 4);
+    // Castling is a middlegame king-safety investment, not a permanent
+    // 30cp bonus. After both queens leave the board, rewarding a king for
+    // staying on g8 while discouraging ...Kf7 can waste the initiative in
+    // technical rook/minor-piece endings (seen in the 2026-10-29 game).
+    const queenless = !queensPresent;
+    let score = queenless ? 0 : castled ? (middlegame ? 30 : 12)
+      : rights * (middlegame ? 10 : 4);
     if (middlegame) {
       const direction = color === "w" ? 8 : -8;
       for (const df of [-1, 0, 1]) {
@@ -564,9 +570,14 @@ export class SwiftEngine {
       }
       if (!castled && rights === 0 && rank === homeRank && (file === 3 || file === 4)) score -= 18;
       if (rank !== homeRank && !castled) score -= 10;
-    } else if (totalPieces <= 10) {
+    } else if (queenless || totalPieces <= 10) {
       const centerDistance = Math.abs(file - 3.5) + Math.abs(rank - 3.5);
-      score += Math.round((7 - centerDistance) * 4);
+      // Scale smoothly: active kings become more useful as material
+      // disappears, but there are still tactical threats with two rooks on.
+      const activation = queenless
+        ? 6 + Math.max(0, Math.min(6, Math.floor((18 - totalPieces) / 2)))
+        : 4;
+      score += Math.round((7 - centerDistance) * activation);
     }
     return color === "w" ? score : -score;
   }
