@@ -347,7 +347,8 @@ export class SwiftEngine {
       const checking = child.isInCheck(this.sideToMove(child));
       // Never delta-prune a quiet check: its captured value is zero but it
       // may force checkmate. Captures still use conservative delta bounds.
-      if (!checking && canDeltaPrune(board, move, standPat, alpha)) continue;
+      if (!checking && !board.createsPawnPieceThreat(move) &&
+          canDeltaPrune(board, move, standPat, alpha)) continue;
       const score = -this.quiescence(child, -beta, -alpha, ply + 1, qPly + 1);
       if (score >= beta) return beta;
       if (score > alpha) alpha = score;
