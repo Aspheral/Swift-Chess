@@ -73,3 +73,20 @@ export function avoidImmediateMajorBlunder(
   }
   return best ? { move: best.move, originalLoss: loss, remainingLoss: best.loss } : null;
 }
+
+/**
+ * Worker failures must not convert an arbitrary first-pass move into a play.
+ * Independently check the opponent's legal immediate major-piece captures.
+ * With no completed search or no safe fallback, report the worker error instead.
+ */
+export function safeProvisionalMove(
+  board: Board,
+  firstPass: Move,
+  completedDepth: number,
+  evaluate?: (next: Board) => number,
+): Move | null {
+  if (completedDepth < 1) return null;
+  const guard = avoidImmediateMajorBlunder(board, firstPass, [], evaluate);
+  const proposed = guard?.move ?? firstPass;
+  return immediateMajorPieceLoss(board, proposed) >= 160 ? null : proposed;
+}
