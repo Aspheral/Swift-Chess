@@ -168,7 +168,8 @@ describe("Swift persistent mind", () => {
     const mind = new SwiftMind();
     mind.observe(quiet, ideas(quiet, [["attack", 75], ["defend", 55]]), quietProfile);
     const highPressure = { ...quietProfile, tacticalPressure: 0.27 };
-    const generation = ideas(invaded, [["attack", 75], ["defend", 86]]);
+    // Exercise the real, priority-ordered ideas rather than an unsorted test stub.
+    const generation = generateIdeas(invaded);
     const changed = mind.observe(invaded, generation, highPressure, ["e2e4", "e7e5"]);
     expect(changed.plan).toBe("defend");
     expect(changed.concern).toContain("rooks");
