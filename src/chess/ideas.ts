@@ -1,5 +1,5 @@
 import { Board, Move, Color, PieceType } from "./board";
-import { PositionUnderstanding, understandPosition } from "./understanding";
+import { PositionUnderstanding, backRankRookPressure, understandPosition } from "./understanding";
 
 export type IdeaKind = "tactical" | "attack" | "defend" | "improve-piece" | "create-weakness" | "simplify" | "complicate" | "create-threat" | "pawn-break" | "develop";
 export interface ChessIdea { kind: IdeaKind; priority: number; reason: string; candidates: Move[]; }
@@ -42,6 +42,32 @@ function strategicIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): 
   const enemy = u.pieces[enemyColor];
   const quietMoves = quiet(board, legal);
   const ideas: ChessIdea[] = [];
+
+  const invasionPressure = u.king[color].rookInvasionPressure;
+  if (invasionPressure > 0) {
+    const intruders: number[] = [];
+    for (let square = 0; square < 64; square++) {
+      if (board.pieceAt(square) !== `${enemyColor}r`) continue;
+      const rank = Math.floor(square / 8);
+      if (color === "w" ? rank <= 1 : rank >= 6) intruders.push(square);
+    }
+    // A human should first consider removing the invader, escaping its rank,
+    // or contesting the intruding rook. Concrete search still vets each move.
+    const candidates = legal.filter((move) => {
+      const next = board.makeMove(move);
+      if (backRankRookPressure(next, color) < invasionPressure) return true;
+      const mover = board.pieceAt(move.from);
+      if (!mover || mover[1] === "p") return false;
+      return intruders.some((square) =>
+        !board.isSquareAttacked(square, color) && next.isSquareAttacked(square, color),
+      );
+    });
+    if (candidates.length) ideas.push({
+      kind: "defend", priority: 86,
+      reason: "Enemy rooks have penetrated the ranks around the king; consider eliminating the invader, contesting it, or escaping the pressure.",
+      candidates: uniqueMoves(candidates).slice(0, 8),
+    });
+  }
 
   const vulnerableOwn = own.filter((p) => p.vulnerable);
   if (vulnerableOwn.length) {
