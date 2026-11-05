@@ -2,7 +2,7 @@ import { Board, Color, PieceType } from "./board";
 
 export interface PieceUnderstanding { square: string; type: PieceType; activity: number; mobility: number; defended: boolean; vulnerable: boolean; }
 export interface PawnStructureUnderstanding { isolated: number; doubled: number; backward: number; passed: number; chains: number; openFiles: number[]; semiOpenFiles: number[]; }
-export interface KingUnderstanding { square: string; pawnShield: number; escapeSquares: number; attackers: number; openFilesNearKing: number; exposed: boolean; }
+export interface KingUnderstanding { square: string; pawnShield: number; escapeSquares: number; attackers: number; openFilesNearKing: number; rookInvasionPressure: number; exposed: boolean; }
 export interface TacticalUnderstanding { checks: number; captures: number; promotions: number; forcingMoves: number; }
 export interface PositionUnderstanding {
   sideToMove: Color;
@@ -62,10 +62,34 @@ function pawnStructure(board: Board, color: Color): PawnStructureUnderstanding {
   return { isolated, doubled, backward, passed, chains, openFiles, semiOpenFiles };
 }
 
+
+/**
+ * Positional warning, not a claim of check: enemy rooks on the king's first
+ * two ranks can dominate the escape route even while pieces block the attack.
+ * Same-rank intrusions weigh more heavily. Ignore this pattern once the king
+ * has left the home-rank zone.
+ */
+export function backRankRookPressure(board: Board, color: Color): number {
+  let kingSquare = -1;
+  for (let square = 0; square < 64; square++) {
+    if (board.pieceAt(square) === `${color}k`) { kingSquare = square; break; }
+  }
+  if (kingSquare < 0) return 0;
+  const kingRank = Math.floor(kingSquare / 8);
+  if (color === "w" ? kingRank > 1 : kingRank < 6) return 0;
+  let pressure = 0;
+  for (let square = 0; square < 64; square++) {
+    if (board.pieceAt(square) !== `${opposite(color)}r`) continue;
+    const rank = Math.floor(square / 8);
+    if (color === "w" ? rank <= 1 : rank >= 6) pressure += rank === kingRank ? 2 : 1;
+  }
+  return pressure;
+}
+
 function kingUnderstanding(board: Board, color: Color): KingUnderstanding {
   const pieces = boardArray(board);
   const square = pieces.findIndex((piece) => piece === `${color}k`);
-  if (square < 0) return { square: "-", pawnShield: 0, escapeSquares: 0, attackers: 0, openFilesNearKing: 0, exposed: false };
+  if (square < 0) return { square: "-", pawnShield: 0, escapeSquares: 0, attackers: 0, openFilesNearKing: 0, rookInvasionPressure: 0, exposed: false };
   const rank = Math.floor(square / 8), file = square & 7;
   const pawnShield = [-1, 0, 1].filter((df) => {
     const f = file + df, r = rank + (color === "w" ? 1 : -1);
@@ -78,7 +102,8 @@ function kingUnderstanding(board: Board, color: Color): KingUnderstanding {
     const f = file + df;
     return f >= 0 && f < 8 && !pieces.some((piece, s) => piece?.endsWith("p") && (s & 7) === f);
   }).length;
-  return { square: squareName(square), pawnShield, escapeSquares: ownMoves.filter((move) => move.from === square).length, attackers, openFilesNearKing, exposed: pawnShield <= 1 || attackers > 0 || openFilesNearKing > 0 };
+  const rookInvasionPressure = backRankRookPressure(board, color);
+  return { square: squareName(square), pawnShield, escapeSquares: ownMoves.filter((move) => move.from === square).length, attackers, openFilesNearKing, rookInvasionPressure, exposed: pawnShield <= 1 || attackers > 0 || openFilesNearKing > 0 || rookInvasionPressure > 0 };
 }
 
 function pieceUnderstanding(board: Board, color: Color, ownMoves: ReturnType<Board["legalMoves"]>, enemyMoves: ReturnType<Board["legalMoves"]>): PieceUnderstanding[] {
