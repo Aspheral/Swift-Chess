@@ -113,6 +113,7 @@ export function planProgressMetric(
         ownVulnerable * 0.18 -
         (u.king[side].exposed ? 0.2 : 0) -
         u.king[side].attackers * 0.18 -
+        Math.min(0.4, u.king[side].rookInvasionPressure * 0.1) -
         ownWeakPawns * 0.04,
       );
     case "improve-piece":
@@ -151,7 +152,9 @@ function describeConcern(generation: IdeaGeneration, profile: MindPositionProfil
   const u = generation.understanding;
   const side = u.sideToMove;
   const enemy = opposite(side);
-  if (u.king[side].attackers > 0 || profile.tacticalPressure >= 0.2) return "Immediate king safety and forcing moves need attention.";
+  if (u.king[side].attackers > 0) return "Immediate king safety and forcing moves need attention.";
+  if (u.king[side].rookInvasionPressure > 0) return "Enemy rooks are penetrating the ranks around the king; an active defense may be needed.";
+  if (profile.tacticalPressure >= 0.2) return "Immediate king safety and forcing moves need attention.";
   const vulnerable = u.pieces[side].filter((piece) => piece.vulnerable);
   if (vulnerable.length) return `${vulnerable[0].square} is loose and may need protection or activity.`;
   if (u.development[side] + 1 < u.development[enemy] && profile.gameStage === "opening") return "Development is lagging behind the opponent.";
@@ -236,13 +239,14 @@ export class SwiftMind {
     const currentPriority = current ? planPriority(ideas, current) : -Infinity;
     const bestPriority = best?.priority ?? -Infinity;
     const tacticalEmergency = profile.tacticalPressure >= 0.24 || board.isInCheck(board.turn());
+    const rookInvasionEmergency = generation.understanding.king[board.turn()].rookInvasionPressure >= 2 && best?.kind === "defend";
 
     if (!best) {
       this.state.plan = null;
       this.state.planAge = 0;
       this.state.planReason = undefined;
       this.state.confidence *= 0.75;
-    } else if (tacticalEmergency && current && currentPriority !== -Infinity) {
+    } else if (tacticalEmergency && !rookInvasionEmergency && current && currentPriority !== -Infinity) {
       this.state.planReason = bestIdeaForPlan(ideas, current)?.reason ?? this.state.planReason;
       this.state.confidence = clamp(this.state.confidence - 0.04);
     } else if (!current || currentPriority === -Infinity) {
@@ -259,7 +263,7 @@ export class SwiftMind {
       this.state.planReason = currentIdea?.reason ?? this.state.planReason;
       this.state.confidence = clamp(this.state.confidence + confidenceGain(currentPriority, this.state.setbacks));
     } else {
-      const inertia = 10 + this.state.confidence * 12 + Math.min(6, this.state.planAge * 1.5);
+      const inertia = rookInvasionEmergency ? 6 : 10 + this.state.confidence * 12 + Math.min(6, this.state.planAge * 1.5);
       if (bestPriority >= currentPriority + inertia) {
         this.state.plan = best.kind;
         this.state.planAge = 1;
