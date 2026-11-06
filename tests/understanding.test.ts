@@ -26,6 +26,29 @@ describe("Swift position understanding", () => {
     expect(understanding.tactics.forcingMoves).toBeGreaterThanOrEqual(understanding.tactics.checks);
   });
 
+  it("recognizes a friendly rook defended by a pawn despite no legal move onto its square", () => {
+    const board = Board.fromFEN("2r1k3/8/8/8/8/2R5/1P4P1/6K1 w - - 0 1");
+    expect(board.legalMoves().some((move) => move.to === 18)).toBe(false);
+    const rook = understandPosition(board).pieces.w.find((piece) => piece.square === "c3");
+    expect(rook).toBeDefined();
+    expect(rook?.defended).toBe(true);
+    expect(rook?.vulnerable).toBe(false);
+  });
+
+  it("distinguishes the same attacked rook when its pawn defender is absent", () => {
+    const board = Board.fromFEN("2r1k3/8/8/8/8/2R5/6P1/6K1 w - - 0 1");
+    const rook = understandPosition(board).pieces.w.find((piece) => piece.square === "c3");
+    expect(rook?.defended).toBe(false);
+    expect(rook?.vulnerable).toBe(true);
+  });
+
+  it("recognizes both sides' ordinary supporting pieces in the starting position", () => {
+    const position = understandPosition(Board.start());
+    expect(position.pieces.w.find((piece) => piece.square === "g1")?.defended).toBe(true);
+    expect(position.pieces.b.find((piece) => piece.square === "g8")?.defended).toBe(true);
+    expect(position.pieces.w.every((piece) => !piece.vulnerable)).toBe(true);
+  });
+
   it("reports exposed kings", () => {
     const board = Board.fromFEN("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
     const understanding = understandPosition(board);

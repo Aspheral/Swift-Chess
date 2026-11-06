@@ -17,6 +17,14 @@ describe("Swift idea generation", () => {
     expect(result.ideas[0]?.candidates.some((move) => board.makeMove(move).isInCheck("b"))).toBe(true);
   });
 
+  it("does not invent a loose-piece alarm when a pawn protects an attacked rook", () => {
+    const protectedRook = Board.fromFEN("2r1k3/8/8/8/8/2R5/1P4P1/6K1 w - - 0 1");
+    const undefendedRook = Board.fromFEN("2r1k3/8/8/8/8/2R5/6P1/6K1 w - - 0 1");
+    const reason = "A piece is currently vulnerable";
+    expect(generateIdeas(protectedRook).ideas.some((idea) => idea.kind === "defend" && idea.reason.startsWith(reason))).toBe(false);
+    expect(generateIdeas(undefendedRook).ideas.some((idea) => idea.kind === "defend" && idea.reason.startsWith(reason))).toBe(true);
+  });
+
   it("does not invent duplicate candidate moves", () => {
     const result = generateIdeas(Board.start());
     const moves = result.candidates.map((move) => move.uci());
