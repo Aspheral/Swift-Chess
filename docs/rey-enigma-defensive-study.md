@@ -43,15 +43,28 @@ Position after ply 74:
 - Experimental CI: [Swift CI run 42134986593](https://github.com/Aspheral/Swift-Chess/actions/runs/42134986593), typecheck, tests, production build all passed.
 - Real-game-specific assertions are in tests/rey-enigma-awareness.test.ts. They verify no premature invasion warning at ply 67, rook-pressure recognition at plies 68, 74, and 82, legal defensive candidates at ply 74, and an explanatory defensive SwiftMind concern.
 
+## November 5 follow-up: one-move rook entry forecast
+
+The next experimental addition is now implemented in the same draft branch, without deploying to main:
+
+- A lightweight geometric gate detects a possible path for an enemy rook onto the king's first two ranks, then checks whether the rook entry is *legal* after a hypothetical pass or on the opponent's actual turn.
+- Obvious undefended rook sacrifices that give no check are excluded from this planning warning.
+- New `defend` candidates are legal moves which reduce next-turn rook entry pressure without merely checking the opponent. Existing concrete consequence searches still decide whether these plans are safe to play.
+- The persistent mind can notice the coming invasion and reconsider an old plan. Neither the forecast nor a candidate's score is a claim that a forced tactic exists.
+
+Regression tests in `tests/rook-invasion-forecast.test.ts` pass for White and Black, preventative rook blocks, ordinary starting positions, already-blocked files, unprotected rook sacrifices and advanced kings. [Final first forecast CI](https://github.com/Aspheral/Swift-Chess/actions/runs/42142036981): **153 tests passed, 1 skipped**, typecheck and production build passed.
+
+**Important negative historical result:** in the actual Rey Enigma record, no warning fired at White-to-move positions after plies 58, 60, 62 or 64. At ply 66 White is already in check, so one-move prophylaxis is not applicable. This threat arose through a sequence of moves that changed the defenders of c1, not through an immediately playable, unpunished rook landing. The current forecast is useful for some positions but does **not** solve Swift's earlier handling of that specific game.
+
 ## Conclusion and next hypothesis
 
-**Confirmed:** rook-invasion awareness and explanatory planning improved in the historical positions tested.
+**Confirmed:** Swift's recognition of already-invading rooks improved, and it now recognizes certain imminent rook entries with legal preventative candidates on synthetic positions.
 
-**Not confirmed:** better selected moves, match results, playing strength, a higher Chess.com rapid rating, or increased resemblance to a real human player.
+**Not confirmed:** improved selected moves in the Rey game, a better match score, Chess.com rating improvement, or increased human-likeness. The fixed-depth Rey checkpoint still selects 38.Nh2 on both builds.
 
-This suggests a next test: detect *prospective* rank invasions **before** an opponent's rook arrives, then generate specific prophylactic moves that reduce concrete danger. Build that only after preparing negative-control positions to avoid indiscriminately penalizing normal open-file play. Any candidate must survive the existing concrete safety verification.
+Further tactical planning should model *deflection of critical defenders* and forcing intermediate moves, not merely extend the rook-forecast search horizon indiscriminately. Performance costs must be measured under the real browser time budget, and candidate moves must survive the existing tactical safety checks. The separate core defended-piece backport in PR #46 is not part of this experimental branch.
 
-A larger, matched-game protocol with paired opening positions, both colors, unchanged search/time conditions, legal-move assurance, human-choice telemetry, and a separate opponent is required before considering deployment or Elo claims. Keep PR #44 a draft until that evidence exists.
+Before considering deployment, run larger paired-game matches using controlled openings and clocks, with both colors and a separate reference opponent, then measure tactical error rates, time usage, move diversity, decision trace, and strength uncertainty.
 
 ## How to reproduce
 
