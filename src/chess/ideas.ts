@@ -1,5 +1,5 @@
 import { Board, Move, Color, PieceType } from "./board";
-import { PositionUnderstanding, backRankRookPressure, understandPosition } from "./understanding";
+import { PositionUnderstanding, backRankRookPressure, imminentRookInvasion, understandPosition } from "./understanding";
 
 export type IdeaKind = "tactical" | "attack" | "defend" | "improve-piece" | "create-weakness" | "simplify" | "complicate" | "create-threat" | "pawn-break" | "develop";
 export interface ChessIdea { kind: IdeaKind; priority: number; reason: string; candidates: Move[]; }
@@ -42,6 +42,23 @@ function strategicIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): 
   const enemy = u.pieces[enemyColor];
   const quietMoves = quiet(board, legal);
   const ideas: ChessIdea[] = [];
+
+
+  if (u.king[color].loomingRookInvasion > 0 && u.king[color].rookInvasionPressure === 0) {
+    const threat = u.king[color].loomingRookInvasion;
+    const prevention = legal.flatMap((move) => {
+      const next = board.makeMove(move);
+      // Checking moves are forcing tactics, not durable preventative plans.
+      if (next.isInCheck(enemyColor)) return [];
+      const remaining = imminentRookInvasion(next, color);
+      return remaining < threat ? [{ move, remaining }] : [];
+    }).sort((a, b) => a.remaining - b.remaining);
+    if (prevention.length) ideas.push({
+      kind: "defend", priority: 82,
+      reason: "An enemy rook can enter the ranks near our king next move; consider interrupting the invasion before it starts.",
+      candidates: uniqueMoves(prevention.map((item) => item.move)).slice(0, 8),
+    });
+  }
 
   const invasionPressure = u.king[color].rookInvasionPressure;
   if (invasionPressure > 0) {
