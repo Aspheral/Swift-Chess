@@ -114,6 +114,7 @@ export function planProgressMetric(
         (u.king[side].exposed ? 0.2 : 0) -
         u.king[side].attackers * 0.18 -
         Math.min(0.4, u.king[side].rookInvasionPressure * 0.1) -
+        Math.min(0.24, u.king[side].loomingRookInvasion * 0.08) -
         ownWeakPawns * 0.04,
       );
     case "improve-piece":
@@ -154,6 +155,7 @@ function describeConcern(generation: IdeaGeneration, profile: MindPositionProfil
   const enemy = opposite(side);
   if (u.king[side].attackers > 0) return "Immediate king safety and forcing moves need attention.";
   if (u.king[side].rookInvasionPressure > 0) return "Enemy rooks are penetrating the ranks around the king; an active defense may be needed.";
+  if (u.king[side].loomingRookInvasion > 0) return "An enemy rook may invade the ranks around the king next turn; consider a preventative move.";
   if (profile.tacticalPressure >= 0.2) return "Immediate king safety and forcing moves need attention.";
   const vulnerable = u.pieces[side].filter((piece) => piece.vulnerable);
   if (vulnerable.length) return `${vulnerable[0].square} is loose and may need protection or activity.`;
@@ -239,7 +241,8 @@ export class SwiftMind {
     const currentPriority = current ? planPriority(ideas, current) : -Infinity;
     const bestPriority = best?.priority ?? -Infinity;
     const tacticalEmergency = profile.tacticalPressure >= 0.24 || board.isInCheck(board.turn());
-    const rookInvasionEmergency = generation.understanding.king[board.turn()].rookInvasionPressure >= 2 && best?.kind === "defend";
+    const kingThreats = generation.understanding.king[board.turn()];
+    const rookInvasionEmergency = (kingThreats.rookInvasionPressure >= 2 || kingThreats.loomingRookInvasion >= 2) && best?.kind === "defend";
 
     if (!best) {
       this.state.plan = null;
