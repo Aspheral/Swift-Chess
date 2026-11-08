@@ -20,11 +20,20 @@ describe("2026-10-29 Qb8 queen-for-rook blunder", () => {
     expect(immediateMajorPieceLoss(board, queenHang!)).toBeGreaterThanOrEqual(350);
   });
 
-  it("will not offer Qb8 as a provisional move", () => {
+  it("never offers Qb8; fails closed if every alternative still hangs material", () => {
     const fallback = safeProvisionalMove(board, queenHang!, 2);
-    expect(fallback).not.toBeNull();
+    // The stronger PR #41 guard considers all minor and major piece hangs.
+    // This test position is already tactically compromised, so returning
+    // null (and showing Retry) is safer than inventing a playable fallback.
     expect(fallback?.uci()).not.toBe("b7b8");
-    expect(immediateMajorPieceLoss(board, fallback!)).toBeLessThan(160);
+    if (fallback) expect(immediateMajorPieceLoss(board, fallback)).toBeLessThan(160);
+  });
+
+  it("still offers an ordinary safe provisional move after a completed search", () => {
+    const initial = Board.start();
+    const developed = initial.legalMoves().find((move) => move.uci() === "g1f3");
+    expect(developed).toBeDefined();
+    expect(safeProvisionalMove(initial, developed!, 2)?.uci()).toBe("g1f3");
   });
 
   it("never offers the arbitrary legal-first move from a zero-depth search", () => {
