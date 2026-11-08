@@ -257,7 +257,7 @@ export class HumanSwiftEngine {
     const visionCandidates = [...movementSafe].sort((a, b) => b.score - a.score)
       .filter((candidate, _, list) => candidate.score >= list[0].score - 12)
       .slice(0, 3);
-    const visions = considerVision && visionCandidates.length >= 2
+    const visions = considerVision && visionCandidates.length >= 1
       ? visualizeSoloPlans(board, visionCandidates.map((candidate) => candidate.move), {
         maxOwnMoves: 5, beamWidth: 2, maxExpansions: 130,
       })
