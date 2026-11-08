@@ -12,6 +12,7 @@ import { selectiveCandidateDepths } from "./selective-calculation";
 import { AdaptiveThinkingOptions, planAdaptiveSecondLook, SwiftSecondLook, SwiftSecondLookReason } from "./adaptive-thinking";
 import { avoidImmediateMajorBlunder, avoidImmediateCheckmate } from "./blunder-guard";
 import { avoidShortCheckingMate } from "./mate-threat";
+import { soloPlanTieBreaks, SoloPlanVision, visualizeSoloPlans } from "./plan-vision";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   safetyMargin?: number;
@@ -36,7 +37,9 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
   adaptiveThinking?: AdaptiveThinkingOptions | false;
   onSecondLook?: (reason: SwiftSecondLookReason) => void;
   /** A legal first-pass move the browser can use when the game clock becomes critical. */
-  onInitialMove?: (move: Move) => void;
+  onInitialMove?: (move: Move, completedDepth: number) => void;
+  /** Disable hypothetical own-move planning for ablation or faster baselines. */
+  planVision?: boolean;
 }
 
 export type SwiftDecisionSource = "tactical" | "opening-book" | "human-plan" | "engine-fallback" | "strict";
@@ -56,6 +59,7 @@ export interface HumanSearchResult extends SearchResult {
   mind?: SwiftMindSnapshot;
   decision?: SwiftDecisionTrace;
   secondLook?: SwiftSecondLook & { initialDepth: number; finalDepth: number; improvedDepth: boolean };
+  planVision?: SoloPlanVision;
 }
 
 export function shouldPreferPlanToBook(mind: SwiftMindSnapshot, historyLength: number): boolean {
@@ -113,7 +117,7 @@ export class HumanSwiftEngine {
       return { ...result, humanCandidates: [], humanProfile: profile, mind: observedMind, decision: { source: "engine-fallback", engineMove: null, selectedMove: null, engineAgreement: true, reasons: ["No legal move was available."] } };
     }
     const initialMove = result.move;
-    options.onInitialMove?.(initialMove);
+    options.onInitialMove?.(initialMove, result.depth);
 
     // Search stability is observed only after an initial concrete search. Keep
     // the same SwiftMind observation throughout; rethinking is not another turn.
@@ -225,7 +229,10 @@ export class HumanSwiftEngine {
         : humanCandidates;
       const mind = this.mind.recordDecision(selectedMove.uci(), selectedReasons[0] ?? `Continue the plan to ${this.mind.planDescription()}.`);
       const pv = selectedMove.uci() === engineMoveUci ? (result.pv ?? []) : [];
-      return { ...result, ...extra, secondLook, move: selectedMove, pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove], humanCandidates: reportedCandidates, humanProfile: profile, mind, decision: { source: selectedSource, engineMove: engineMoveUci, selectedMove: selectedMove.uci(), engineAgreement: selectedMove.uci() === engineMoveUci, reasons: selectedReasons } };
+      // Do not show a discarded imaginary plan when a final tactical guard
+      // replaced its intended move with a safe alternative.
+      const selectedVision = extra.planVision?.rootMove === selectedMove.uci() ? extra.planVision : undefined;
+      return { ...result, ...extra, planVision: selectedVision, secondLook, move: selectedMove, pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove], humanCandidates: reportedCandidates, humanProfile: profile, mind, decision: { source: selectedSource, engineMove: engineMoveUci, selectedMove: selectedMove.uci(), engineAgreement: selectedMove.uci() === engineMoveUci, reasons: selectedReasons } };
     };
 
     // Opening knowledge earned from independent analysis should not be
@@ -358,7 +365,23 @@ export class HumanSwiftEngine {
     );
     const movementSafe = nonBacktracking.length ? nonBacktracking : movementPool;
 
-    const selected = selectHumanMove(board, { candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length), randomness: technicalEndgame ? 0 : options.randomness, riskTolerance: technicalEndgame ? 0.2 : options.riskTolerance, errorBudget: baseErrorBudget, seed: options.seed === undefined ? undefined : deriveSeed(options.seed, history.length), initiative: options.initiative, simplification: options.simplification, development: options.development, pawnBreaks: options.pawnBreaks, history, mind: observedMind, candidates: movementSafe, strictBestPlay: options.strictBestPlay });
+    // Human imagination is a separate counterfactual plan, not an alternative
+    // to minimax. Do it ONLY with legal, completed-consequence-verified moves,
+    // and budget it within the existing total clock.
+    const canImagine = options.planVision !== false && history.length >= 12 &&
+      !technicalEndgame && profile.tacticalPressure < 0.12 &&
+      (options.timeMs === undefined || options.timeMs >= 700) &&
+      remainingMs() >= 270;
+    const visionCandidates = [...movementSafe].sort((a, b) => b.score - a.score)
+      .filter((candidate, _, ranked) => candidate.score >= ranked[0].score - 12)
+      .slice(0, 3);
+    const visions = canImagine && visionCandidates.length > 0
+      ? visualizeSoloPlans(board, visionCandidates.map((candidate) => candidate.move),
+        { maxOwnMoves: 5, beamWidth: 2, maxExpansions: 110 })
+      : [];
+    const planVisionBonus = soloPlanTieBreaks(visions);
+
+    const selected = selectHumanMove(board, { planVisionBonus, candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length), randomness: technicalEndgame ? 0 : options.randomness, riskTolerance: technicalEndgame ? 0.2 : options.riskTolerance, errorBudget: baseErrorBudget, seed: options.seed === undefined ? undefined : deriveSeed(options.seed, history.length), initiative: options.initiative, simplification: options.simplification, development: options.development, pawnBreaks: options.pawnBreaks, history, mind: observedMind, candidates: movementSafe, strictBestPlay: options.strictBestPlay });
     const selectedMove = selected.move;
     const safeKeys = new Set(movementSafe.map((candidate) => candidate.move.uci()));
     if (!selectedMove || !safeKeys.has(selectedMove.uci())) {
@@ -383,7 +406,9 @@ export class HumanSwiftEngine {
     const selectedCandidate = movementSafe.find((candidate) => candidate.move.uci() === selectedMove.uci());
     if (observedMind.plan && selectedCandidate && !selectedCandidate.ideaKinds.includes(observedMind.plan)) this.mind.recordSetback("The current plan had no convincing continuation, so Swift changed course for this move.");
     const reasons = selectedCandidate?.reasons.length ? selectedCandidate.reasons : [`This move supports Swift's continuing plan to ${this.mind.planDescription()}.`];
-    return decision(selectedMove, "human-plan", reasons, movementSafe);
+    return decision(selectedMove, "human-plan", reasons, movementSafe, {
+      planVision: visions.find((vision) => vision.rootMove === selectedMove.uci()),
+    });
   }
 
   evaluate(board: Board): number { return this.engine.evaluate(board); }
