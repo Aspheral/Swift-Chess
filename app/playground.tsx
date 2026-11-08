@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Game, Move, Piece, SwiftOpening } from "../src";
-import type { SwiftMindSnapshot } from "../src";
+import type { SwiftMindSnapshot, SoloPlanVision } from "../src";
 import type { SwiftWorkerResponse } from "../src/chess/worker-protocol";
 import { isDarkSquare, squareAtVisualIndex, visualIndexForSquare } from "../src/chess/board-view";
 
@@ -28,6 +28,11 @@ function squareIndex(square: string): number | null {
 
 function planLabel(plan: string): string {
   return plan.split("-").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
+}
+
+function imaginedMoves(line: string[]): string {
+  return line.map((uci) => uci.slice(0, 2) + "–" + uci.slice(2, 4) +
+    (uci.length > 4 ? "=" + uci[4].toUpperCase() : "")).join(" → ");
 }
 
 function arrowFromUci(uci: string): Arrow | null {
@@ -110,6 +115,7 @@ export default function Playground() {
   const [flipped, setFlipped] = useState(false);
   const [thoughtArrows, setThoughtArrows] = useState<Arrow[]>([]);
   const [mind, setMind] = useState<SwiftMindSnapshot | null>(null);
+  const [planVision, setPlanVision] = useState<SoloPlanVision | null>(null);
   const gameVersion = useRef(0);
 
   const legalMoves = board.legalMoves();
@@ -139,6 +145,7 @@ export default function Playground() {
     setThinking(false);
     setSecondLookReason(null);
     setThoughtArrows([]);
+    setPlanVision(null);
     gameVersion.current += 1;
     workerRef.current?.terminate();
     workerRef.current = null;
@@ -199,6 +206,7 @@ export default function Playground() {
         );
         if (response.opening) setOpening(response.opening);
         setMind(response.mind ?? null);
+        setPlanVision(response.planVision ?? null);
         if (!analysisModeRef.current && move) {
           setActualThinkSeconds(Math.max(0, (performance.now() - latest.startedAt) / 1000));
           setSecondLookDepth(response.secondLook?.improvedDepth
@@ -277,6 +285,7 @@ export default function Playground() {
     setOpening(null);
     setThoughtArrows([]);
     setMind(null);
+    setPlanVision(null);
   }
 
   function reset(side: Side = playerSide) {
@@ -286,7 +295,7 @@ export default function Playground() {
     setSearchError(null);
     openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
     playerSideRef.current = side;
-    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setActualThinkSeconds(null); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlayerSide(side); setFlipped(side === "b");
+    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setActualThinkSeconds(null); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlanVision(null); setPlayerSide(side); setFlipped(side === "b");
   }
 
   function undoPlayerMove() {
@@ -319,6 +328,7 @@ export default function Playground() {
     setOpening(null);
     setThoughtArrows([]);
     setMind(null);
+    setPlanVision(null);
   }
 
   function applyHumanMove(move: Move) {
@@ -328,6 +338,7 @@ export default function Playground() {
       setThinking(false);
       setThoughtArrows([]);
       setMind(null);
+      setPlanVision(null);
       setOpening(null);
     }
     game.play(move);
@@ -444,6 +455,7 @@ export default function Playground() {
             <strong>{mind?.plan ? planLabel(mind.plan) : (thoughtArrows.length ? (analysisMode ? `${thoughtArrows.length} preferred move${thoughtArrows.length === 1 ? "" : "s"}` : `${thoughtArrows.length} moves in view`) : "Reading the position")}</strong>
             <p>{mind?.planReason ?? "Swift carries plans forward when the position still supports them."}</p>
             {mind?.planProgressNote && <p className="mind-detail">{mind.planProgressNote}</p>}
+            {planVision && <p className="mind-detail">If left unanswered, Swift imagines: <strong>{imaginedMoves(planVision.imaginedLine)}</strong>{planVision.alternativeLine.length > 1 && <> · Or: {imaginedMoves(planVision.alternativeLine)}</>}. These are possible own-side plans, not forced lines. Real search checks replies separately.</p>}
             {mind && <p className="mind-detail">Watching: {mind.concern} Confidence {Math.round(mind.confidence * 100)}% · held for {mind.planAge} Swift turn{mind.planAge === 1 ? "" : "s"}{mind.setbacks ? ` · ${mind.setbacks} setback${mind.setbacks === 1 ? "" : "s"}` : ""}.</p>}
             {analysisMode && thoughtArrows.length > 1 && <div className="analysis-legend"><span className="best-swatch" />Best move <span className="alt-swatch" />Other ideas</div>}
           </div>
