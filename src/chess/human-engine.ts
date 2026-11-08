@@ -151,7 +151,10 @@ export class HumanSwiftEngine {
         : humanCandidates;
       const mind = this.mind.recordDecision(selectedMove.uci(), selectedReasons[0] ?? `Continue the plan to ${this.mind.planDescription()}.`);
       const pv = selectedMove.uci() === engineMoveUci ? (result.pv ?? []) : [];
-      return { ...result, ...extra, secondLook, move: selectedMove, pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove], humanCandidates: reportedCandidates, humanProfile: profile, mind, decision: { source: selectedSource, engineMove: engineMoveUci, selectedMove: selectedMove.uci(), engineAgreement: selectedMove.uci() === engineMoveUci, reasons: selectedReasons } };
+      // A last-resort tactical veto must not leave behind the imagined plan
+      // associated with the rejected move.
+      const selectedVision = extra.planVision?.rootMove === selectedMove.uci() ? extra.planVision : undefined;
+      return { ...result, ...extra, planVision: selectedVision, secondLook, move: selectedMove, pv: pv.length ? [selectedMove, ...pv.slice(1)] : [selectedMove], humanCandidates: reportedCandidates, humanProfile: profile, mind, decision: { source: selectedSource, engineMove: engineMoveUci, selectedMove: selectedMove.uci(), engineAgreement: selectedMove.uci() === engineMoveUci, reasons: selectedReasons } };
     };
 
     const tacticalPriority = findTacticalPriority(board, this.engine, result, options.tacticalSearchDepth ?? 5);
