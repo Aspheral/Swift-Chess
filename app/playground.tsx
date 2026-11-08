@@ -5,6 +5,7 @@ import { Game, Move, Piece, SwiftOpening } from "../src";
 import type { SwiftMindSnapshot } from "../src";
 import type { SwiftWorkerResponse } from "../src/chess/worker-protocol";
 import { safeEmergencyProvisional } from "../src/chess/provisional-safety";
+import { isDarkSquare, squareAtVisualIndex, visualIndexForSquare } from "../src/chess/board-view";
 
 const files = "abcdefgh";
 const pieceNames: Record<Piece, string> = {
@@ -66,11 +67,8 @@ const resultLabels: Record<string, string> = {
 
 function ThoughtArrows({ arrows, flipped }: { arrows: Arrow[]; flipped: boolean }) {
   const point = (square: number) => {
-    const file = square & 7;
-    const rank = Math.floor(square / 8);
-    const visualFile = flipped ? 7 - file : file;
-    const visualRank = flipped ? rank : 7 - rank;
-    return { x: visualFile * 12.5 + 6.25, y: visualRank * 12.5 + 6.25 };
+    const visualIndex = visualIndexForSquare(square, flipped);
+    return { x: (visualIndex % 8) * 12.5 + 6.25, y: Math.floor(visualIndex / 8) * 12.5 + 6.25 };
   };
 
   return (
@@ -470,9 +468,8 @@ export default function Playground() {
             <div className="rank-labels" aria-hidden="true">{(flipped ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1]).map((rank) => <span key={rank}>{rank}</span>)}</div>
             <div className="chessboard" aria-label="Interactive chessboard">
               {Array.from({ length: 64 }, (_, visualIndex) => {
-                const visualRank = Math.floor(visualIndex / 8); const visualFile = visualIndex % 8;
-                const rank = flipped ? visualRank : 7 - visualRank; const file = flipped ? 7 - visualFile : visualFile; const index = rank * 8 + file;
-                const piece = board.pieceAt(index); const isSelected = selected === index; const isTarget = selectedTargets.has(index); const isLast = lastMove?.from === index || lastMove?.to === index; const isKingInCheck = piece?.[1] === "k" && piece[0] === turn && inCheck; const dark = (rank + file) % 2 === 1;
+                const index = squareAtVisualIndex(visualIndex, flipped);
+                const piece = board.pieceAt(index); const isSelected = selected === index; const isTarget = selectedTargets.has(index); const isLast = lastMove?.from === index || lastMove?.to === index; const isKingInCheck = piece?.[1] === "k" && piece[0] === turn && inCheck; const dark = isDarkSquare(index);
                 return <button key={index} className={`square ${dark ? "dark" : "light"} ${isSelected ? "selected" : ""} ${isTarget ? "target" : ""} ${isLast ? "last" : ""} ${isKingInCheck ? "in-check" : ""}`} onClick={() => clickSquare(index)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropSquare(event, index)} aria-label={piece ? `${pieceNames[piece]} on ${squareName(index)}` : squareName(index)}>
                   {piece && <span className={`piece ${piece[0]}`} draggable={piece[0] === (analysisMode ? turn : playerSide)} onDragStart={(event) => dragStart(event, index)}><PieceArt piece={piece} /></span>}
                   {isTarget && <span className={`move-dot ${piece ? "capture" : ""}`} />}
