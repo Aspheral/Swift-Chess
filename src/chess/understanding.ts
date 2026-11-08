@@ -67,6 +67,84 @@ function pawnStructure(board: Board, color: Color): PawnStructureUnderstanding {
   return { isolated, doubled, backward, passed, chains, openFiles, semiOpenFiles };
 }
 
+/**
+ * Positional warning, not a claim of check: enemy rooks on the king's first
+ * two ranks can dominate the escape route even while pieces block the attack.
+ * Same-rank intrusions weigh more heavily. Ignore this pattern once the king
+ * has left the home-rank zone.
+ */
+export function backRankRookPressure(board: Board, color: Color): number {
+  let kingSquare = -1;
+  for (let square = 0; square < 64; square++) {
+    if (board.pieceAt(square) === `${color}k`) { kingSquare = square; break; }
+  }
+  if (kingSquare < 0) return 0;
+  const kingRank = Math.floor(kingSquare / 8);
+  if (color === "w" ? kingRank > 1 : kingRank < 6) return 0;
+  let pressure = 0;
+  for (let square = 0; square < 64; square++) {
+    if (board.pieceAt(square) !== `${opposite(color)}r`) continue;
+    const rank = Math.floor(square / 8);
+    if (color === "w" ? rank <= 1 : rank >= 6) pressure += rank === kingRank ? 2 : 1;
+  }
+  return pressure;
+}
+
+
+/**
+ * Forecast an opponent's immediate *legal* rook entry onto one of the
+ * defender king's home two ranks. This is a planning alert, not a tactical
+ * evaluation or an assertion that this is the opponent's best continuation.
+ *
+ * A geometric gate avoids generating moves when blocked files make entry
+ * impossible. Unprotected rooks that would simply hang without giving check
+ * do not count as meaningful invasion pressure.
+ */
+export function imminentRookInvasion(board: Board, defender: Color): number {
+  if (backRankRookPressure(board, defender) > 0 || board.isInCheck(defender)) return 0;
+  const king = Array.from({ length: 64 }, (_, square) => square)
+    .find((square) => board.pieceAt(square) === defender + "k");
+  if (king === undefined) return 0;
+  const kingRank = Math.floor(king / 8);
+  if (defender === "w" ? kingRank > 1 : kingRank < 6) return 0;
+
+  const attacker = opposite(defender);
+  const ranks = defender === "w" ? [0, 1] : [6, 7];
+  let pathExists = false;
+  for (let square = 0; square < 64 && !pathExists; square++) {
+    if (board.pieceAt(square) !== attacker + "r") continue;
+    const fromRank = Math.floor(square / 8);
+    if (ranks.includes(fromRank)) continue;
+    const file = square & 7;
+    for (const targetRank of ranks) {
+      const direction = Math.sign(targetRank - fromRank);
+      for (let rank = fromRank + direction; rank !== targetRank + direction; rank += direction) {
+        const occupant = board.pieceAt(rank * 8 + file);
+        if (rank === targetRank && (!occupant || occupant[0] === defender)) pathExists = true;
+        if (occupant) break;
+      }
+      if (pathExists) break;
+    }
+  }
+  if (!pathExists) return 0;
+
+  const opponentToMove = board.turn() === attacker ? board : board.makeNullMove();
+  const perRook = new Map<number, number>();
+  for (const move of opponentToMove.legalMoves()) {
+    if (opponentToMove.pieceAt(move.from) !== attacker + "r") continue;
+    const targetRank = Math.floor(move.to / 8);
+    if (!ranks.includes(targetRank) || ranks.includes(Math.floor(move.from / 8))) continue;
+    const next = opponentToMove.makeMove(move);
+    const checksKing = next.isInCheck(defender);
+    const hanging = next.isSquareAttacked(move.to, defender) &&
+      !next.isSquareAttacked(move.to, attacker);
+    if (hanging && !checksKing) continue;
+    const pressure = (targetRank === kingRank ? 2 : 1) + (checksKing ? 1 : 0);
+    perRook.set(move.from, Math.max(perRook.get(move.from) ?? 0, pressure));
+  }
+  return Math.min(6, [...perRook.values()].reduce((sum, pressure) => sum + pressure, 0));
+}
+
 function kingUnderstanding(
   board: Board,
   color: Color,
