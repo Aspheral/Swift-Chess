@@ -416,8 +416,11 @@ export class SwiftEngine {
       nonPawnPieces++;
       if (piece[1] === "r" || piece[1] === "q") rooksQueens++;
     }
-    if (nonPawnPieces === 0) return false;
-    if (rooksQueens === 0 && nonPawnPieces <= 1) return false;
+    // PR #42: a side with only a couple of non-pawn pieces can be in
+    // zugzwang even if the opponent has overwhelming material. Conservatively
+    // require sufficient OWN mobility before a speculative pass.
+    if (nonPawnPieces <= 2) return false;
+    if (rooksQueens === 0 && nonPawnPieces <= 4) return false;
     return true;
   }
 
