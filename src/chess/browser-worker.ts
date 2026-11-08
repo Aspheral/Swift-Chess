@@ -77,6 +77,7 @@ context.onmessage = (event) => {
       secondLook: result.secondLook,
       mind: result.mind,
       decision: result.decision,
+      planVision: result.planVision,
     });
   } catch (error) {
     context.postMessage({
