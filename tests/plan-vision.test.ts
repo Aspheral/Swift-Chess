@@ -97,6 +97,28 @@ describe("Two-track human plan vision", () => {
     expect(strict.move?.uci()).toBe("a2a3");
   });
 
+  it("attaches a trace only to the chosen, verified move in quiet human-plan play", () => {
+    const board = Board.start();
+    const baseOptions = {
+      depth: 2, safetyDepth: 2, ponderDepth: 2,
+      safetyCandidateLimit: 3, concreteCandidateLimit: 6,
+      tacticalSearchDepth: 0, adaptiveThinking: false as const,
+      randomness: 0, errorBudget: 0.05,
+      moveHistory: Array(22).fill("fixture"), seed: 101,
+    };
+    const enabled = new HumanSwiftEngine().search(board, { ...baseOptions, planVision: true });
+    const disabled = new HumanSwiftEngine().search(board, { ...baseOptions, planVision: false });
+    expect(enabled.move).not.toBeNull();
+    expect(enabled.move?.uci()).toBeDefined();
+    expect(enabled.planVision?.rootMove).toBe(enabled.move?.uci());
+    expect(enabled.planVision?.opponentUnopposed).toBe(true);
+    expect(disabled.planVision).toBeUndefined();
+    // The raw adversarial root evaluation has not been overwritten by fantasy.
+    expect(enabled.score).toBe(disabled.score);
+    expect(enabled.depth).toBe(disabled.depth);
+    expect(enabled.decision?.source).toBe("human-plan");
+  });
+
   it("never bypasses the opponent-aware safety layer or forced mate detection", () => {
     const board = Board.fromFEN("6k1/8/8/8/8/7q/8/6K1 w - - 0 1");
     const result = new HumanSwiftEngine().search(board, { depth: 2, safetyDepth: 2,
