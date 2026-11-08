@@ -1,0 +1,102 @@
+name: Swift 2050 32-Game Validation
+
+# Run only by explicit manual dispatch. The previous PR-triggered 32-game
+# validation run remains available, but ordinary pushes must not replay it.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/swift-2050-pilot.yml"
+
+jobs:
+  match:
+    if: github.event_name == 'workflow_dispatch'
+    name: 2050-human-batch-${{ matrix.batch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - { batch: 0, opening_start: 0 }
+          - { batch: 1, opening_start: 4 }
+          - { batch: 2, opening_start: 8 }
+          - { batch: 3, opening_start: 2 }
+    env:
+      SWIFT_RUN_STOCKFISH_GATE: "1"
+      SWIFT_STOCKFISH_ELO: "2050"
+      SWIFT_CALIBRATION_MODE: "human"
+      SWIFT_CALIBRATION_BATCH: ${{ matrix.batch }}
+      SWIFT_CALIBRATION_REQUIRE_TARGET: "0"
+      SWIFT_MAX_PLIES: "500"
+      SWIFT_CALIBRATION_TEST_TIMEOUT_MS: "4200000"
+      SWIFT_CALIBRATION_OPENING_PAIRS: "4"
+      SWIFT_CALIBRATION_OPENING_START: ${{ matrix.opening_start }}
+    steps:
+      - name: Checkout experimental Swift
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Install Stockfish
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y stockfish
+          if ! command -v stockfish >/dev/null; then
+            sudo ln -s /usr/games/stockfish /usr/local/bin/stockfish
+          fi
+          printf 'uci\nquit\n' | stockfish | grep -m 1 -E '^id name|^Stockfish'
+
+      - name: Play eight completed games in four color-reversed opening pairs
+        run: pnpm exec vitest run tests/stockfish-gate.test.ts --config vitest.config.mts
+
+      - name: Upload batch results and complete move histories
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-2050-32-batch-${{ matrix.batch }}
+          path: calibration-results/human-elo-2050-batch-${{ matrix.batch }}.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  summarize:
+    name: validate-and-summarize-32-games
+    needs: match
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout aggregation tool
+        uses: actions/checkout@v4
+
+      - name: Download all four match records
+        uses: actions/download-artifact@v4
+        with:
+          pattern: swift-2050-32-batch-*
+          path: calibration-downloads
+          merge-multiple: true
+
+      - name: Validate results and create 32-game scorecard
+        run: node scripts/aggregate-2050-32.mjs calibration-downloads calibration-results/swift-2050-32-summary.json
+
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-2050-32-summary
+          path: calibration-results/swift-2050-32-summary.json
+          if-no-files-found: warn
+          retention-days: 30

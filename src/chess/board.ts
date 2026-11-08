@@ -34,10 +34,28 @@ export interface PositionState {
   enPassant: number | null;
   halfmove: number;
   fullmove: number;
+  /** Tracked king locations eliminate a full 64-square scan at every node. */
+  whiteKing: number;
+  blackKing: number;
 }
+
+// One shared set of attack directions. These are queried on every legality
+// test and must not be allocated afresh for each search node.
+const KNIGHT_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1],
+];
+const KING_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1],
+];
+const SLIDER_ATTACK_RAYS: ReadonlyArray<readonly [number, number, readonly PieceType[]]> = [
+  [1,0,["r","q"]],[-1,0,["r","q"]],[0,1,["r","q"]],[0,-1,["r","q"]],
+  [1,1,["b","q"]],[-1,1,["b","q"]],[1,-1,["b","q"]],[-1,-1,["b","q"]],
+];
 
 export class Board {
   private searchKeyCache?: string;
+  /** Immutable board snapshots may share a legal-list computation safely. */
+  private legalMovesCache?: Move[];
 
   private constructor(private readonly state: PositionState) {}
 
@@ -63,7 +81,7 @@ export class Board {
     }
     if (fields[1] !== "w" && fields[1] !== "b") throw new Error("Invalid FEN side to move");
     const ep = fields[3] === "-" ? null : Board.squareIndex(fields[3]);
-    return new Board({ board, turn: fields[1], castling: fields[2] === "-" ? "" : fields[2], enPassant: ep, halfmove: Number(fields[4]), fullmove: Number(fields[5]) });
+    return new Board({ board, turn: fields[1], castling: fields[2] === "-" ? "" : fields[2], enPassant: ep, halfmove: Number(fields[4]), fullmove: Number(fields[5]), whiteKing: board.indexOf("wk"), blackKing: board.indexOf("bk") });
   }
 
   toFEN(): string {
@@ -89,6 +107,9 @@ export class Board {
 
   turn(): Color { return this.state.turn; }
 
+  /** Halfmoves since the most recent pawn move or capture (fifty-move rule). */
+  halfmoveClock(): number { return this.state.halfmove; }
+
   castlingRights(): string { return this.state.castling; }
 
   searchKey(): string {
@@ -99,17 +120,86 @@ export class Board {
   }
 
   legalMoves(): Move[] {
-    return this.pseudoLegalMoves().filter((move) => {
+    if (this.legalMovesCache === undefined) {
+      this.legalMovesCache = this.pseudoLegalMoves().filter((move) => {
+        const next = this.makeMove(move);
+        return !next.isInCheck(this.state.turn);
+      });
+    }
+    // Never expose the cached array: user/UI callers may sort, shift or
+    // splice their own legal-move list without changing engine search order.
+    return this.legalMovesCache.slice();
+  }
+
+  /**
+   * A noncapturing pawn move that attacks a more valuable opposing piece is
+   * forcing even though it neither captures nor checks. Examples include a
+   * central ...d5 attacking a bishop on c4, or ...b6 chasing Qa5.
+   * No pseudo-legal future captures or expensive search are required.
+   */
+  createsPawnPieceThreat(move: Move): boolean {
+    const pawn = this.state.board[move.from];
+    if (!pawn || pawn[1] !== "p" || this.state.board[move.to] !== null) return false;
+    const color = pawn[0];
+    const file = move.to & 7;
+    const direction = color === "w" ? 8 : -8;
+    for (const shift of [-1, 1]) {
+      if (file + shift < 0 || file + shift > 7) continue;
+      const index = move.to + direction + shift;
+      if (index < 0 || index >= 64) continue;
+      const target = this.state.board[index];
+      if (target && target[0] !== color &&
+          (target[1] === "n" || target[1] === "b" ||
+           target[1] === "r" || target[1] === "q")) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Legal captures and promotions for quiet-position quiescence search.
+   *
+   * Only tactical moves require a full king-safety test once any legal move
+   * has been found. The hasLegalMove flag preserves stalemate recognition:
+   * no legal captures does not imply the side is stalemated.
+   *
+   * Checking positions must continue to use legalMoves(), because a legal
+   * quiet evasion can be the only way out of check.
+   */
+  legalTactics(includeQuietChecks = false, includePawnThreats = false): { moves: Move[]; hasLegalMove: boolean } {
+    // The planner, mate checks and game adjudication frequently already
+    // requested all legal moves for this same immutable Board.
+    if (this.legalMovesCache !== undefined) {
+      return {
+        hasLegalMove: this.legalMovesCache.length > 0,
+        moves: this.legalMovesCache.filter((move) =>
+          move.enPassant || !!move.promotion || this.state.board[move.to] !== null ||
+          (includeQuietChecks && this.makeMove(move).isInCheck(opposite(this.state.turn))) ||
+          (includePawnThreats && this.createsPawnPieceThreat(move))),
+      };
+    }
+    const tactical: Move[] = [];
+    let hasLegalMove = false;
+    for (const move of this.pseudoLegalMoves()) {
+      const isTactical = move.enPassant || !!move.promotion || this.state.board[move.to] !== null;
+      if (!isTactical && hasLegalMove && !includeQuietChecks &&
+          !(includePawnThreats && this.createsPawnPieceThreat(move))) continue;
       const next = this.makeMove(move);
-      return !next.isInCheck(this.state.turn);
-    });
+      if (next.isInCheck(this.state.turn)) continue;
+      hasLegalMove = true;
+      // At the first quiescence horizon, a forcing QUIET check deserves one
+      // bounded look. Evasions and every capture remain legally validated.
+      if (isTactical ||
+          (includeQuietChecks && next.isInCheck(next.turn())) ||
+          (includePawnThreats && this.createsPawnPieceThreat(move))) tactical.push(move);
+    }
+    return { moves: tactical, hasLegalMove };
   }
 
   isCheckmate(): boolean { return this.isInCheck(this.state.turn) && this.legalMoves().length === 0; }
   isStalemate(): boolean { return !this.isInCheck(this.state.turn) && this.legalMoves().length === 0; }
   isInCheck(color: Color): boolean {
-    const king = this.state.board.findIndex((piece) => piece === `${color}k`);
-    return king >= 0 && this.isSquareAttacked(king, opposite(color));
+    const king = color === "w" ? this.state.whiteKing : this.state.blackKing;
+    return king >= 0 && this.isSquareAttackedIndex(king, opposite(color));
   }
 
   /** Public attack-map query used by tactical and human decision layers. */
@@ -126,6 +216,8 @@ export class Board {
       enPassant: null,
       halfmove: this.state.halfmove + 1,
       fullmove: this.state.fullmove + (this.state.turn === "b" ? 1 : 0),
+      whiteKing: this.state.whiteKing,
+      blackKing: this.state.blackKing,
     });
   }
 
@@ -161,7 +253,13 @@ export class Board {
     if (captured === "br" && move.to === 63) remove("k");
     let ep: number | null = null;
     if (movingType === "p" && Math.abs(move.to - move.from) === 16) ep = (move.to + move.from) / 2;
-    return new Board({ board, turn: opposite(this.state.turn), castling, enPassant: ep, halfmove: movingType === "p" || captured ? 0 : this.state.halfmove + 1, fullmove: this.state.fullmove + (this.state.turn === "b" ? 1 : 0) });
+    return new Board({
+      board, turn: opposite(this.state.turn), castling, enPassant: ep,
+      halfmove: movingType === "p" || captured ? 0 : this.state.halfmove + 1,
+      fullmove: this.state.fullmove + (this.state.turn === "b" ? 1 : 0),
+      whiteKing: captured === "wk" ? -1 : movingType === "k" && this.state.turn === "w" ? move.to : this.state.whiteKing,
+      blackKing: captured === "bk" ? -1 : movingType === "k" && this.state.turn === "b" ? move.to : this.state.blackKing,
+    });
   }
 
   material(): number {
@@ -207,7 +305,7 @@ export class Board {
   }
 
   private knightMoves(from: number, moves: Move[]) {
-    for (const [df, dr] of [[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]]) this.addStep(from, df, dr, moves);
+    for (const [df, dr] of KNIGHT_OFFSETS) this.addStep(from, df, dr, moves);
   }
   private kingMoves(from: number, moves: Move[]) {
     for (const df of [-1,0,1]) for (const dr of [-1,0,1]) if (df || dr) this.addStep(from, df, dr, moves);
@@ -236,12 +334,8 @@ export class Board {
     const file = square & 7, rank = Math.floor(square / 8);
     const pawnRank = rank + (by === "w" ? -1 : 1);
     for (const df of [-1,1]) { const f=file+df; if (f>=0&&f<8&&pawnRank>=0&&pawnRank<8&&this.state.board[pawnRank*8+f]===`${by}p`) return true; }
-    for (const [df,dr] of [[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]]) { const f=file+df,r=rank+dr; if(f>=0&&f<8&&r>=0&&r<8&&this.state.board[r*8+f]===`${by}n`) return true; }
-    const sliderAttacks: Array<[number, number, PieceType[]]> = [
-      [1,0,["r","q"]], [-1,0,["r","q"]], [0,1,["r","q"]], [0,-1,["r","q"]],
-      [1,1,["b","q"]], [-1,1,["b","q"]], [1,-1,["b","q"]], [-1,-1,["b","q"]],
-    ];
-    for (const [df,dr,types] of sliderAttacks) {
+    for (const [df,dr] of KNIGHT_OFFSETS) { const f=file+df,r=rank+dr; if(f>=0&&f<8&&r>=0&&r<8&&this.state.board[r*8+f]===`${by}n`) return true; }
+    for (const [df,dr,types] of SLIDER_ATTACK_RAYS) {
       let f=file+df,r=rank+dr;
       while(f>=0&&f<8&&r>=0&&r<8){
         const p=this.state.board[r*8+f];
@@ -249,7 +343,7 @@ export class Board {
         f+=df;r+=dr;
       }
     }
-    for (const df of [-1,0,1]) for (const dr of [-1,0,1]) if(df||dr){const f=file+df,r=rank+dr;if(f>=0&&f<8&&r>=0&&r<8&&this.state.board[r*8+f]===`${by}k`)return true;}
+    for (const [df,dr] of KING_OFFSETS) { const f=file+df,r=rank+dr; if(f>=0&&f<8&&r>=0&&r<8&&this.state.board[r*8+f]===`${by}k`)return true; }
     return false;
   }
 

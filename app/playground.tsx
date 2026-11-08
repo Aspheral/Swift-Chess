@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Game, Move, Piece, SwiftOpening } from "../src";
-import type { SwiftMindSnapshot } from "../src";
+import type { SwiftMindSnapshot, SoloPlanVision } from "../src";
 import type { SwiftWorkerResponse } from "../src/chess/worker-protocol";
+import { safeEmergencyProvisional } from "../src/chess/provisional-safety";
 import { isDarkSquare, squareAtVisualIndex, visualIndexForSquare } from "../src/chess/board-view";
 
 const files = "abcdefgh";
@@ -28,6 +29,11 @@ function squareIndex(square: string): number | null {
 
 function planLabel(plan: string): string {
   return plan.split("-").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
+}
+
+function imaginedMoves(line: string[]): string {
+  return line.map((uci) => uci.slice(0, 2) + "–" + uci.slice(2, 4) +
+    (uci.length > 4 ? "=" + uci[4].toUpperCase() : "")).join(" → ");
 }
 
 function arrowFromUci(uci: string): Arrow | null {
@@ -91,6 +97,7 @@ export default function Playground() {
   const openingSeed = useRef(Date.now() & 0xffffffff);
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
+  const searchWatchdogRef = useRef<number | null>(null);
   const activeSearchRef = useRef<{ id: number; version: number; game: Game; startedAt: number; provisional?: string } | null>(null);
   const playerSideRef = useRef<Side>("w");
   const analysisModeRef = useRef(false);
@@ -110,6 +117,8 @@ export default function Playground() {
   const [flipped, setFlipped] = useState(false);
   const [thoughtArrows, setThoughtArrows] = useState<Arrow[]>([]);
   const [mind, setMind] = useState<SwiftMindSnapshot | null>(null);
+  const [planVision, setPlanVision] = useState<SoloPlanVision | null>(null);
+  const [realLine, setRealLine] = useState<string[]>([]);
   const gameVersion = useRef(0);
 
   const legalMoves = board.legalMoves();
@@ -124,21 +133,40 @@ export default function Playground() {
     (index % 2 === 0 ? "w" : "b") === playerSide,
   );
 
+  function clearSearchWatchdog() {
+    if (searchWatchdogRef.current !== null) {
+      window.clearTimeout(searchWatchdogRef.current);
+      searchWatchdogRef.current = null;
+    }
+  }
+
   function finishFallbackMove(nowMs: number) {
     const active = activeSearchRef.current;
     if (!active?.provisional || active.version !== gameVersion.current || active.game !== gameRef.current) return;
+    clearSearchWatchdog();
     if (analysisModeRef.current || active.game.turn() === playerSideRef.current || active.game.result() !== "ongoing") return;
     const move = active.game.legalMoves().find((candidate) => candidate.uci() === active.provisional);
-    if (!move) return;
+    // Defense in depth: never play a provisional root move that skipped
+    // mate checks, even if a stale or buggy worker sent it.
+    if (!move || !safeEmergencyProvisional(active.game.board(), move)) {
+      activeSearchRef.current = null;
+      workerRef.current?.terminate();
+      workerRef.current = null;
+      setSearchError("Swift could not verify its emergency move. Retry instead of risking a forced mate.");
+      setThinking(false);
+      return;
+    }
     active.game.play(move);
     setBoard(active.game.board());
     setLastMove({ from: move.from, to: move.to });
     setHistory(active.game.moveHistory());
     setActualThinkSeconds(Math.max(0, (nowMs - active.startedAt) / 1000));
-    setSecondLookDepth("Swift used its verified first-pass move as a fallback.");
+    setSecondLookDepth("Swift used a separately checked emergency fallback after its search stopped.");
     setThinking(false);
     setSecondLookReason(null);
     setThoughtArrows([]);
+    setPlanVision(null);
+    setRealLine([]);
     gameVersion.current += 1;
     workerRef.current?.terminate();
     workerRef.current = null;
@@ -153,6 +181,7 @@ export default function Playground() {
       const response = event.data;
       const active = activeSearchRef.current;
       if (!active || response.id !== active.id) return;
+      if (response.type === "result" || response.type === "error") clearSearchWatchdog();
 
       if (response.type === "provisional") {
         active.provisional = response.move;
@@ -170,6 +199,8 @@ export default function Playground() {
           return;
         }
         activeSearchRef.current = null;
+        workerRef.current?.terminate();
+        workerRef.current = null;
         setSearchError("Swift could not finish this search. Start a new game or retry.");
         setThinking(false);
         return;
@@ -199,6 +230,8 @@ export default function Playground() {
         );
         if (response.opening) setOpening(response.opening);
         setMind(response.mind ?? null);
+        setPlanVision(response.planVision ?? null);
+        setRealLine(response.pv.slice(0, 8));
         if (!analysisModeRef.current && move) {
           setActualThinkSeconds(Math.max(0, (performance.now() - latest.startedAt) / 1000));
           setSecondLookDepth(response.secondLook?.improvedDepth
@@ -223,12 +256,15 @@ export default function Playground() {
       else finish();
     };
     worker.onerror = () => {
+      clearSearchWatchdog();
       const active = activeSearchRef.current;
       if (active?.provisional && !analysisModeRef.current) {
         finishFallbackMove(performance.now());
         return;
       }
       activeSearchRef.current = null;
+      workerRef.current?.terminate();
+      workerRef.current = null;
       setSearchError("The chess worker stopped unexpectedly. Retry or start a new game.");
       setThinking(false);
     };
@@ -237,6 +273,7 @@ export default function Playground() {
   }
 
   function restartWorker() {
+    clearSearchWatchdog();
     setSecondLookReason(null);
     setSecondLookDepth(null);
     workerRef.current?.terminate();
@@ -246,6 +283,7 @@ export default function Playground() {
 
   function runSwift(version: number, game: Game) {
     if (version !== gameVersion.current || gameRef.current !== game || (!analysisModeRef.current && game.turn() === playerSideRef.current)) return;
+    clearSearchWatchdog();
     const id = ++requestIdRef.current;
     activeSearchRef.current = { id, version, game, startedAt: performance.now() };
     setThinking(true);
@@ -261,6 +299,25 @@ export default function Playground() {
       positionHistoryKeys: game.positionHistoryKeys(),
       mode: analysisModeRef.current ? "analyze" : "play",
     });
+    // A worker can stall without emitting an error or result. Keep the board
+    // responsive and retain the move only if it passes emergency verification.
+    // Match both request ID and game version: an old timeout cannot affect a
+    // new game, an undo, a side change or a newer analysis.
+    searchWatchdogRef.current = window.setTimeout(() => {
+      const pending = activeSearchRef.current;
+      if (!pending || pending.id !== id || pending.version !== version ||
+          pending.game !== game || gameVersion.current !== version) return;
+      if (!analysisModeRef.current && pending.provisional) {
+        finishFallbackMove(performance.now());
+        return;
+      }
+      activeSearchRef.current = null;
+      workerRef.current?.terminate();
+      workerRef.current = null;
+      searchWatchdogRef.current = null;
+      setSearchError("Swift's search exceeded its time limit. Retry to start a fresh search.");
+      setThinking(false);
+    }, 30_000);
   }
 
   function setGameMode(nextMode: GameMode) {
@@ -277,6 +334,8 @@ export default function Playground() {
     setOpening(null);
     setThoughtArrows([]);
     setMind(null);
+    setPlanVision(null);
+    setRealLine([]);
   }
 
   function reset(side: Side = playerSide) {
@@ -286,7 +345,7 @@ export default function Playground() {
     setSearchError(null);
     openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
     playerSideRef.current = side;
-    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setActualThinkSeconds(null); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlayerSide(side); setFlipped(side === "b");
+    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setActualThinkSeconds(null); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlanVision(null); setRealLine([]); setPlayerSide(side); setFlipped(side === "b");
   }
 
   function undoPlayerMove() {
@@ -319,6 +378,8 @@ export default function Playground() {
     setOpening(null);
     setThoughtArrows([]);
     setMind(null);
+    setPlanVision(null);
+    setRealLine([]);
   }
 
   function applyHumanMove(move: Move) {
@@ -328,6 +389,8 @@ export default function Playground() {
       setThinking(false);
       setThoughtArrows([]);
       setMind(null);
+      setPlanVision(null);
+      setRealLine([]);
       setOpening(null);
     }
     game.play(move);
@@ -393,7 +456,10 @@ export default function Playground() {
     runSwift(gameVersion.current, gameRef.current);
   }, [turn, playerSide, terminal, thinking, analysisMode, searchError]);
 
-  useEffect(() => () => workerRef.current?.terminate(), []);
+  useEffect(() => () => {
+    if (searchWatchdogRef.current !== null) window.clearTimeout(searchWatchdogRef.current);
+    workerRef.current?.terminate();
+  }, []);
 
   return (
     <section className="playground" id="play">
@@ -444,6 +510,8 @@ export default function Playground() {
             <strong>{mind?.plan ? planLabel(mind.plan) : (thoughtArrows.length ? (analysisMode ? `${thoughtArrows.length} preferred move${thoughtArrows.length === 1 ? "" : "s"}` : `${thoughtArrows.length} moves in view`) : "Reading the position")}</strong>
             <p>{mind?.planReason ?? "Swift carries plans forward when the position still supports them."}</p>
             {mind?.planProgressNote && <p className="mind-detail">{mind.planProgressNote}</p>}
+            {realLine.length > 1 && <p className="mind-detail">With replies (concrete search): <strong>{imaginedMoves(realLine)}</strong>. Possible variation, not a guaranteed reply.</p>}
+            {planVision && <p className="mind-detail">If left unanswered, Swift imagines: <strong>{imaginedMoves(planVision.imaginedLine)}</strong>{planVision.alternativeLine.length > 1 && <> · Or: {imaginedMoves(planVision.alternativeLine)}</>}. Hypothetical own moves only, never a forced line.</p>}
             {mind && <p className="mind-detail">Watching: {mind.concern} Confidence {Math.round(mind.confidence * 100)}% · held for {mind.planAge} Swift turn{mind.planAge === 1 ? "" : "s"}{mind.setbacks ? ` · ${mind.setbacks} setback${mind.setbacks === 1 ? "" : "s"}` : ""}.</p>}
             {analysisMode && thoughtArrows.length > 1 && <div className="analysis-legend"><span className="best-swatch" />Best move <span className="alt-swatch" />Other ideas</div>}
           </div>

@@ -1,0 +1,40 @@
+name: Swift Chess.com Game Forensics
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/swift-chesscom-forensics.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install independent Stockfish and Python chess
+        run: |
+          python -m pip install chess==1.11.2
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq stockfish
+      - name: Evaluate all 52 Black moves in Chess.com game
+        run: |
+          python -u scripts/audit-chesscom-186133372340.py --depth 16 \
+            --pgn tests/fixtures/chesscom-186133372340.pgn \
+            --output calibration-results/chesscom-186133372340-analysis.json
+      - name: Save full per-move evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-chesscom-186133372340-analysis
+          path: calibration-results/chesscom-186133372340-analysis.json
+          if-no-files-found: warn
+          retention-days: 30

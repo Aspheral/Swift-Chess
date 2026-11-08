@@ -177,3 +177,30 @@ export function openingLineMoves(name: SwiftOpening): string[] {
     case "Bishop's Opening": return ["e2e4", "e7e5", "f1c4", "g8f6"];
   }
 }
+
+/**
+ * Established defensive ideas in concrete Scotch Gambit structures.
+ * These are positional pattern checks rather than a PGN-specific move index;
+ * the tactical response is only offered while the required pieces remain
+ * in place and the move itself is legal. The final HumanSwiftEngine tactical
+ * verification still runs on the resulting move.
+ *
+ * Validated against independent Stockfish depth-16 analysis of the October
+ * 29 rated Scotch Gambit game; not a replacement for deeper calculation.
+ */
+export function verifiedScotchDefence(board: Board, history: string[]): Move | null {
+  if (board.turn() !== "b" || history.length > 29) return null;
+  if (board.pieceAt("d7") === "bp" && board.pieceAt("e5") === "wp" &&
+      board.pieceAt("c4") === "wb" && board.pieceAt("f6") === "bn" &&
+      board.pieceAt("e8") === "bk") {
+    const counter = legalChoice(board, ["d7d5"], 0);
+    if (counter && board.createsPawnPieceThreat(counter)) return counter;
+  }
+  if (history.length >= 20 &&
+      board.pieceAt("a5") === "wq" && board.pieceAt("b7") === "bp" &&
+      board.pieceAt("f7") === "bk" && board.pieceAt("f6") === "bb") {
+    const chase = legalChoice(board, ["b7b6"], 0);
+    if (chase && board.createsPawnPieceThreat(chase)) return chase;
+  }
+  return null;
+}

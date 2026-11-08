@@ -1,0 +1,25 @@
+[Event "Live Chess"]
+[Site "Chess.com"]
+[Date "2026.10.29"]
+[White "kohnaihuat"]
+[Black "SwiftChessTV"]
+[Result "0-1"]
+[WhiteElo "1935"]
+[BlackElo "1947"]
+[TimeControl "600"]
+[Termination "SwiftChessTV won on time"]
+[Link "https://www.chess.com/analysis/game/live/186133372340/analysis"]
+
+1. e4 e5 2. Nf3 Nc6 3. d4 exd4 4. Bc4 Nf6 5. e5 Bb4+
+6. c3 dxc3 7. bxc3 Be7 8. Qb3 Na5 9. Bxf7+ Kf8
+10. Qa4 Kxf7 11. exf6 Bxf6 12. Qxa5 d5 13. O-O Kg8
+14. Bf4 b6 15. Qb5 c5 16. Qc6 Bg4 17. Rd1 d4
+18. Bc7 Qe8 19. Qd5+ Be6 20. Qd6 dxc3 21. Re1 c2
+22. Na3 Bxa1 23. Nxc2 Qd7 24. Qxe6+ Qxe6 25. Rxe6 Bf6
+26. g4 c4 27. g5 Bb2 28. Be5 Bxe5 29. Nxe5 Rc8
+30. Re7 Kf8 31. Rxa7 Rg8 32. Nd7+ Ke8 33. Nxb6 Rc5
+34. Na4 Rxg5+ 35. Kf1 Rf5 36. Ne3 Rf4 37. Nd5 Rd4
+38. Re7+ Kd8 39. Ra7 Ke8 40. Nac3 h6 41. Ke2 h5
+42. Nc7+ Ke7 43. N3d5+ Kd6 44. Ra6+ Kc5 45. Ra5+ Kd6
+46. Ra6+ Kc5 47. Ne7 Re4+ 48. Kf3 Rxe7 49. Ne6+ Kb5
+50. Rd6 c3 51. Nd4+ Kc5 52. Nf5 Rf8 0-1

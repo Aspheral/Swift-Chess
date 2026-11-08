@@ -2,8 +2,8 @@ import { Board, Color, PieceType } from "./board";
 
 export interface PieceUnderstanding { square: string; type: PieceType; activity: number; mobility: number; defended: boolean; vulnerable: boolean; }
 export interface PawnStructureUnderstanding { isolated: number; doubled: number; backward: number; passed: number; chains: number; openFiles: number[]; semiOpenFiles: number[]; }
-export interface KingUnderstanding { square: string; pawnShield: number; escapeSquares: number; attackers: number; openFilesNearKing: number; exposed: boolean; }
-export interface TacticalUnderstanding { checks: number; captures: number; promotions: number; forcingMoves: number; }
+export interface KingUnderstanding { square: string; pawnShield: number; escapeSquares: number; attackers: number; openFilesNearKing: number; rookInvasionPressure: number; loomingRookInvasion: number; exposed: boolean; }
+export interface TacticalUnderstanding { checks: number; captures: number; promotions: number; forcingMoves: number; incomingChecks: number; }
 export interface PositionUnderstanding {
   sideToMove: Color;
   material: number;
@@ -22,6 +22,11 @@ const colorOf = (piece: string): Color => piece[0] as Color;
 const typeOf = (piece: string): PieceType => piece[1] as PieceType;
 const opposite = (color: Color): Color => color === "w" ? "b" : "w";
 const boardArray = (board: Board): Array<string | null> => Array.from({ length: 64 }, (_, square) => board.pieceAt(square));
+// Board positions are immutable. During a single decision, play profile,
+// idea generation and HumanSwiftEngine need identical position understanding.
+// Use the board instance as a weak cache key to avoid reconstructing the same
+// move sets and king analysis three or more times per move.
+const understandingCache = new WeakMap<Board, PositionUnderstanding>();
 
 function sideBoard(board: Board, color: Color): Board {
   return Board.fromFEN(board.toFEN().replace(/^(\S+) \S+/, `$1 ${color}`));
@@ -62,54 +67,156 @@ function pawnStructure(board: Board, color: Color): PawnStructureUnderstanding {
   return { isolated, doubled, backward, passed, chains, openFiles, semiOpenFiles };
 }
 
-function kingUnderstanding(board: Board, color: Color): KingUnderstanding {
+/**
+ * Positional warning, not a claim of check: enemy rooks on the king's first
+ * two ranks can dominate the escape route even while pieces block the attack.
+ * Same-rank intrusions weigh more heavily. Ignore this pattern once the king
+ * has left the home-rank zone.
+ */
+export function backRankRookPressure(board: Board, color: Color): number {
+  let kingSquare = -1;
+  for (let square = 0; square < 64; square++) {
+    if (board.pieceAt(square) === `${color}k`) { kingSquare = square; break; }
+  }
+  if (kingSquare < 0) return 0;
+  const kingRank = Math.floor(kingSquare / 8);
+  if (color === "w" ? kingRank > 1 : kingRank < 6) return 0;
+  let pressure = 0;
+  for (let square = 0; square < 64; square++) {
+    if (board.pieceAt(square) !== `${opposite(color)}r`) continue;
+    const rank = Math.floor(square / 8);
+    if (color === "w" ? rank <= 1 : rank >= 6) pressure += rank === kingRank ? 2 : 1;
+  }
+  return pressure;
+}
+
+
+/**
+ * Forecast an opponent's immediate *legal* rook entry onto one of the
+ * defender king's home two ranks. This is a planning alert, not a tactical
+ * evaluation or an assertion that this is the opponent's best continuation.
+ *
+ * A geometric gate avoids generating moves when blocked files make entry
+ * impossible. Unprotected rooks that would simply hang without giving check
+ * do not count as meaningful invasion pressure.
+ */
+export function imminentRookInvasion(board: Board, defender: Color): number {
+  if (backRankRookPressure(board, defender) > 0 || board.isInCheck(defender)) return 0;
+  const king = Array.from({ length: 64 }, (_, square) => square)
+    .find((square) => board.pieceAt(square) === defender + "k");
+  if (king === undefined) return 0;
+  const kingRank = Math.floor(king / 8);
+  if (defender === "w" ? kingRank > 1 : kingRank < 6) return 0;
+
+  const attacker = opposite(defender);
+  const ranks = defender === "w" ? [0, 1] : [6, 7];
+  let pathExists = false;
+  for (let square = 0; square < 64 && !pathExists; square++) {
+    if (board.pieceAt(square) !== attacker + "r") continue;
+    const fromRank = Math.floor(square / 8);
+    if (ranks.includes(fromRank)) continue;
+    const file = square & 7;
+    for (const targetRank of ranks) {
+      const direction = Math.sign(targetRank - fromRank);
+      for (let rank = fromRank + direction; rank !== targetRank + direction; rank += direction) {
+        const occupant = board.pieceAt(rank * 8 + file);
+        if (rank === targetRank && (!occupant || occupant[0] === defender)) pathExists = true;
+        if (occupant) break;
+      }
+      if (pathExists) break;
+    }
+  }
+  if (!pathExists) return 0;
+
+  const opponentToMove = board.turn() === attacker ? board : board.makeNullMove();
+  const perRook = new Map<number, number>();
+  for (const move of opponentToMove.legalMoves()) {
+    if (opponentToMove.pieceAt(move.from) !== attacker + "r") continue;
+    const targetRank = Math.floor(move.to / 8);
+    if (!ranks.includes(targetRank) || ranks.includes(Math.floor(move.from / 8))) continue;
+    const next = opponentToMove.makeMove(move);
+    const checksKing = next.isInCheck(defender);
+    const hanging = next.isSquareAttacked(move.to, defender) &&
+      !next.isSquareAttacked(move.to, attacker);
+    if (hanging && !checksKing) continue;
+    const pressure = (targetRank === kingRank ? 2 : 1) + (checksKing ? 1 : 0);
+    perRook.set(move.from, Math.max(perRook.get(move.from) ?? 0, pressure));
+  }
+  return Math.min(6, [...perRook.values()].reduce((sum, pressure) => sum + pressure, 0));
+}
+
+function kingUnderstanding(
+  board: Board,
+  color: Color,
+  ownMoves: ReturnType<Board["legalMoves"]>,
+  enemyMoves: ReturnType<Board["legalMoves"]>,
+): KingUnderstanding {
   const pieces = boardArray(board);
   const square = pieces.findIndex((piece) => piece === `${color}k`);
-  if (square < 0) return { square: "-", pawnShield: 0, escapeSquares: 0, attackers: 0, openFilesNearKing: 0, exposed: false };
+  if (square < 0) return { square: "-", pawnShield: 0, escapeSquares: 0, attackers: 0, openFilesNearKing: 0, rookInvasionPressure: 0, loomingRookInvasion: 0, exposed: false };
   const rank = Math.floor(square / 8), file = square & 7;
   const pawnShield = [-1, 0, 1].filter((df) => {
     const f = file + df, r = rank + (color === "w" ? 1 : -1);
     return f >= 0 && f < 8 && r >= 0 && r < 8 && board.pieceAt(r * 8 + f) === `${color}p`;
   }).length;
-  const ownMoves = sideBoard(board, color).legalMoves();
-  const enemyMoves = sideBoard(board, opposite(color)).legalMoves();
+  // These legal move sets were already generated by understandPosition.
   const attackers = enemyMoves.filter((move) => move.to === square).length;
   const openFilesNearKing = [-1, 0, 1].filter((df) => {
     const f = file + df;
     return f >= 0 && f < 8 && !pieces.some((piece, s) => piece?.endsWith("p") && (s & 7) === f);
   }).length;
-  return { square: squareName(square), pawnShield, escapeSquares: ownMoves.filter((move) => move.from === square).length, attackers, openFilesNearKing, exposed: pawnShield <= 1 || attackers > 0 || openFilesNearKing > 0 };
+  const rookInvasionPressure = backRankRookPressure(board, color);
+  const loomingRookInvasion = board.turn() === color && !rookInvasionPressure
+    ? imminentRookInvasion(board, color) : 0;
+  return { square: squareName(square), pawnShield, escapeSquares: ownMoves.filter((move) => move.from === square).length, attackers, openFilesNearKing, rookInvasionPressure, loomingRookInvasion, exposed: pawnShield <= 1 || attackers > 0 || openFilesNearKing > 0 || rookInvasionPressure > 0 };
 }
 
-function pieceUnderstanding(board: Board, color: Color, ownMoves: ReturnType<Board["legalMoves"]>, enemyMoves: ReturnType<Board["legalMoves"]>): PieceUnderstanding[] {
+function pieceUnderstanding(board: Board, color: Color, ownMoves: ReturnType<Board["legalMoves"]>): PieceUnderstanding[] {
   return boardArray(board).flatMap((piece, square) => {
     if (!piece || colorOf(piece) !== color || typeOf(piece) === "p" || typeOf(piece) === "k") return [];
     const mobility = ownMoves.filter((move) => move.from === square).length;
-    const defended = ownMoves.some((move) => move.to === square && move.from !== square);
-    const attackedByEnemy = enemyMoves.some((move) => move.to === square);
+    // Legal moves never land on a square occupied by a friendly piece.
+    // Using legalMoves() here made 'defended' false for EVERY piece, even a
+    // rook protected by its own pawn or bishop. Attack maps, unlike playable
+    // moves, describe protection of occupied friendly squares.
+    const defended = board.isSquareAttacked(square, color);
+    const attackedByEnemy = board.isSquareAttacked(square, opposite(color));
     return [{ square: squareName(square), type: typeOf(piece), activity: Math.min(10, mobility), mobility, defended, vulnerable: attackedByEnemy && !defended }];
   });
 }
 
 export function understandPosition(board: Board): PositionUnderstanding {
+  const cached = understandingCache.get(board);
+  if (cached) return cached;
   const sideToMove = board.turn();
   const material = board.material();
-  const whiteMoves = sideBoard(board, "w").legalMoves();
-  const blackMoves = sideBoard(board, "b").legalMoves();
+  const whiteView = sideBoard(board, "w");
+  const blackView = sideBoard(board, "b");
+  const whiteMoves = whiteView.legalMoves();
+  const blackMoves = blackView.legalMoves();
   const legal = sideToMove === "w" ? whiteMoves : blackMoves;
+  // Detect checks the opponent would have if it could move now.
+  // Attacks one move away matter before Swift's king is actually in check.
+  // Both colors' legal move sets were already computed for understanding.
+  const enemyView = sideToMove === "w" ? blackView : whiteView;
+  const enemyMoves = sideToMove === "w" ? blackMoves : whiteMoves;
+  const incomingChecks = enemyMoves.filter((move) =>
+    enemyView.makeMove(move).isInCheck(sideToMove)).length;
   const tacticalMoves = legal.filter((move) => board.makeMove(move).isInCheck(opposite(sideToMove)));
   const captures = legal.filter((move) => move.enPassant || board.pieceAt(move.to) !== null);
   const promotions = legal.filter((move) => !!move.promotion);
   const pawns = { w: pawnStructure(board, "w"), b: pawnStructure(board, "b") };
-  const pieces = { w: pieceUnderstanding(board, "w", whiteMoves, blackMoves), b: pieceUnderstanding(board, "b", blackMoves, whiteMoves) };
+  const pieces = { w: pieceUnderstanding(board, "w", whiteMoves), b: pieceUnderstanding(board, "b", blackMoves) };
   const development = {
     w: pieces.w.filter((piece) => ["n", "b"].includes(piece.type) && !["b1", "c1", "f1", "g1"].includes(piece.square)).length,
     b: pieces.b.filter((piece) => ["n", "b"].includes(piece.type) && !["b8", "c8", "f8", "g8"].includes(piece.square)).length,
   };
-  return {
+  const result: PositionUnderstanding = {
     sideToMove, material, materialAdvantage: material > 0 ? "white" : material < 0 ? "black" : "equal",
-    king: { w: kingUnderstanding(board, "w"), b: kingUnderstanding(board, "b") }, pieces, pawns,
-    tactics: { checks: tacticalMoves.length, captures: captures.length, promotions: promotions.length, forcingMoves: tacticalMoves.length + captures.length + promotions.length },
+    king: { w: kingUnderstanding(board, "w", whiteMoves, blackMoves), b: kingUnderstanding(board, "b", blackMoves, whiteMoves) }, pieces, pawns,
+    tactics: { checks: tacticalMoves.length, captures: captures.length, promotions: promotions.length, forcingMoves: tacticalMoves.length + captures.length + promotions.length, incomingChecks },
     space: { w: whiteMoves.length, b: blackMoves.length }, development,
   };
+  understandingCache.set(board, result);
+  return result;
 }

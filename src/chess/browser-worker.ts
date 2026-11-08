@@ -2,6 +2,8 @@ import { Board } from "./board";
 import { HumanSwiftEngine } from "./human-engine";
 import { decisionThinkPaceMs, swiftPlayProfile } from "./play-profile";
 import { allocateRapidThink } from "./rapid-time";
+import { safeEmergencyProvisional } from "./provisional-safety";
+import { safeProvisionalMove } from "./blunder-guard";
 import { SwiftWorkerRequest, SwiftWorkerResponse } from "./worker-protocol";
 
 type WorkerContext = {
@@ -37,8 +39,21 @@ context.onmessage = (event) => {
     }) : null;
     const result = activeEngine.search(board, {
       ...(rapid?.options ?? profile.options),
+      // Account for root, verification, plan probes and second looks together.
+      // A 3+2 clock cannot afford independent uncoordinated time budgets.
+      totalTimeMs: rapid?.targetTotalMs,
       adaptiveThinking: request.mode === "analyze" ? false : (rapid?.options.adaptiveThinking ?? profile.options.adaptiveThinking),
-      onInitialMove: (move) => context.postMessage({ type: "provisional", id: request.id, move: move.uci() }),
+      // A failed worker must never fall back to an unverified root move.
+      onInitialMove: (move, completedDepth) => {
+        // Analysis needs no fallback. Real play demands a completed first
+        // iteration, no exposed queen/rook, and bounded mate verification.
+        if (request.mode === "analyze") return;
+        const fallback = safeProvisionalMove(board, move, completedDepth,
+          (position) => activeEngine.evaluate(position));
+        if (fallback && safeEmergencyProvisional(board, fallback)) {
+          context.postMessage({ type: "provisional", id: request.id, move: fallback.uci() });
+        }
+      },
       onSecondLook: (reason) => context.postMessage({ type: "thinking", id: request.id, reason }),
       seed: request.seed,
       moveHistory: request.moveHistory,
@@ -77,6 +92,7 @@ context.onmessage = (event) => {
       secondLook: result.secondLook,
       mind: result.mind,
       decision: result.decision,
+      planVision: result.planVision,
     });
   } catch (error) {
     context.postMessage({

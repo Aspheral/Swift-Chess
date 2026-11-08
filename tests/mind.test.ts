@@ -162,4 +162,21 @@ describe("Swift persistent mind", () => {
     expect(state.lastMove).toBe("e2e4");
     expect(state.lastReason).toContain("Claim space");
   });
+  it("reconsiders an attacking plan when rooks invade the king's rank", () => {
+    const quiet = Board.fromFEN("4k3/8/8/8/8/8/6P1/5RK1 w - - 0 1");
+    const invaded = Board.fromFEN("4k3/8/8/8/8/8/6P1/2r2RK1 w - - 0 1");
+    const mind = new SwiftMind();
+    mind.observe(quiet, ideas(quiet, [["attack", 75], ["defend", 55]]), quietProfile);
+    const highPressure = { ...quietProfile, tacticalPressure: 0.27 };
+    // Exercise the real, priority-ordered ideas rather than an unsorted test stub.
+    const generation = generateIdeas(invaded);
+    const changed = mind.observe(invaded, generation, highPressure, ["e2e4", "e7e5"]);
+    expect(changed.plan).toBe("defend");
+    expect(changed.concern).toContain("rooks");
+    expect(changed.planAge).toBe(1);
+    expect(planProgressMetric(invaded, generation, "defend")).toBeLessThan(
+      planProgressMetric(quiet, ideas(quiet, [["defend", 55]]), "defend"),
+    );
+  });
+
 });

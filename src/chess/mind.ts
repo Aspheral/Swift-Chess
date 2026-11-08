@@ -113,6 +113,8 @@ export function planProgressMetric(
         ownVulnerable * 0.18 -
         (u.king[side].exposed ? 0.2 : 0) -
         u.king[side].attackers * 0.18 -
+        Math.min(0.4, u.king[side].rookInvasionPressure * 0.1) -
+        Math.min(0.24, u.king[side].loomingRookInvasion * 0.08) -
         ownWeakPawns * 0.04,
       );
     case "improve-piece":
@@ -151,7 +153,10 @@ function describeConcern(generation: IdeaGeneration, profile: MindPositionProfil
   const u = generation.understanding;
   const side = u.sideToMove;
   const enemy = opposite(side);
-  if (u.king[side].attackers > 0 || profile.tacticalPressure >= 0.2) return "Immediate king safety and forcing moves need attention.";
+  if (u.king[side].attackers > 0) return "Immediate king safety and forcing moves need attention.";
+  if (u.king[side].rookInvasionPressure > 0) return "Enemy rooks are penetrating the ranks around the king; an active defense may be needed.";
+  if (u.king[side].loomingRookInvasion > 0) return "An enemy rook may invade the ranks around the king next turn; consider a preventative move.";
+  if (profile.tacticalPressure >= 0.2) return "Immediate king safety and forcing moves need attention.";
   const vulnerable = u.pieces[side].filter((piece) => piece.vulnerable);
   if (vulnerable.length) return `${vulnerable[0].square} is loose and may need protection or activity.`;
   if (u.development[side] + 1 < u.development[enemy] && profile.gameStage === "opening") return "Development is lagging behind the opponent.";
@@ -163,36 +168,77 @@ function describeConcern(generation: IdeaGeneration, profile: MindPositionProfil
   return "No urgent defect dominates the position.";
 }
 
-function analyzeOpponent(history: string[], swiftSide: Color): SwiftOpponentModel {
-  const recentStart = Math.max(0, history.length - 12);
-  let board = Board.start();
-  let captures = 0;
-  let checks = 0;
-  let pawnMoves = 0;
-  let observedMoves = 0;
-  for (let index = 0; index < history.length; index += 1) {
-    const uci = history[index];
-    const move = board.legalMoves().find((candidate) => candidate.uci() === uci);
-    if (!move) break;
-    const mover = board.turn();
-    const movingPiece = board.pieceAt(move.from);
-    const capture = move.enPassant || board.pieceAt(move.to) !== null;
-    const child = board.makeMove(move);
-    if (index >= recentStart && mover !== swiftSide) {
-      observedMoves += 1;
-      if (capture) captures += 1;
-      if (movingPiece?.[1] === "p") pawnMoves += 1;
-      if (child.isInCheck(swiftSide)) checks += 1;
-    }
-    board = child;
+interface OpponentPlyEvidence {
+  mover: Color;
+  capture: boolean;
+  pawnMove: boolean;
+  gaveCheck: boolean;
+}
+
+/**
+ * Incremental game replay for opponent modeling.
+ *
+ * The old implementation reconstructed every move since move one whenever
+ * Swift considered another decision. Over a long rapid game that repeats a
+ * growing O(n)-move replay on every turn, while only the last 12 plies matter
+ * to the actual opponent model. Preserve those exact statistics and reuse
+ * the immutable Board for the common append-only case.
+ */
+export class OpponentHistoryTracker {
+  private board = Board.start();
+  private moves: string[] = [];
+  private evidence: OpponentPlyEvidence[] = [];
+
+  reset(): void {
+    this.board = Board.start();
+    this.moves = [];
+    this.evidence = [];
   }
-  if (!observedMoves) return { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 0 };
-  return {
-    aggression: clamp((captures * 0.55 + checks * 0.9) / observedMoves),
-    exchangeSeeking: clamp(captures / observedMoves),
-    pawnActivity: clamp(pawnMoves / observedMoves),
-    observedMoves,
-  };
+
+  observe(history: string[], swiftSide: Color): SwiftOpponentModel {
+    // An undo, new game, or branching variation invalidates cached play.
+    // Check the complete known prefix; the replay of legal moves itself is
+    // performed only for new entries in the common append-only case.
+    let common = 0;
+    while (common < this.moves.length && common < history.length &&
+           this.moves[common] === history[common]) common++;
+    if (common !== this.moves.length) this.reset();
+
+    for (let index = this.moves.length; index < history.length; index++) {
+      const uci = history[index];
+      const move = this.board.legalMoves().find((candidate) => candidate.uci() === uci);
+      if (!move) break;
+      const mover = this.board.turn();
+      const piece = this.board.pieceAt(move.from);
+      const capture = move.enPassant || this.board.pieceAt(move.to) !== null;
+      const child = this.board.makeMove(move);
+      this.evidence.push({
+        mover,
+        capture,
+        pawnMove: piece?.[1] === "p",
+        gaveCheck: child.isInCheck(mover === "w" ? "b" : "w"),
+      });
+      this.moves.push(uci);
+      this.board = child;
+    }
+
+    let captures = 0, checks = 0, pawnMoves = 0, observedMoves = 0;
+    for (let index = Math.max(0, history.length - 12); index < history.length; index++) {
+      const entry = this.evidence[index];
+      if (!entry || entry.mover === swiftSide) continue;
+      observedMoves++;
+      if (entry.capture) captures++;
+      if (entry.gaveCheck) checks++;
+      if (entry.pawnMove) pawnMoves++;
+    }
+    if (!observedMoves) return { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 0 };
+    return {
+      aggression: clamp((captures * 0.55 + checks * 0.9) / observedMoves),
+      exchangeSeeking: clamp(captures / observedMoves),
+      pawnActivity: clamp(pawnMoves / observedMoves),
+      observedMoves,
+    };
+  }
 }
 
 export class SwiftMind {
@@ -208,6 +254,7 @@ export class SwiftMind {
   private lastObservedPositionKey = "";
   private lastPlanMetric: number | null = null;
   private lastMetricPlan: IdeaKind | null = null;
+  private readonly opponentHistory = new OpponentHistoryTracker();
 
   observe(board: Board, generation: IdeaGeneration, profile: MindPositionProfile, history: string[] = []): SwiftMindSnapshot {
     if (history.length < this.state.observedHistoryLength) this.reset();
@@ -218,7 +265,7 @@ export class SwiftMind {
       // Do not let UI refreshes, analysis retries, or deeper searches manufacture
       // plan age and confidence when no chess move has actually happened.
       this.state.concern = describeConcern(generation, profile);
-      this.state.opponent = analyzeOpponent(history, board.turn());
+      this.state.opponent = this.opponentHistory.observe(history, board.turn());
       return this.snapshot();
     }
 
@@ -236,13 +283,15 @@ export class SwiftMind {
     const currentPriority = current ? planPriority(ideas, current) : -Infinity;
     const bestPriority = best?.priority ?? -Infinity;
     const tacticalEmergency = profile.tacticalPressure >= 0.24 || board.isInCheck(board.turn());
+    const kingThreats = generation.understanding.king[board.turn()];
+    const rookInvasionEmergency = (kingThreats.rookInvasionPressure >= 2 || kingThreats.loomingRookInvasion >= 2) && best?.kind === "defend";
 
     if (!best) {
       this.state.plan = null;
       this.state.planAge = 0;
       this.state.planReason = undefined;
       this.state.confidence *= 0.75;
-    } else if (tacticalEmergency && current && currentPriority !== -Infinity) {
+    } else if (tacticalEmergency && !rookInvasionEmergency && current && currentPriority !== -Infinity) {
       this.state.planReason = bestIdeaForPlan(ideas, current)?.reason ?? this.state.planReason;
       this.state.confidence = clamp(this.state.confidence - 0.04);
     } else if (!current || currentPriority === -Infinity) {
@@ -259,7 +308,7 @@ export class SwiftMind {
       this.state.planReason = currentIdea?.reason ?? this.state.planReason;
       this.state.confidence = clamp(this.state.confidence + confidenceGain(currentPriority, this.state.setbacks));
     } else {
-      const inertia = 10 + this.state.confidence * 12 + Math.min(6, this.state.planAge * 1.5);
+      const inertia = rookInvasionEmergency ? 6 : 10 + this.state.confidence * 12 + Math.min(6, this.state.planAge * 1.5);
       if (bestPriority >= currentPriority + inertia) {
         this.state.plan = best.kind;
         this.state.planAge = 1;
@@ -289,7 +338,7 @@ export class SwiftMind {
     }
 
     this.state.concern = describeConcern(generation, profile);
-    this.state.opponent = analyzeOpponent(history, board.turn());
+    this.state.opponent = this.opponentHistory.observe(history, board.turn());
     this.state.observedHistoryLength = history.length;
     this.lastObservedPositionKey = positionKey;
     this.lastMetricPlan = this.state.plan;
@@ -343,5 +392,6 @@ export class SwiftMind {
     this.lastObservedPositionKey = "";
     this.lastPlanMetric = null;
     this.lastMetricPlan = null;
+    this.opponentHistory.reset();
   }
 }
