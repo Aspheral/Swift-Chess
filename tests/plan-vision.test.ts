@@ -117,6 +117,15 @@ describe("Two-track human plan vision", () => {
     expect(enabled.score).toBe(disabled.score);
     expect(enabled.depth).toBe(disabled.depth);
     expect(enabled.decision?.source).toBe("human-plan");
+    console.log("SWIFT_PARALLEL_THOUGHT " + JSON.stringify({
+      rootMove: enabled.move?.uci(),
+      realSearch: (enabled.pv ?? []).map((move) => move.uci()),
+      possibleOwnPlan: enabled.planVision?.imaginedLine,
+      alternativeOwnPlan: enabled.planVision?.alternativeLine,
+      unopposed: enabled.planVision?.opponentUnopposed,
+      imaginedOwnMoves: enabled.planVision?.ownMovesImagined,
+      expansions: enabled.planVision?.examinedMoves,
+    }));
   });
 
   it("never bypasses the opponent-aware safety layer or forced mate detection", () => {
