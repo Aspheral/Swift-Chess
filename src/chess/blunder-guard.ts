@@ -151,3 +151,21 @@ export function avoidImmediateCheckmate(
   }
   return best ? { move: best.move, previousMove: proposed } : null;
 }
+
+
+/**
+ * A worker failure is not a chess decision. Do not let a zero-depth first
+ * pass choose a random legal move, and reject obvious queen/rook losses even
+ * if the partial search suggested them. Complete mate guards run afterward.
+ */
+export function safeProvisionalMove(
+  board: Board,
+  firstPass: Move,
+  completedDepth: number,
+  evaluate?: (next: Board) => number,
+): Move | null {
+  if (completedDepth < 1) return null;
+  const guard = avoidImmediateMajorBlunder(board, firstPass, [], evaluate);
+  const proposed = guard?.move ?? firstPass;
+  return immediateMajorPieceLoss(board, proposed) >= 160 ? null : proposed;
+}
