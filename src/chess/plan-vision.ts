@@ -64,7 +64,7 @@ function plausibleFutureMove(board: Board, move: Move, own: Color, line: string[
   if (!moving || moving[0] !== own) return false;
   // No king wanderlust in a middlegame fantasy, and no mechanical undoing of
   // the previous imagined move. Actual king safety is checked by real search.
-  if (moving[1] === "k" && board.toFEN().split("/").join("").replace(/[1-8]/g, "").length > 10) return false;
+  if (moving[1] === "k" && board.toFEN().split(/\s+/)[0].replace(/[1-8/]/g, "").length > 10) return false;
   const previous = line[line.length - 1];
   if (previous && previous.slice(2, 4) === move.uci().slice(0, 2) &&
     previous.slice(0, 2) === move.uci().slice(2, 4)) return false;
