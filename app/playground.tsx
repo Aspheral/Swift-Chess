@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Game, Move, Piece, SwiftOpening } from "../src";
-import type { SwiftMindSnapshot } from "../src";
+import type { SwiftMindSnapshot, SoloPlanVision } from "../src";
 import type { SwiftWorkerResponse } from "../src/chess/worker-protocol";
 import { safeEmergencyProvisional } from "../src/chess/provisional-safety";
 import { isDarkSquare, squareAtVisualIndex, visualIndexForSquare } from "../src/chess/board-view";
@@ -29,6 +29,11 @@ function squareIndex(square: string): number | null {
 
 function planLabel(plan: string): string {
   return plan.split("-").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
+}
+
+function imaginedMoves(line: string[]): string {
+  return line.map((uci) => uci.slice(0, 2) + "–" + uci.slice(2, 4) +
+    (uci.length > 4 ? "=" + uci[4].toUpperCase() : "")).join(" → ");
 }
 
 function arrowFromUci(uci: string): Arrow | null {
@@ -112,6 +117,8 @@ export default function Playground() {
   const [flipped, setFlipped] = useState(false);
   const [thoughtArrows, setThoughtArrows] = useState<Arrow[]>([]);
   const [mind, setMind] = useState<SwiftMindSnapshot | null>(null);
+  const [planVision, setPlanVision] = useState<SoloPlanVision | null>(null);
+  const [realLine, setRealLine] = useState<string[]>([]);
   const gameVersion = useRef(0);
 
   const legalMoves = board.legalMoves();
@@ -154,10 +161,12 @@ export default function Playground() {
     setLastMove({ from: move.from, to: move.to });
     setHistory(active.game.moveHistory());
     setActualThinkSeconds(Math.max(0, (nowMs - active.startedAt) / 1000));
-    setSecondLookDepth("Swift used its verified first-pass move as a fallback.");
+    setSecondLookDepth("Swift used a separately checked emergency fallback after its search stopped.");
     setThinking(false);
     setSecondLookReason(null);
     setThoughtArrows([]);
+    setPlanVision(null);
+    setRealLine([]);
     gameVersion.current += 1;
     workerRef.current?.terminate();
     workerRef.current = null;
@@ -221,6 +230,8 @@ export default function Playground() {
         );
         if (response.opening) setOpening(response.opening);
         setMind(response.mind ?? null);
+        setPlanVision(response.planVision ?? null);
+        setRealLine(response.pv.slice(0, 8));
         if (!analysisModeRef.current && move) {
           setActualThinkSeconds(Math.max(0, (performance.now() - latest.startedAt) / 1000));
           setSecondLookDepth(response.secondLook?.improvedDepth
@@ -323,6 +334,8 @@ export default function Playground() {
     setOpening(null);
     setThoughtArrows([]);
     setMind(null);
+    setPlanVision(null);
+    setRealLine([]);
   }
 
   function reset(side: Side = playerSide) {
@@ -332,7 +345,7 @@ export default function Playground() {
     setSearchError(null);
     openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
     playerSideRef.current = side;
-    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setActualThinkSeconds(null); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlayerSide(side); setFlipped(side === "b");
+    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setActualThinkSeconds(null); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlanVision(null); setRealLine([]); setPlayerSide(side); setFlipped(side === "b");
   }
 
   function undoPlayerMove() {
@@ -365,6 +378,8 @@ export default function Playground() {
     setOpening(null);
     setThoughtArrows([]);
     setMind(null);
+    setPlanVision(null);
+    setRealLine([]);
   }
 
   function applyHumanMove(move: Move) {
@@ -374,6 +389,8 @@ export default function Playground() {
       setThinking(false);
       setThoughtArrows([]);
       setMind(null);
+      setPlanVision(null);
+      setRealLine([]);
       setOpening(null);
     }
     game.play(move);
@@ -493,6 +510,8 @@ export default function Playground() {
             <strong>{mind?.plan ? planLabel(mind.plan) : (thoughtArrows.length ? (analysisMode ? `${thoughtArrows.length} preferred move${thoughtArrows.length === 1 ? "" : "s"}` : `${thoughtArrows.length} moves in view`) : "Reading the position")}</strong>
             <p>{mind?.planReason ?? "Swift carries plans forward when the position still supports them."}</p>
             {mind?.planProgressNote && <p className="mind-detail">{mind.planProgressNote}</p>}
+            {realLine.length > 1 && <p className="mind-detail">With replies (concrete search): <strong>{imaginedMoves(realLine)}</strong>. Possible variation, not a guaranteed reply.</p>}
+            {planVision && <p className="mind-detail">If left unanswered, Swift imagines: <strong>{imaginedMoves(planVision.imaginedLine)}</strong>{planVision.alternativeLine.length > 1 && <> · Or: {imaginedMoves(planVision.alternativeLine)}</>}. Hypothetical own moves only, never a forced line.</p>}
             {mind && <p className="mind-detail">Watching: {mind.concern} Confidence {Math.round(mind.confidence * 100)}% · held for {mind.planAge} Swift turn{mind.planAge === 1 ? "" : "s"}{mind.setbacks ? ` · ${mind.setbacks} setback${mind.setbacks === 1 ? "" : "s"}` : ""}.</p>}
             {analysisMode && thoughtArrows.length > 1 && <div className="analysis-legend"><span className="best-swatch" />Best move <span className="alt-swatch" />Other ideas</div>}
           </div>
