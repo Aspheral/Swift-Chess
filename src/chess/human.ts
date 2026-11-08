@@ -69,10 +69,30 @@ export function humanErrorProfile(board: Board, baseBudget = 0.35): HumanErrorPr
   const understanding = understandPosition(board);
   const legalMoves = Math.max(1, understanding.space[understanding.sideToMove]);
   const complexity = clamp((legalMoves - 8) / 28);
-  const tacticalPressure = clamp(understanding.tactics.forcingMoves / legalMoves);
+  // Do not wait until Swift is already in check to recognize a king hunt.
+  // Its OWN forcing moves may be zero while the opponent threatens checks,
+  // including mate. A turn-swapped view identifies these available threats.
+  const opponent = understanding.sideToMove === "w" ? "b" : "w";
+  const ownForcingPressure = understanding.tactics.forcingMoves / legalMoves;
+  const incomingCheckingPressure = 4 * understanding.tactics.incomingChecks /
+    Math.max(1, understanding.space[opponent]);
+  const tacticalPressure = clamp(Math.max(ownForcingPressure, incomingCheckingPressure));
+  // Game phase depends on *major and minor* material, not total pieces.
+  // The old formula (16 - totalPieces) / 10 stayed at 0 through much of
+  // the middlegame: a queen trade with 30 pieces still on the board was
+  // incorrectly classified as "opening". Standard tapered-evaluation phase
+  // weights recognize exchanges without counting pawns and kings.
   const boardField = board.toFEN().split(/\s+/)[0];
-  const totalPieces = boardField.replace(/[1-8/]/g, "").length;
-  const phase = clamp((16 - totalPieces) / 10);
+  let phaseUnits = 0;
+  for (const piece of boardField) {
+    switch (piece.toLowerCase()) {
+      case "n":
+      case "b": phaseUnits += 1; break;
+      case "r": phaseUnits += 2; break;
+      case "q": phaseUnits += 4; break;
+    }
+  }
+  const phase = clamp((24 - phaseUnits) / 24);
   const ownKing = understanding.king[understanding.sideToMove];
   const enemyKing = understanding.king[understanding.sideToMove === "w" ? "b" : "w"];
   const materialSwing = clamp(Math.abs(understanding.material) / 500);

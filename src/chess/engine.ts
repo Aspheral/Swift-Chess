@@ -1,7 +1,13 @@
 import { Board, Color, Move, PieceType } from "./board";
+import { Game } from "./game";
 import { canDeltaPrune } from "./tactics";
 
-export interface SearchOptions { depth?: number; timeMs?: number; }
+export interface SearchOptions {
+  depth?: number;
+  timeMs?: number;
+  /** Actual game-position identities, including current board, for third-repetition draws. */
+  positionHistoryKeys?: string[];
+}
 export interface SearchStability {
   /** Difference between the last two completed iterative-deepening scores, in centipawns. */
   scoreSwingCp: number;
@@ -37,12 +43,26 @@ export class SwiftEngine {
   private readonly history = new Map<string, number>();
   private nodes = 0;
   private deadline = Infinity;
+  /** Root moves that end the actual game immediately by threefold repetition. */
+  private rootThreefoldMoves = new Set<string>();
 
   search(board: Board, options: SearchOptions = {}): SearchResult {
     const maxDepth = Math.max(1, Math.floor(options.depth ?? 4));
     this.nodes = 0;
     this.deadline = options.timeMs && options.timeMs > 0 ? Date.now() + options.timeMs : Infinity;
     const legal = board.legalMoves();
+    this.rootThreefoldMoves = new Set<string>();
+    if (options.positionHistoryKeys?.length) {
+      const counts = new Map<string, number>();
+      for (const key of options.positionHistoryKeys) counts.set(key, (counts.get(key) ?? 0) + 1);
+      for (const move of legal) {
+        const child = board.makeMove(move);
+        const repetitions = counts.get(Game.positionKey(child)) ?? 0;
+        // Game adjudicates mate before repetition. Do not convert a mating
+        // move into a draw, even if an invalid history happens to contain it.
+        if (repetitions >= 2 && !child.isCheckmate()) this.rootThreefoldMoves.add(move.uci());
+      }
+    }
     if (legal.length === 0) return { move: null, score: board.isInCheck(this.sideToMove(board)) ? -MATE : 0, depth: 0, nodes: this.nodes, pv: [] };
     let bestMove = legal[0], bestScore = this.evaluate(board), completedDepth = 0, bestPv: Move[] = [bestMove];
     let scoreSwingCp = 0;
@@ -112,14 +132,19 @@ export class SwiftEngine {
       const child = board.makeMove(move);
       let childResult: { score: number; pv: Move[] };
 
-      if (index === 0) {
+      const immediateDraw = this.rootThreefoldMoves.has(move.uci());
+      if (immediateDraw) {
+        // This game ends on the move itself, regardless of static material
+        // or an old transposition-table score.
+        childResult = { score: 0, pv: [] };
+      } else if (index === 0) {
         childResult = this.negamax(child, depth - 1, -beta, -alpha, 1);
       } else {
         childResult = this.negamax(child, depth - 1, -alpha - 1, -alpha, 1);
       }
       let score = -childResult.score;
 
-      if (index > 0 && score > alpha && score < beta) {
+      if (index > 0 && !immediateDraw && score > alpha && score < beta) {
         childResult = this.negamax(child, depth - 1, -beta, -alpha, 1);
         score = -childResult.score;
       }
@@ -139,13 +164,16 @@ export class SwiftEngine {
   private negamax(board: Board, depth: number, alpha: number, beta: number, ply: number, allowNullMove = true): { score: number; pv: Move[] } {
     this.checkTime();
     this.nodes++;
+    // A completed fifty-move draw scores zero, unless the move delivering it
+    // already checkmated the opponent. Never let a cached score override it.
+    if (board.halfmoveClock() >= 100 && !board.isCheckmate()) return { score: 0, pv: [] };
     const inCheck = board.isInCheck(this.sideToMove(board));
     if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta, ply), pv: [] };
     const extension = inCheck && depth > 0 ? 1 : 0;
     const effectiveDepth = depth + extension;
     if (effectiveDepth <= 0) return { score: this.quiescence(board, alpha, beta, ply), pv: [] };
 
-    const key = this.key(board), cached = this.table.get(key), alphaOriginal = alpha;
+    const key = this.key(board), cached = this.table.get(key);
     if (cached && cached.depth >= effectiveDepth) {
       const cachedScore = this.scoreFromTable(cached.score, ply);
       if (cached.bound === "exact") return { score: cachedScore, pv: cached.move ? [cached.move] : [] };
@@ -154,6 +182,10 @@ export class SwiftEngine {
       if (alpha >= beta) return { score: cachedScore, pv: cached.move ? [cached.move] : [] };
     }
 
+    // The transposition probe may tighten either bound. Classify the final
+    // score against the window ACTUALLY searched, not the original caller
+    // window: a TT-assisted fail-low/high must not be stored as an exact value.
+    const searchAlpha = alpha, searchBeta = beta;
     const legal = board.legalMoves();
     if (legal.length === 0) return { score: inCheck ? -MATE + ply : 0, pv: [] };
 
@@ -180,7 +212,12 @@ export class SwiftEngine {
       const opponent = this.sideToMove(child);
       const forcing = this.isCapture(board, move) || !!move.promotion || child.isInCheck(opponent);
       const quiet = !forcing;
-      const canReduce = effectiveDepth >= 3 && moveIndex >= 3 && quiet && !inCheck;
+      // LMR must not throw away forcing threats just because they are quiet.
+      // In the user's Scotch game, ...d5 was a central defensive break and
+      // Qa4 attacked a loose knight without capturing immediately.
+      const criticalQuiet = quiet && this.isCriticalQuietMove(board, move, child);
+      const canReduce = effectiveDepth >= 3 && moveIndex >= 3 &&
+        quiet && !inCheck && !criticalQuiet;
       let score: number;
       let childResult: { score: number; pv: Move[] };
       if (canReduce) {
@@ -204,41 +241,115 @@ export class SwiftEngine {
       if (alpha >= beta) { if (quiet) this.recordKiller(move, ply, effectiveDepth); break; }
       moveIndex++;
     }
-    const bound: Bound = best <= alphaOriginal ? "upper" : best >= beta ? "lower" : "exact";
-    // Bound the per-worker search cache over long rapid games.
-    // Keep existing keys in place, clear only when a new position would overflow.
-    if (!this.table.has(key) && this.table.size >= MAX_TRANSPOSITIONS) this.table.clear();
-    this.table.set(key, { depth: effectiveDepth, score: this.scoreToTable(best, ply), bound, move: bestMove });
+    const bound: Bound = best <= searchAlpha ? "upper" : best >= searchBeta ? "lower" : "exact";
+    this.storeTransposition(key, {
+      depth: effectiveDepth, score: this.scoreToTable(best, ply), bound, move: bestMove,
+    });
     return { score: best, pv: bestPv.slice(0, MAX_PV) };
   }
 
-  private quiescence(board: Board, alpha: number, beta: number, ply: number): number {
+  /**
+   * Preserve stronger cached searches. A shallow or bounded re-search should
+   * not overwrite a deeper entry found earlier in the same position.
+   *
+   * Evict one quarter of the oldest entries when full rather than discarding
+   * all 80,000 positions. This retains recent analysis between rapid moves,
+   * while bounding the cache for a long-lived browser worker.
+   */
+  /**
+   * Late-move reductions are safe for routine quiet play, not for defensive
+   * central pawn breaks, improving king moves, or new queen attacks on pieces.
+   * Guard only the moves already eligible for reduction so the full legal
+   * tree does not pay an extra threat-analysis cost.
+   */
+  private isCriticalQuietMove(board: Board, move: Move, child: Board): boolean {
+    const moving = board.pieceAt(move.from);
+    if (!moving) return false;
+    if (moving[1] === "k") return true;
+    if (moving[1] === "p") {
+      if (board.createsPawnPieceThreat(move)) return true;
+      const file = move.to & 7;
+      const rank = move.to >>> 3;
+      return (file === 3 || file === 4) && rank >= 2 && rank <= 5;
+    }
+    if (moving[1] !== "q") return false;
+    const color = board.turn();
+    const enemy = color === "w" ? "b" : "w";
+    for (let square = 0; square < 64; square++) {
+      const target = child.pieceAt(square);
+      if (!target || target[0] !== enemy ||
+        (target[1] !== "n" && target[1] !== "b" &&
+         target[1] !== "r" && target[1] !== "q")) continue;
+      if (child.isSquareAttacked(square, color) &&
+          !board.isSquareAttacked(square, color)) return true;
+    }
+    return false;
+  }
+
+  private storeTransposition(key: string, entry: TTEntry): void {
+    const previous = this.table.get(key);
+    if (previous && (
+      previous.depth > entry.depth ||
+      (previous.depth === entry.depth && previous.bound === "exact" && entry.bound !== "exact")
+    )) return;
+    if (previous) this.table.delete(key);
+    if (this.table.size >= MAX_TRANSPOSITIONS) {
+      let remaining = Math.ceil(MAX_TRANSPOSITIONS / 4);
+      for (const oldKey of this.table.keys()) {
+        this.table.delete(oldKey);
+        if (--remaining === 0) break;
+      }
+    }
+    this.table.set(key, entry);
+  }
+
+  private quiescence(board: Board, alpha: number, beta: number, ply: number, qPly = 0): number {
     this.checkTime();
     this.nodes++;
+    if (board.halfmoveClock() >= 100 && !board.isCheckmate()) return 0;
     const side = this.sideToMove(board);
     const inCheck = board.isInCheck(side);
-    const legal = board.legalMoves();
-    if (legal.length === 0) return inCheck ? -MATE + ply : 0;
+    // Quiescence follows forced replies, but must not recurse forever through
+    // quiet checking and evasion cycles in a browser worker. Terminal states
+    // still take priority at the emergency cap.
+    if (qPly >= 24) {
+      const legal = board.legalMoves();
+      if (!legal.length) return inCheck ? -MATE + ply : 0;
+      return this.evaluate(board);
+    }
     if (inCheck) {
+      // Every check evasion matters. Captures-only generation is only safe
+      // when we are NOT already in check.
+      const legal = board.legalMoves();
+      if (legal.length === 0) return -MATE + ply;
       let best = -INF;
       for (const move of this.orderMoves(board, legal, undefined, 0)) {
-        const score = -this.quiescence(board.makeMove(move), -beta, -alpha, ply + 1);
+        const score = -this.quiescence(board.makeMove(move), -beta, -alpha, ply + 1, qPly + 1);
         best = Math.max(best, score); alpha = Math.max(alpha, score);
         if (alpha >= beta) break;
       }
       return best;
     }
+    // Explore quiet checks only on the FIRST layer after main search. This
+    // catches the mate-in-one and forcing-check horizon without permitting
+    // recursive quiet-check expansion at every capture node.
+    const tactical = board.legalTactics(qPly === 0, qPly === 0);
+    // A position without legal moves is a draw, even with a favorable static
+    // score. A position without CAPTURES can still have legal quiet moves.
+    if (!tactical.hasLegalMove) return 0;
     const standPat = this.evaluate(board);
     if (standPat >= beta) return beta;
     if (standPat > alpha) alpha = standPat;
-    const tactical = legal.filter((move) => this.isCapture(board, move) || !!move.promotion);
-    const captures = this.orderMoves(board, tactical, undefined, 0);
+    const captures = this.orderMoves(board, tactical.moves, undefined, 0);
     for (const move of captures) {
       this.checkTime();
       const child = board.makeMove(move);
       const checking = child.isInCheck(this.sideToMove(child));
-      if (!checking && canDeltaPrune(board, move, standPat, alpha)) continue;
-      const score = -this.quiescence(child, -beta, -alpha, ply + 1);
+      // Never delta-prune a quiet check: its captured value is zero but it
+      // may force checkmate. Captures still use conservative delta bounds.
+      if (!checking && !board.createsPawnPieceThreat(move) &&
+          canDeltaPrune(board, move, standPat, alpha)) continue;
+      const score = -this.quiescence(child, -beta, -alpha, ply + 1, qPly + 1);
       if (score >= beta) return beta;
       if (score > alpha) alpha = score;
     }
@@ -263,6 +374,7 @@ export class SwiftEngine {
       score += 1_000_000 + victim * 10 - attacker;
     }
     if (move.castle) score += 100;
+    if (board.createsPawnPieceThreat(move)) score += 400_000;
     if (!this.isCapture(board, move) && !move.promotion) {
       const key = move.uci();
       const [killer1, killer2] = this.killers[ply] ?? [null, null];
@@ -288,16 +400,24 @@ export class SwiftEngine {
   private isCapture(board: Board, move: Move): boolean { return move.enPassant || board.pieceAt(move.to) !== null; }
 
   private canNullMove(board: Board): boolean {
+    // Passing is not a legal chess move. Close to a fifty-move claim, a
+    // synthetic null move increments the draw counter and can manufacture an
+    // artificial draw inside the null-window search. Disable this pruning
+    // shortcut before the draw horizon, while ordinary legal search remains
+    // responsible for adjudicating actual fifty-move outcomes.
+    if (board.halfmoveClock() >= 90) return false;
+    // Zugzwang danger is about OUR available waiting moves. The opponent's
+    // queen or rooks must not make a pawn-only side eligible for null pruning.
     let nonPawnPieces = 0;
     let rooksQueens = 0;
     for (let square = 0; square < 64; square++) {
       const piece = board.pieceAt(square);
-      if (!piece || piece[1] === "k" || piece[1] === "p") continue;
+      if (!piece || piece[0] !== board.turn() || piece[1] === "k" || piece[1] === "p") continue;
       nonPawnPieces++;
       if (piece[1] === "r" || piece[1] === "q") rooksQueens++;
     }
-    if (nonPawnPieces <= 2) return false;
-    if (rooksQueens === 0 && nonPawnPieces <= 4) return false;
+    if (nonPawnPieces === 0) return false;
+    if (rooksQueens === 0 && nonPawnPieces <= 1) return false;
     return true;
   }
 
@@ -309,6 +429,7 @@ export class SwiftEngine {
     let whiteBishops = 0, blackBishops = 0;
     let whiteKing = -1, blackKing = -1;
     let totalPieces = 0, queens = 0;
+    let whiteQueen = -1, blackQueen = -1;
 
     for (let square = 0; square < 64; square++) {
       const piece = board.pieceAt(square);
@@ -316,9 +437,23 @@ export class SwiftEngine {
       const white = piece[0] === "w";
       const type = piece[1] as PieceType;
       totalPieces++;
-      if (type === "q") queens++;
+      if (type === "q") {
+        queens++;
+        if (white) whiteQueen = square;
+        else blackQueen = square;
+      }
       const sign = white ? 1 : -1;
       score += sign * pieceValues[type];
+      if (type !== "p" && type !== "k" &&
+          this.attackedByEnemyPawn(board, square, white ? "b" : "w")) {
+        // A direct pawn attack forces a valuable piece to respond. This is
+        // genuine positional pressure, but not a captured piece: give it a
+        // modest tempo penalty rather than the full material value.
+        const pressure: Record<"n" | "b" | "r" | "q", number> = {
+          n: 38, b: 42, r: 55, q: 95,
+        };
+        score -= sign * pressure[type as "n" | "b" | "r" | "q"];
+      }
 
       if (type !== "k") {
         const tableSquare = white ? (square ^ 56) : square;
@@ -342,7 +477,60 @@ export class SwiftEngine {
     score -= this.rookActivity(blackRooks, "b", blackPawns, whitePawns);
     score += this.kingSafetyFromSquare(board, whiteKing, "w", castling, totalPieces, queens > 0);
     score += this.kingSafetyFromSquare(board, blackKing, "b", castling, totalPieces, queens > 0);
+    score -= this.prematureQueenRaidPenalty(board, whiteQueen, "w", totalPieces);
+    score += this.prematureQueenRaidPenalty(board, blackQueen, "b", totalPieces);
     return score;
+  }
+
+  /**
+   * Discourage premature deep queen raids while the army is still at home.
+   *
+   * In Swift's first 2050-Stockfish pilot, a queen pawn grab on b7 invited a
+   * multi-move chase that cost substantial material. SEE cannot see a quiet
+   * rook lift several moves before the queen becomes trapped. This is a
+   * modest positional preference, not a prohibition: a winning capture or
+   * forcing tactical line can outweigh the penalty.
+   *
+   * It fades completely after minor-piece development or simplification so
+   * active queens remain welcome in genuine middlegames and endgames.
+   */
+  /** Fast pawn-only attack map for evaluation, independent of piece mobility. */
+  private attackedByEnemyPawn(board: Board, square: number, by: Color): boolean {
+    const file = square & 7;
+    const attackerRank = (square >>> 3) + (by === "w" ? -1 : 1);
+    if (attackerRank < 0 || attackerRank > 7) return false;
+    for (const df of [-1, 1]) {
+      const attackerFile = file + df;
+      if (attackerFile < 0 || attackerFile > 7) continue;
+      if (board.pieceAt(attackerRank * 8 + attackerFile) === `${by}p`) return true;
+    }
+    return false;
+  }
+
+  private prematureQueenRaidPenalty(
+    board: Board,
+    queenSquare: number,
+    color: Color,
+    totalPieces: number,
+  ): number {
+    if (queenSquare < 0 || totalPieces < 18) return 0;
+    const rank = Math.floor(queenSquare / 8);
+    const advance = color === "w" ? rank : 7 - rank;
+    if (advance <= 3) return 0;
+
+    const homes = color === "w"
+      ? [1, 6, 2, 5]   // b1/g1 knights, c1/f1 bishops
+      : [57, 62, 58, 61]; // b8/g8 knights, c8/f8 bishops
+    const types: PieceType[] = ["n", "n", "b", "b"];
+    let undeveloped = 0;
+    for (let i = 0; i < homes.length; i++) {
+      if (board.pieceAt(homes[i]) === `${color}${types[i]}`) undeveloped++;
+    }
+    if (undeveloped === 0) return 0;
+
+    const kingHome = color === "w" ? 4 : 60;
+    const kingUncastled = board.pieceAt(kingHome) === `${color}k`;
+    return Math.min(180, (advance - 3) * (20 + undeveloped * 8 + (kingUncastled ? 12 : 0)));
   }
 
   private pawnStructure(pawns: number[], color: Color, enemyPawns: number[]): number {
@@ -415,20 +603,41 @@ export class SwiftEngine {
       : kingSquare === 62 || kingSquare === 58;
     const middlegame = queensPresent && totalPieces >= 14;
 
-    let score = castled ? 30 : rights * (middlegame ? 10 : 4);
+    // Castling is a middlegame king-safety investment, not a permanent
+    // 30cp bonus. After both queens leave the board, rewarding a king for
+    // staying on g8 while discouraging ...Kf7 can waste the initiative in
+    // technical rook/minor-piece endings (seen in the 2026-10-29 game).
+    const queenless = !queensPresent;
+    let score = queenless ? 0 : castled ? (middlegame ? 30 : 12)
+      : rights * (middlegame ? 10 : 4);
     if (middlegame) {
       const direction = color === "w" ? 8 : -8;
       for (const df of [-1, 0, 1]) {
         const shieldFile = file + df;
         if (shieldFile < 0 || shieldFile > 7) continue;
-        const square = kingSquare + direction + df;
-        if (square >= 0 && square < 64 && board.pieceAt(square) === `${color}p`) score += 4;
+        const immediate = kingSquare + direction + df;
+        const advanced = kingSquare + direction * 2 + df;
+        const firstRankShield = immediate >= 0 && immediate < 64 &&
+          board.pieceAt(immediate) === `${color}p`;
+        const secondRankShield = advanced >= 0 && advanced < 64 &&
+          board.pieceAt(advanced) === `${color}p`;
+        // A missing shield pawn creates lasting mating-net weaknesses that
+        // material and piece-square tables alone overlook. A pawn advanced
+        // one step still gives partial cover (especially in a fianchetto).
+        // Use a modest, symmetric positional score, not a forced tactical
+        // veto: genuine attacks and gambits can still justify pawn advances.
+        score += firstRankShield ? 11 : secondRankShield ? 5 : -9;
       }
       if (!castled && rights === 0 && rank === homeRank && (file === 3 || file === 4)) score -= 18;
       if (rank !== homeRank && !castled) score -= 10;
-    } else if (totalPieces <= 10) {
+    } else if (queenless || totalPieces <= 10) {
       const centerDistance = Math.abs(file - 3.5) + Math.abs(rank - 3.5);
-      score += Math.round((7 - centerDistance) * 4);
+      // Scale smoothly: active kings become more useful as material
+      // disappears, but there are still tactical threats with two rooks on.
+      const activation = queenless
+        ? 6 + Math.max(0, Math.min(6, Math.floor((18 - totalPieces) / 2)))
+        : 4;
+      score += Math.round((7 - centerDistance) * activation);
     }
     return color === "w" ? score : -score;
   }
@@ -446,7 +655,11 @@ export class SwiftEngine {
   }
 
   private sideToMove(board: Board): Color { return board.turn(); }
-  private key(board: Board): string { return board.searchKey(); }
+  private key(board: Board): string {
+    // Equal piece placements near a fifty-move draw do not have equal values.
+    // Include the draw clock so TT bounds from one context cannot pollute another.
+    return `${board.searchKey()}|${Math.min(100, board.halfmoveClock())}`;
+  }
   private checkTime(): void { if (Date.now() > this.deadline) throw TIMEOUT; }
 }
 

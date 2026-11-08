@@ -1,0 +1,79 @@
+name: Swift 2050 Loss Audit
+
+# One-time analysis of the 200 completed games; production untouched.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/swift-2050-loss-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  analyze:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        batch: [0,1,2,3,4,5,6,7,8,9]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install independent chess analysis tools
+        run: |
+          python -m pip install chess==1.11.2
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq stockfish
+      - name: Retrieve original games without re-playing matches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p calibration-audit/source
+          gh run download 39005772490 --repo '${{ github.repository }}' --name 'swift-2050-human-batch-${{ matrix.batch }}' --dir calibration-audit/source
+      - name: Analyze original Swift moves against full-strength Stockfish
+        run: |
+          python -u scripts/audit-2050-losses.py analyze \
+            --input calibration-audit/source/human-elo-2050-batch-${{ matrix.batch }}.json \
+            --output calibration-audit/audit-batch-${{ matrix.batch }}.json \
+            --engine /usr/games/stockfish --depth 11
+      - name: Upload move-by-move analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-2050-loss-audit-batch-${{ matrix.batch }}
+          path: calibration-audit/audit-batch-${{ matrix.batch }}.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  report:
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+    needs: analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: swift-2050-loss-audit-batch-*
+          path: calibration-audit/results
+          merge-multiple: true
+      - name: Aggregate all 200 games and compare outcome groups
+        run: python scripts/audit-2050-losses.py aggregate --input calibration-audit/results --output calibration-audit/summary-200-games.json
+      - name: Upload complete audit and move-level CSV
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-2050-loss-audit-report
+          path: |
+            calibration-audit/summary-200-games.json
+            calibration-audit/swift-2050-audit-moves.csv
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,40 @@
+name: Swift Roblox Game Forensics
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/swift-roblox-forensics.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install chess and Stockfish
+        run: |
+          python -m pip install chess==1.11.2
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq stockfish
+      - name: Grade all Black moves in original Roblox PGN
+        run: |
+          python -u scripts/audit-roblox-20261018.py --depth 15 \
+            --pgn tests/fixtures/roblox-20261018-1A14CD5416564.pgn \
+            --output calibration-results/roblox-20261018-analysis.json
+      - name: Publish complete per-move analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roblox-20261018-stockfish-analysis
+          path: calibration-results/roblox-20261018-analysis.json
+          retention-days: 30
+          if-no-files-found: warn

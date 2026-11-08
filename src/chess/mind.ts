@@ -163,36 +163,77 @@ function describeConcern(generation: IdeaGeneration, profile: MindPositionProfil
   return "No urgent defect dominates the position.";
 }
 
-function analyzeOpponent(history: string[], swiftSide: Color): SwiftOpponentModel {
-  const recentStart = Math.max(0, history.length - 12);
-  let board = Board.start();
-  let captures = 0;
-  let checks = 0;
-  let pawnMoves = 0;
-  let observedMoves = 0;
-  for (let index = 0; index < history.length; index += 1) {
-    const uci = history[index];
-    const move = board.legalMoves().find((candidate) => candidate.uci() === uci);
-    if (!move) break;
-    const mover = board.turn();
-    const movingPiece = board.pieceAt(move.from);
-    const capture = move.enPassant || board.pieceAt(move.to) !== null;
-    const child = board.makeMove(move);
-    if (index >= recentStart && mover !== swiftSide) {
-      observedMoves += 1;
-      if (capture) captures += 1;
-      if (movingPiece?.[1] === "p") pawnMoves += 1;
-      if (child.isInCheck(swiftSide)) checks += 1;
-    }
-    board = child;
+interface OpponentPlyEvidence {
+  mover: Color;
+  capture: boolean;
+  pawnMove: boolean;
+  gaveCheck: boolean;
+}
+
+/**
+ * Incremental game replay for opponent modeling.
+ *
+ * The old implementation reconstructed every move since move one whenever
+ * Swift considered another decision. Over a long rapid game that repeats a
+ * growing O(n)-move replay on every turn, while only the last 12 plies matter
+ * to the actual opponent model. Preserve those exact statistics and reuse
+ * the immutable Board for the common append-only case.
+ */
+export class OpponentHistoryTracker {
+  private board = Board.start();
+  private moves: string[] = [];
+  private evidence: OpponentPlyEvidence[] = [];
+
+  reset(): void {
+    this.board = Board.start();
+    this.moves = [];
+    this.evidence = [];
   }
-  if (!observedMoves) return { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 0 };
-  return {
-    aggression: clamp((captures * 0.55 + checks * 0.9) / observedMoves),
-    exchangeSeeking: clamp(captures / observedMoves),
-    pawnActivity: clamp(pawnMoves / observedMoves),
-    observedMoves,
-  };
+
+  observe(history: string[], swiftSide: Color): SwiftOpponentModel {
+    // An undo, new game, or branching variation invalidates cached play.
+    // Check the complete known prefix; the replay of legal moves itself is
+    // performed only for new entries in the common append-only case.
+    let common = 0;
+    while (common < this.moves.length && common < history.length &&
+           this.moves[common] === history[common]) common++;
+    if (common !== this.moves.length) this.reset();
+
+    for (let index = this.moves.length; index < history.length; index++) {
+      const uci = history[index];
+      const move = this.board.legalMoves().find((candidate) => candidate.uci() === uci);
+      if (!move) break;
+      const mover = this.board.turn();
+      const piece = this.board.pieceAt(move.from);
+      const capture = move.enPassant || this.board.pieceAt(move.to) !== null;
+      const child = this.board.makeMove(move);
+      this.evidence.push({
+        mover,
+        capture,
+        pawnMove: piece?.[1] === "p",
+        gaveCheck: child.isInCheck(mover === "w" ? "b" : "w"),
+      });
+      this.moves.push(uci);
+      this.board = child;
+    }
+
+    let captures = 0, checks = 0, pawnMoves = 0, observedMoves = 0;
+    for (let index = Math.max(0, history.length - 12); index < history.length; index++) {
+      const entry = this.evidence[index];
+      if (!entry || entry.mover === swiftSide) continue;
+      observedMoves++;
+      if (entry.capture) captures++;
+      if (entry.gaveCheck) checks++;
+      if (entry.pawnMove) pawnMoves++;
+    }
+    if (!observedMoves) return { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 0 };
+    return {
+      aggression: clamp((captures * 0.55 + checks * 0.9) / observedMoves),
+      exchangeSeeking: clamp(captures / observedMoves),
+      pawnActivity: clamp(pawnMoves / observedMoves),
+      observedMoves,
+    };
+  }
 }
 
 export class SwiftMind {
@@ -208,6 +249,7 @@ export class SwiftMind {
   private lastObservedPositionKey = "";
   private lastPlanMetric: number | null = null;
   private lastMetricPlan: IdeaKind | null = null;
+  private readonly opponentHistory = new OpponentHistoryTracker();
 
   observe(board: Board, generation: IdeaGeneration, profile: MindPositionProfile, history: string[] = []): SwiftMindSnapshot {
     if (history.length < this.state.observedHistoryLength) this.reset();
@@ -218,7 +260,7 @@ export class SwiftMind {
       // Do not let UI refreshes, analysis retries, or deeper searches manufacture
       // plan age and confidence when no chess move has actually happened.
       this.state.concern = describeConcern(generation, profile);
-      this.state.opponent = analyzeOpponent(history, board.turn());
+      this.state.opponent = this.opponentHistory.observe(history, board.turn());
       return this.snapshot();
     }
 
@@ -289,7 +331,7 @@ export class SwiftMind {
     }
 
     this.state.concern = describeConcern(generation, profile);
-    this.state.opponent = analyzeOpponent(history, board.turn());
+    this.state.opponent = this.opponentHistory.observe(history, board.turn());
     this.state.observedHistoryLength = history.length;
     this.lastObservedPositionKey = positionKey;
     this.lastMetricPlan = this.state.plan;
@@ -343,5 +385,6 @@ export class SwiftMind {
     this.lastObservedPositionKey = "";
     this.lastPlanMetric = null;
     this.lastMetricPlan = null;
+    this.opponentHistory.reset();
   }
 }
