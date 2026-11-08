@@ -30,6 +30,8 @@ export interface HumanSelectionOptions extends HumanStyleOptions {
   /** Optional seed for reproducible human choices. */
   seed?: number;
   candidates?: CandidateScore[];
+  /** Small imagined-plan tie-break; concrete verified scores remain unchanged. */
+  planVisionBonus?: Record<string, number>;
 }
 
 export type HumanGameStage = "opening" | "middlegame" | "endgame";
@@ -343,7 +345,13 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
       (kind) => kind === "complicate" || kind === "attack" || kind === "create-threat",
     ).length;
     const practicalRisk = riskKinds * 3 * riskTolerance * initiative * (1 - profile.tacticalPressure * 0.5);
-    const value = candidate.score - rankPenalty + practicalRisk + styleValue(board, candidate, profile, options);
+    // Hypothetical "what if I moved five times?" planning is never a
+    // replacement for seeing the opponent's actual replies. Limit its
+    // influence to already-verified near-equal moves, at most five points.
+    const visionBonus = candidate.score >= topScore - 12
+      ? Math.max(0, Math.min(5, options.planVisionBonus?.[candidate.move.uci()] ?? 0))
+      : 0;
+    const value = candidate.score - rankPenalty + practicalRisk + styleValue(board, candidate, profile, options) + visionBonus;
     return { candidate, value };
   });
 
