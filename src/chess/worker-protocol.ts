@@ -2,6 +2,7 @@ import { SwiftOpening } from "./openings";
 import { SwiftThinkKind } from "./play-profile";
 import type { SwiftMindSnapshot } from "./mind";
 import type { SwiftDecisionTrace } from "./human-engine";
+import type { SoloPlanVision } from "./plan-vision";
 import type { SwiftSecondLookReason } from "./adaptive-thinking";
 
 export interface SwiftWorkerSearchRequest {
@@ -50,6 +51,7 @@ export interface SwiftWorkerSearchResponse {
   secondLook?: { reason: SwiftSecondLookReason; initialDepth: number; finalDepth: number; improvedDepth: boolean };
   mind?: SwiftMindSnapshot;
   decision?: SwiftDecisionTrace;
+  planVision?: SoloPlanVision;
 }
 
 export interface SwiftWorkerErrorResponse {
