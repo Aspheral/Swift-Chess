@@ -48,7 +48,7 @@ describe("Two-track human plan vision", () => {
   it("rejects forged candidates and refuses fantasy planning when in check", () => {
     const fake = get(Board.start(), "e2e4");
     expect(visualizeSoloPlans(choiceBoard, [fake])).toEqual([]);
-    const checked = Board.fromFEN("6k1/8/8/8/8/7q/8/6K1 w - - 0 1");
+    const checked = Board.fromFEN("6k1/8/8/8/8/6q1/8/6K1 w - - 0 1");
     expect(checked.isInCheck("w")).toBe(true);
     expect(visualizeSoloPlans(checked, checked.legalMoves())).toEqual([]);
   });
