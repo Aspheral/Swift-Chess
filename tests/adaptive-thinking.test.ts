@@ -48,6 +48,19 @@ describe("Adaptive serious thinking", () => {
     expect(plan?.timeMs).toBeLessThanOrEqual(1600);
   });
 
+  it("uses a bounded real second search for a prepared king attack before check", () => {
+    const warning = planAdaptiveSecondLook({ ...base, defensiveNeed: 0.72 }, config);
+    expect(warning).toMatchObject({ reason: "king-danger", depth: 8 });
+    expect(warning?.timeMs).toBeGreaterThan(420);
+    expect(warning?.timeMs).toBeLessThanOrEqual(1600);
+
+    expect(planAdaptiveSecondLook({ ...base, defensiveNeed: 0.3 }, config)).toBeNull();
+    expect(planAdaptiveSecondLook({ ...base, defensiveNeed: 0.72, legalMoves: 1 }, config)).toBeNull();
+    expect(planAdaptiveSecondLook({
+      ...base, defensiveNeed: 0.72, result: { ...base.result, score: 99_000 },
+    }, config)).toBeNull();
+  });
+
   it("treats real king danger and practical pressure as serious", () => {
     const danger = planAdaptiveSecondLook({
       ...base, inCheck: true, profile: { tacticalPressure: 0.25, practicalPressure: 0.3 },
