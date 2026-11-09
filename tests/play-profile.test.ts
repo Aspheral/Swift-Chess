@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { Board, swiftPlayProfile } from "../src";
 import type { CandidateScore } from "../src/chess/scoring";
-import { candidateDecisionUncertainty, candidateIdeaUncertainty, decisionThinkPaceMs, ideaConflict, quietDecisionUncertainty, verifiedChoiceTension } from "../src/chess/play-profile";
+import { candidateDecisionUncertainty, candidateIdeaUncertainty, decisionThinkPaceMs, defensiveThinkingNeed, ideaConflict, quietDecisionUncertainty, verifiedChoiceTension } from "../src/chess/play-profile";
+import { humanErrorProfile } from "../src/chess/human";
+import { replayAfLinggaGame } from "./fixtures/af-lingga";
 
 describe("Swift browser play timing", () => {
   it("plays familiar opening positions quickly", () => {
@@ -19,6 +21,43 @@ describe("Swift browser play timing", () => {
     expect(laterOpening.kind).toBe("opening");
     expect(laterOpening.minimumThinkMs).toBeGreaterThan(firstMove.minimumThinkMs);
     expect(laterOpening.options.timeMs ?? 0).toBeGreaterThan(firstMove.options.timeMs ?? 0);
+  });
+
+  it("thinks longer BEFORE and during the AfLingga rook-and-queen king hunt", () => {
+    const game = replayAfLinggaGame();
+    const beforeDiscovery = game.positions[52]; // After 26...Rh2, before White's 27th move
+    const afterDiscovery = game.positions[54]; // After 27...Nxe4+, 4 legal defenses
+    expect(beforeDiscovery.isInCheck("w")).toBe(false);
+    expect(afterDiscovery.isInCheck("w")).toBe(true);
+    expect(afterDiscovery.legalMoves()).toHaveLength(4);
+
+    const beforeProfile = swiftPlayProfile(beforeDiscovery, game.moves.slice(0, 52));
+    const afterProfile = swiftPlayProfile(afterDiscovery, game.moves.slice(0, 54));
+    const beforeNeed = defensiveThinkingNeed(beforeDiscovery, humanErrorProfile(beforeDiscovery, 0.05));
+    const afterNeed = defensiveThinkingNeed(afterDiscovery, humanErrorProfile(afterDiscovery, 0.05));
+
+    expect(beforeNeed).toBeGreaterThanOrEqual(0.6);
+    expect(afterNeed).toBeGreaterThanOrEqual(0.6);
+    expect(beforeProfile.kind).toBe("tactical");
+    expect(afterProfile.kind).toBe("tactical");
+    expect(beforeProfile.options.timeMs ?? 0).toBeGreaterThan(1850);
+    expect(afterProfile.options.timeMs ?? 0).toBeGreaterThan(1850);
+    expect(beforeProfile.options.timeMs ?? 0).toBeLessThanOrEqual(2370);
+    expect(afterProfile.options.timeMs ?? 0).toBeLessThanOrEqual(2370);
+
+    console.log("SWIFT_PRESSURE_THINKING " + JSON.stringify({
+      before: { need: beforeNeed, firstPassMs: beforeProfile.options.timeMs },
+      checked: { need: afterNeed, firstPassMs: afterProfile.options.timeMs },
+    }));
+  });
+
+  it("does not overthink an opening or a forced single legal response", () => {
+    const opening = Board.start();
+    const forced = Board.fromFEN("r7/8/8/8/8/2k5/8/K7 w - - 0 1");
+    expect(forced.legalMoves().map((move) => move.uci())).toEqual(["a1b1"]);
+    expect(defensiveThinkingNeed(forced, humanErrorProfile(forced, 0.05))).toBe(0);
+    expect(defensiveThinkingNeed(opening, humanErrorProfile(opening, 0.05))).toBe(0);
+    expect(swiftPlayProfile(opening, []).options.timeMs ?? 0).toBeLessThanOrEqual(850);
   });
 
   it("spends more time when the king is under tactical pressure", () => {
