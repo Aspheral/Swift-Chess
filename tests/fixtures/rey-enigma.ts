@@ -20,7 +20,7 @@ export const REY_ENIGMA_SAN = [
   "49. Kf1 Qxh3 50. gxf4 Qh1# 0-1",
 ].join(" ");
 
-function parseSan(board: Board, raw: string, ply: number): Move {
+export function parseSan(board: Board, raw: string, ply: number): Move {
   const san = raw.replace(/[+#?!]+$/g, "");
   const legal = board.legalMoves();
   if (san === "O-O" || san === "O-O-O") {
