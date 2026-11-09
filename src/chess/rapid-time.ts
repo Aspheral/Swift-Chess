@@ -28,7 +28,7 @@ export function allocateRapidThink(profile: SwiftPlayProfile, context: RapidThin
   const emergency = remaining < 13_000 || usable < 700;
 
   const stageCap = profile.kind === "opening" ? 1_200
-    : profile.kind === "tactical" ? 5_200
+    : profile.kind === "tactical" ? 5_600
     : profile.kind === "endgame" ? 3_700 : 3_100;
   const clockAdvantage = remaining > opponent * 1.8 && remaining > 60_000 ? 1.12 : 1;
   const openingFactor = context.ply < 12 && profile.kind === "opening" ? 0.8 : 1;

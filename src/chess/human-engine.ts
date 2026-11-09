@@ -12,6 +12,7 @@ import { selectiveCandidateDepths } from "./selective-calculation";
 import { AdaptiveThinkingOptions, planAdaptiveSecondLook, SwiftSecondLook, SwiftSecondLookReason } from "./adaptive-thinking";
 import { avoidImmediateMajorBlunder, avoidImmediateCheckmate } from "./blunder-guard";
 import { avoidShortCheckingMate } from "./mate-threat";
+import { defensiveThinkingNeed } from "./play-profile";
 import { soloPlanTieBreaks, SoloPlanVision, visualizeSoloPlans } from "./plan-vision";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
@@ -127,6 +128,7 @@ export class HumanSwiftEngine {
       legalMoves: board.legalMoves().length,
       historyLength: history.length,
       inCheck: board.isInCheck(board.turn()),
+      defensiveNeed: defensiveThinkingNeed(board, profile),
       searchDepth,
       baseTimeMs: options.timeMs,
       result,

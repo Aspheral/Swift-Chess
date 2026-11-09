@@ -64,6 +64,23 @@ describe("10-minute rapid search budgets", () => {
     expect(hard.options.adaptiveThinking).not.toBe(false);
   });
 
+  it("grants a modest extra tactical budget only when the 10-minute clock can afford it", () => {
+    const position = Board.fromFEN("k3r3/8/8/8/8/8/8/4K3 w - - 0 1");
+    const pressure = swiftPlayProfile(position, Array(30).fill("fixture"));
+    const ample = allocateRapidThink(pressure, {
+      remainingMs: 300_000, opponentMs: 270_000, ply: 30,
+    });
+    const urgent = allocateRapidThink(pressure, {
+      remainingMs: 8_000, opponentMs: 270_000, ply: 48,
+    });
+    expect(ample.targetTotalMs).toBe(5600);
+    expect(ample.options.timeMs).toBeGreaterThan(1850);
+    expect(urgent.targetTotalMs).toBeLessThan(ample.targetTotalMs);
+    expect(urgent.options.adaptiveThinking).toBe(false);
+    expect(urgent.options.timeMs ?? 0).toBeLessThan(ample.options.timeMs ?? 0);
+    expect(urgent.targetTotalMs).toBeLessThanOrEqual(urgent.reserveMs + 8_000);
+  });
+
   it("stops extra thinking and disables expensive tactical probes in time trouble", () => {
     const ample = allocateRapidThink(tactical, { remainingMs: 300_000, opponentMs: 300_000, ply: 30 });
     const little = allocateRapidThink(tactical, { remainingMs: 7_000, opponentMs: 160_000, ply: 55 });
