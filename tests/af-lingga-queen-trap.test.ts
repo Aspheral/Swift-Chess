@@ -34,6 +34,26 @@ describe("AfLingga vs SwiftChessTV, November 9, 2026: queen-for-rook trap", () =
     }));
   });
 
+  it("tests every escape from the discovered rook check, including the tempting king retreat", () => {
+    const before = game.positions[54];
+    const legal = before.legalMoves();
+    expect(legal.map((move) => move.uci()).sort()).toEqual(["e2d1", "g1f2", "g1g2", "g1h2"]);
+    const kingRetreat = legal.find((move) => move.uci() === "e2d1")!;
+    const afterKingRetreat = before.makeMove(kingRetreat);
+    const d2Check = afterKingRetreat.legalMoves().find((move) => move.uci() === "f4d2");
+    console.log("AFLINGGA_KING_RETREAT " + JSON.stringify({
+      kingMove: kingRetreat.uci(),
+      fen: afterKingRetreat.toFEN(),
+      replies: afterKingRetreat.legalMoves().map((move) => ({
+        uci: move.uci(),
+        mate: afterKingRetreat.makeMove(move).isCheckmate(),
+      })).filter((move) => move.mate),
+      queenToD2: !!d2Check,
+      queenToD2Mate: d2Check ? afterKingRetreat.makeMove(d2Check).isCheckmate() : false,
+    }));
+    expect(d2Check).toBeDefined();
+  });
+
   it("diagnoses the currently live selection and emergency fallback on the exact game", () => {
     const before = game.positions[54];
     const queenCapture = before.legalMoves().find((move) => move.uci() === "g1h2")!;
