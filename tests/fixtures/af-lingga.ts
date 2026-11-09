@@ -19,8 +19,8 @@ export const AF_LINGGA_SAN = [
 ].join(" ");
 
 export function replayAfLinggaGame() {
-  const sans = AF_LINGGA_SAN.replace(/\\b\\d+\\.(?:\\.\\.)?/g, " ")
-    .replace(/\\b0-1\\b/g, " ").trim().split(/\\s+/);
+  const sans = AF_LINGGA_SAN.replace(/\b\d+\.(?:\.\.)?/g, " ")
+    .replace(/\b0-1\b/g, " ").trim().split(/\s+/);
   const positions = [Board.start()];
   const moves: string[] = [];
   let board = positions[0];
