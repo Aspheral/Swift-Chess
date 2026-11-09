@@ -24,6 +24,8 @@ export interface SecondLookEvidence {
   legalMoves: number;
   historyLength: number;
   inCheck: boolean;
+  /** Concrete king/queen/rook danger noticed before a forcing check. */
+  defensiveNeed?: number;
   searchDepth: number;
   baseTimeMs?: number;
   result: Pick<SearchResult, "depth" | "score" | "stability">;
@@ -75,7 +77,8 @@ export function planAdaptiveSecondLook(
   const disagreement = strategicDisagreement(evidence.candidates);
   const unexpected = (evidence.result.depth >= 2 && (changedMind || swing >= 65)) ||
     (evidence.result.stability?.interrupted && disagreement >= 0.7);
-  const kingDanger = evidence.inCheck || tacticalPressure >= 0.23;
+  const kingDanger = evidence.inCheck || tacticalPressure >= 0.23 ||
+    (evidence.defensiveNeed ?? 0) >= 0.60;
   const serious = practicalPressure >= 0.62 ||
     (evidence.mind.setbacks >= 2 && (practicalPressure > 0.22 || tacticalPressure > 0.08)) ||
     (evidence.mind.opponent.aggression >= 0.6 && tacticalPressure >= 0.12);
