@@ -1,6 +1,7 @@
 import { Board } from "./board";
 import type { HumanEngineOptions, SwiftDecisionSource } from "./human-engine";
-import { humanErrorProfile } from "./human";
+import { humanErrorProfile, type HumanErrorProfile } from "./human";
+import { understandPosition } from "./understanding";
 import { generateIdeas } from "./ideas";
 import { CandidateScore, scoreCandidates } from "./scoring";
 
@@ -72,6 +73,56 @@ export function quietDecisionUncertainty(board: Board, practicalPressure: number
   return Math.max(choiceLoad, pressureLoad);
 }
 
+
+/**
+ * A bounded signal for when a human would slow down to investigate danger.
+ *
+ * This is not an evaluation or a mate predictor: it recognizes concrete
+ * warning signs before a move becomes forced. It NEVER creates random delays.
+ * Analysis still uses the same legal-move / opponent-aware engine searches.
+ */
+export function defensiveThinkingNeed(
+  board: Board,
+  profile: Pick<HumanErrorProfile, "tacticalPressure" | "practicalPressure">,
+): number {
+  const understanding = understandPosition(board);
+  const side = board.turn();
+  const legalCount = understanding.space[side];
+  // With only one legal reply there is nothing to choose among.
+  if (legalCount <= 1) return 0;
+
+  const king = understanding.king[side];
+  const enemy = side === "w" ? "b" : "w";
+  const incomingChecks = understanding.tactics.incomingChecks;
+  let need = 0;
+
+  if (board.isInCheck(side)) {
+    // More than one legal escape means actual calculation matters.
+    need = Math.max(need, 0.64 + Math.min(0.20, (legalCount - 2) * 0.06));
+  }
+  if (incomingChecks > 0 && king.exposed) {
+    need = Math.max(need, 0.57 + Math.min(0.21, incomingChecks * 0.07));
+  }
+  if (king.rookInvasionPressure > 0) {
+    need = Math.max(need, 0.60 + Math.min(0.20, king.rookInvasionPressure * 0.05));
+  }
+  if (king.loomingRookInvasion > 0) {
+    need = Math.max(need, 0.52 + Math.min(0.20, king.loomingRookInvasion * 0.06));
+  }
+
+  const queen = understanding.pieces[side].find((piece) => piece.type === "q");
+  if (queen && board.isSquareAttacked(queen.square, enemy)) {
+    need = Math.max(need, 0.66);
+  }
+
+  // A conflict of king pressure and forcing lines also merits attention,
+  // without treating an ordinary material imbalance as an emergency.
+  if (profile.tacticalPressure >= 0.20 && profile.practicalPressure >= 0.35) {
+    need = Math.max(need, 0.58);
+  }
+  return Math.max(0, Math.min(1, need));
+}
+
 /**
  * Browser-facing search budget.
  *
@@ -89,11 +140,13 @@ export function quietDecisionUncertainty(board: Board, practicalPressure: number
 export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPlayProfile {
   const profile = humanErrorProfile(board, 0.05);
   const inCheck = board.isInCheck(board.turn());
+  const defensiveNeed = defensiveThinkingNeed(board, profile);
   const opening = history.length < 12 && profile.gameStage === "opening";
   const tactical =
     inCheck ||
     profile.tacticalPressure >= 0.12 ||
-    profile.practicalPressure >= 0.48;
+    profile.practicalPressure >= 0.48 ||
+    defensiveNeed >= 0.60;
   const endgame = profile.gameStage === "endgame";
 
   if (tactical) {
@@ -102,7 +155,9 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
       minimumThinkMs: 820,
       options: {
         depth: 9,
-        timeMs: 1850,
+        // A little more REAL calculation when a king hunt or threatened
+        // queen creates genuine competing defensive choices. No idle pause.
+        timeMs: 1850 + Math.round(520 * defensiveNeed),
         adaptiveThinking: { maxExtraMs: 2600, extraDepth: 2 },
         randomness: 0,
         errorBudget: 0.012,
