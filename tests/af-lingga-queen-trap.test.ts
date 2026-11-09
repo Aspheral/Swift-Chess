@@ -52,6 +52,11 @@ describe("AfLingga vs SwiftChessTV, November 9, 2026: queen-for-rook trap", () =
       queenToD2Mate: d2Check ? afterKingRetreat.makeMove(d2Check).isCheckmate() : false,
     }));
     expect(d2Check).toBeDefined();
+    expect(afterKingRetreat.makeMove(d2Check!).isCheckmate()).toBe(true);
+    for (const queenBlock of ["g1f2", "g1g2"]) {
+      const move = legal.find((candidate) => candidate.uci() === queenBlock)!;
+      expect(immediateMaterialLoss(before, move), queenBlock).toBeGreaterThanOrEqual(800);
+    }
   });
 
   it("diagnoses the currently live selection and emergency fallback on the exact game", () => {
