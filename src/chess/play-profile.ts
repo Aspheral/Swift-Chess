@@ -5,7 +5,7 @@ import { understandPosition } from "./understanding";
 import { generateIdeas } from "./ideas";
 import { CandidateScore, scoreCandidates } from "./scoring";
 
-export const SWIFT_PLAY_PROFILE = "adaptive-human-v15";
+export const SWIFT_PLAY_PROFILE = "adaptive-human-v16";
 
 export type SwiftThinkKind = "opening" | "calm" | "tactical" | "endgame";
 
@@ -75,6 +75,31 @@ export function quietDecisionUncertainty(board: Board, practicalPressure: number
 
 
 /**
+ * Cheap pawn/knight attack geometry. Run at the human decision boundary, not
+ * at every node of minimax. An attacked minor piece deserves actual thinking
+ * time, but it is NOT a hard rule against accepting a sound sacrifice.
+ */
+function attackedByPawn(board: Board, target: number, enemy: "w" | "b"): boolean {
+  const file = target & 7;
+  const originRank = (target >>> 3) + (enemy === "w" ? -1 : 1);
+  if (originRank < 0 || originRank > 7) return false;
+  return [-1, 1].some((df) =>
+    file + df >= 0 && file + df < 8 &&
+    board.pieceAt(originRank * 8 + file + df) === enemy + "p"
+  );
+}
+
+function attackedByKnight(board: Board, target: number, enemy: "w" | "b"): boolean {
+  const file = target & 7, rank = target >>> 3;
+  for (const [df, dr] of [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]]) {
+    const f = file + df, r = rank + dr;
+    if (f >= 0 && f < 8 && r >= 0 && r < 8 &&
+        board.pieceAt(r * 8 + f) === enemy + "n") return true;
+  }
+  return false;
+}
+
+/**
  * A bounded signal for when a human would slow down to investigate danger.
  *
  * This is not an evaluation or a mate predictor: it recognizes concrete
@@ -108,6 +133,23 @@ export function defensiveThinkingNeed(
   }
   if (king.loomingRookInvasion > 0) {
     need = Math.max(need, 0.52 + Math.min(0.20, king.loomingRookInvasion * 0.06));
+  }
+
+  // White's 2026-11-14 Agusbmw loss illustrates why waiting for king danger
+  // is too late: at move 8 an advanced knight attacks Nc3, and at move 12 a
+  // pawn attacks Nb5. Give those competing plans real analysis time, without
+  // implying the attacked piece MUST retreat.
+  for (const piece of understanding.pieces[side]) {
+    if (!["n", "b", "r", "q"].includes(piece.type)) continue;
+    const file = piece.square.charCodeAt(0) - 97;
+    const rank = Number(piece.square[1]) - 1;
+    const square = rank * 8 + file;
+    if (attackedByPawn(board, square, enemy)) {
+      need = Math.max(need, piece.type === "q" ? 0.74 : 0.70);
+    } else if ((piece.type === "n" || piece.type === "b") &&
+               attackedByKnight(board, square, enemy)) {
+      need = Math.max(need, 0.63);
+    }
   }
 
   const queen = understanding.pieces[side].find((piece) => piece.type === "q");
