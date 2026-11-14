@@ -1,4 +1,5 @@
 import { Board, Move, Color } from "./board";
+import { immediateMaterialLoss } from "./blunder-guard";
 
 /**
  * Did an otherwise quiet knight/bishop move walk into a queen-relative pin
@@ -58,4 +59,39 @@ export function invitesPinnedPawnChase(board: Board, move: Move): boolean {
     return Math.abs(pawnFile - file) === 1 &&
       pawnRank + opponentPawnDirection === rank;
   });
+}
+
+/**
+ * If a queen-pinned minor can be attacked by a legal next-turn pawn push,
+ * independently check all legal replies. Return the least immediate loss
+ * that the defender can suffer after the adversary chooses its best pawn
+ * chase. This is bounded, used only at root and never an absolute veto.
+ *
+ * Limit per-branch replies to avoid a pathological position taking over the
+ * worker clock. If exhaustive verification is not feasible, claim nothing.
+ */
+export function forcedPinnedPawnChaseLoss(board: Board, move: Move): number {
+  if (!invitesPinnedPawnChase(board, move)) return 0;
+  const side = board.turn();
+  const enemy: Color = side === "w" ? "b" : "w";
+  const child = board.makeMove(move);
+  const targetFile = move.to & 7, targetRank = move.to >>> 3;
+  let risk = 0;
+  for (const push of child.legalMoves()) {
+    if (child.pieceAt(push.from) !== enemy + "p" ||
+        child.pieceAt(push.to) || !child.createsPawnPieceThreat(push)) continue;
+    const file = push.to & 7, rank = push.to >>> 3;
+    if (Math.abs(file - targetFile) !== 1 ||
+        rank + (enemy === "w" ? 1 : -1) !== targetRank) continue;
+    const threatened = child.makeMove(push);
+    const defenses = threatened.legalMoves();
+    if (!defenses.length || defenses.length > 42) continue;
+    let bestDefenderLoss = Infinity;
+    for (const defense of defenses) {
+      bestDefenderLoss = Math.min(bestDefenderLoss, immediateMaterialLoss(threatened, defense));
+      if (bestDefenderLoss === 0) break;
+    }
+    if (Number.isFinite(bestDefenderLoss)) risk = Math.max(risk, bestDefenderLoss);
+  }
+  return Math.max(0, risk);
 }
