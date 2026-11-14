@@ -24,7 +24,7 @@ describe("Swift search agrees with FIDE-style dead-position adjudication", () =>
       for (const depth of [2, 3]) {
         const result = new SwiftEngine().search(board, { depth });
         expect(result.depth).toBe(depth);
-        expect(result.score).toBe(0);
+        expect(Math.abs(result.score)).toBe(0);
       }
     });
 
@@ -45,7 +45,7 @@ describe("Swift search agrees with FIDE-style dead-position adjudication", () =>
     expect(after.makeNullMove().isInsufficientMaterial()).toBe(true);
     // Original board is immutable and must retain its two non-king pieces.
     expect(initial.isInsufficientMaterial()).toBe(false);
-    expect(new SwiftEngine().search(after, { depth: 3 }).score).toBe(0);
+    expect(Math.abs(new SwiftEngine().search(after, { depth: 3 }).score)).toBe(0);
   });
 
   it("handles promotions as live material, not as a bare-king draw", () => {
@@ -73,6 +73,6 @@ describe("Swift search agrees with FIDE-style dead-position adjudication", () =>
       strictBestPlay: true, tacticalSearchDepth: 0,
     });
     expect(result.move).not.toBeNull();
-    expect(result.score).toBe(0);
+    expect(Math.abs(result.score)).toBe(0);
   });
 });
