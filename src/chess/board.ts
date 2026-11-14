@@ -37,6 +37,8 @@ export interface PositionState {
   /** Tracked king locations eliminate a full 64-square scan at every node. */
   whiteKing: number;
   blackKing: number;
+  /** Number of non-king pieces, incrementally maintained for cheap dead-position checks. */
+  nonKingCount: number;
 }
 
 // One shared set of attack directions. These are queried on every legality
@@ -81,7 +83,7 @@ export class Board {
     }
     if (fields[1] !== "w" && fields[1] !== "b") throw new Error("Invalid FEN side to move");
     const ep = fields[3] === "-" ? null : Board.squareIndex(fields[3]);
-    return new Board({ board, turn: fields[1], castling: fields[2] === "-" ? "" : fields[2], enPassant: ep, halfmove: Number(fields[4]), fullmove: Number(fields[5]), whiteKing: board.indexOf("wk"), blackKing: board.indexOf("bk") });
+    return new Board({ board, turn: fields[1], castling: fields[2] === "-" ? "" : fields[2], enPassant: ep, halfmove: Number(fields[4]), fullmove: Number(fields[5]), whiteKing: board.indexOf("wk"), blackKing: board.indexOf("bk"), nonKingCount: board.reduce((sum, piece) => sum + Number(!!piece && piece[1] !== "k"), 0) });
   }
 
   toFEN(): string {
@@ -218,6 +220,7 @@ export class Board {
       fullmove: this.state.fullmove + (this.state.turn === "b" ? 1 : 0),
       whiteKing: this.state.whiteKing,
       blackKing: this.state.blackKing,
+      nonKingCount: this.state.nonKingCount,
     });
   }
 
@@ -259,7 +262,42 @@ export class Board {
       fullmove: this.state.fullmove + (this.state.turn === "b" ? 1 : 0),
       whiteKing: captured === "wk" ? -1 : movingType === "k" && this.state.turn === "w" ? move.to : this.state.whiteKing,
       blackKing: captured === "bk" ? -1 : movingType === "k" && this.state.turn === "b" ? move.to : this.state.blackKing,
+      nonKingCount: this.state.nonKingCount - Number(!!captured && captured[1] !== "k"),
     });
+  }
+
+
+  /**
+   * Recognize FIDE dead positions used by Swift's Game result adjudication:
+   * bare kings; king and a single bishop/knight; and king+bishop versus
+   * king+bishop with both bishops on the same square color.
+   *
+   * Non-king count updates in O(1) with every immutable Board move. The
+   * square scan below runs ONLY in very sparse positions (at most two pieces
+   * beyond the kings), never at ordinary middlegame search nodes.
+   *
+   * Do not classify K+NN vs K, opposite-color bishops, or K+B vs K+N as
+   * dead: these can still permit checkmate in some legal configurations.
+   */
+  isInsufficientMaterial(): boolean {
+    if (this.state.nonKingCount === 0) return true;
+    if (this.state.nonKingCount > 2) return false;
+    let firstBishopColor = -1;
+    let bishops = 0;
+    let others = 0;
+    for (let square = 0; square < 64; square++) {
+      const piece = this.state.board[square];
+      if (!piece || piece[1] === "k") continue;
+      if (piece[1] === "b") {
+        bishops++;
+        const color = ((square & 7) + (square >>> 3)) & 1;
+        if (firstBishopColor < 0) firstBishopColor = color;
+        else if (firstBishopColor !== color) return false;
+      } else if (piece[1] !== "n") others++;
+    }
+    if (others > 0) return false;
+    if (this.state.nonKingCount === 1) return true;
+    return bishops === 2 && this.state.nonKingCount === 2;
   }
 
   material(): number {
