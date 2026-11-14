@@ -480,6 +480,11 @@ export class SwiftEngine {
     score -= this.rookActivity(blackRooks, "b", blackPawns, whitePawns);
     score += this.kingSafetyFromSquare(board, whiteKing, "w", castling, totalPieces, queens > 0);
     score += this.kingSafetyFromSquare(board, blackKing, "b", castling, totalPieces, queens > 0);
+    // A king hunt becomes strategically dangerous before the first check.
+    // Keep this a small positional term; concrete search still decides
+    // whether an attack is sound, and queenless endings stay king-active.
+    score -= this.kingAttackRisk(board, whiteKing, "w", totalPieces, queens > 0);
+    score += this.kingAttackRisk(board, blackKing, "b", totalPieces, queens > 0);
     score -= this.prematureQueenRaidPenalty(board, whiteQueen, "w", totalPieces);
     score += this.prematureQueenRaidPenalty(board, blackQueen, "b", totalPieces);
     return score;
@@ -643,6 +648,50 @@ export class SwiftEngine {
       score += Math.round((7 - centerDistance) * activation);
     }
     return color === "w" ? score : -score;
+  }
+
+  /**
+   * Modest opponent-intention evaluation. Count geometrically attacked king
+   * escape/cover squares and nearby heavy-piece support before tactics force
+   * check. Never call this a proven mate: it is a position term capped at
+   * 65 centipawns, with the existing adversarial search as the referee.
+   *
+   * Only active in queen-on-board middlegames. A queenless ending should
+   * reward active kings rather than permanently fearing rook proximity.
+   */
+  private kingAttackRisk(
+    board: Board,
+    kingSquare: number,
+    defender: Color,
+    totalPieces: number,
+    queensPresent: boolean,
+  ): number {
+    if (kingSquare < 0 || !queensPresent || totalPieces < 14) return 0;
+    const file = kingSquare & 7, rank = kingSquare >>> 3;
+    const opponent: Color = defender === "w" ? "b" : "w";
+    let attacked = 0;
+    for (let df = -1; df <= 1; df++) for (let dr = -1; dr <= 1; dr++) {
+      if (df === 0 && dr === 0) continue;
+      const f = file + df, r = rank + dr;
+      if (f < 0 || f > 7 || r < 0 || r > 7) continue;
+      if (board.isSquareAttacked(r * 8 + f, opponent)) attacked++;
+    }
+    // One controlled square is normal development. The danger arises from
+    // simultaneous escape-square coverage and a nearby queen or rook.
+    if (attacked < 2) return 0;
+    let queenNear = false, rookNear = false;
+    for (let square = 0; square < 64; square++) {
+      const piece = board.pieceAt(square);
+      if (!piece || piece[0] !== opponent || (piece[1] !== "q" && piece[1] !== "r")) continue;
+      const distance = Math.max(Math.abs((square & 7) - file), Math.abs((square >>> 3) - rank));
+      if (piece[1] === "q" && distance <= 4) queenNear = true;
+      if (piece[1] === "r" && distance <= 3) rookNear = true;
+      if (queenNear && rookNear) break;
+    }
+    // Only a few tens of centipawns, not a tactical veto against sacrifices.
+    const danger = (attacked - 1) * 5 + (queenNear ? 12 : 0) +
+      (rookNear ? 8 : 0) + (attacked >= 5 ? 8 : 0);
+    return Math.min(65, danger);
   }
 
   private scoreToTable(score: number, ply: number): number {
