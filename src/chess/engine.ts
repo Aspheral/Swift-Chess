@@ -2,6 +2,7 @@ import { Board, Color, Move, PieceType } from "./board";
 import { Game } from "./game";
 import { canDeltaPrune } from "./tactics";
 import { staticExchange } from "./see";
+import { invitesPinnedPawnChase } from "./pawn-chase";
 
 export interface SearchOptions {
   depth?: number;
@@ -46,6 +47,8 @@ export class SwiftEngine {
   private deadline = Infinity;
   /** Root moves that end the actual game immediately by threefold repetition. */
   private rootThreefoldMoves = new Set<string>();
+  /** One threat check per root move, reused by successive search depths. */
+  private rootPawnChase = new Map<string, boolean>();
 
   search(board: Board, options: SearchOptions = {}): SearchResult {
     const maxDepth = Math.max(1, Math.floor(options.depth ?? 4));
@@ -53,6 +56,7 @@ export class SwiftEngine {
     this.deadline = options.timeMs && options.timeMs > 0 ? Date.now() + options.timeMs : Infinity;
     const legal = board.legalMoves();
     this.rootThreefoldMoves = new Set<string>();
+    this.rootPawnChase.clear();
     if (options.positionHistoryKeys?.length) {
       const counts = new Map<string, number>();
       for (const key of options.positionHistoryKeys) counts.set(key, (counts.get(key) ?? 0) + 1);
@@ -389,6 +393,19 @@ export class SwiftEngine {
       }
     }
     if (move.castle) score += 100;
+    if (ply === 0 && moving && (moving[1] === "n" || moving[1] === "b") &&
+        !this.isCapture(board, move)) {
+      const uci = move.uci();
+      let risk = this.rootPawnChase.get(uci);
+      if (risk === undefined) {
+        risk = invitesPinnedPawnChase(board, move);
+        this.rootPawnChase.set(uci, risk);
+      }
+      // A knight pinned to its queen, then attacked by a pawn push, deserves
+      // careful comparison with quieter plans. Lower PRIORITY, not score.
+      // Black's ...c6 tactic after 11.Nb5 in the Agusbmw game is the model.
+      if (risk) score -= 650_000;
+    }
     if (board.createsPawnPieceThreat(move)) score += 400_000;
     if (!this.isCapture(board, move) && !move.promotion) {
       const key = move.uci();
