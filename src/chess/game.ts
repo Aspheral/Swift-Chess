@@ -115,32 +115,9 @@ export class Game {
     return halfmove >= 100;
   }
 
-  /**
-   * Dead-position material test for the common insufficient-material cases:
-   * K vs K, K+B vs K, K+N vs K, and K+B vs K+B with bishops on the same color.
-   */
+  /** Keep game adjudication and engine search on the same dead-position rule. */
   isInsufficientMaterial(): boolean {
-    const pieces = this.boardState
-      .toFEN()
-      .split(/\s+/)[0]
-      .replace(/[1-8/]/g, "")
-      .split("")
-      .map((char) => char.toLowerCase());
-
-    const nonKings = pieces.filter((piece) => piece !== "k");
-    if (nonKings.length === 0) return true;
-    if (nonKings.some((piece) => !["b", "n"].includes(piece))) return false;
-    if (nonKings.length === 1) return true;
-    if (nonKings.length !== 2 || nonKings[0] !== "b" || nonKings[1] !== "b") return false;
-
-    const bishopSquares: number[] = [];
-    for (let square = 0; square < 64; square++) {
-      const piece = this.boardState.pieceAt(square);
-      if (piece?.[1] === "b") bishopSquares.push(square);
-    }
-    return bishopSquares.length === 2 &&
-      ((bishopSquares[0] & 7) + Math.floor(bishopSquares[0] / 8)) % 2 ===
-      ((bishopSquares[1] & 7) + Math.floor(bishopSquares[1] / 8)) % 2;
+    return this.boardState.isInsufficientMaterial();
   }
 
   result(): GameResult {
