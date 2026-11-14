@@ -82,8 +82,8 @@ def main():
             ("10.Ne5 current Swift search choice", SAMPLES[2][1], "f3e5"),
             ("10.Re2 as played", SAMPLES[2][1], "e1e2"),
         ]
-        proc.stdin.write("setoption name MultiPV value 1\\n")
-        proc.stdin.write("isready\\n")
+        proc.stdin.write("setoption name MultiPV value 1\n")
+        proc.stdin.write("isready\n")
         proc.stdin.flush()
         wait_for(proc, "readyok")
         for label, fen, forced in comparisons:
