@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Board, SwiftEngine } from "../src";
-import { invitesPinnedPawnChase } from "../src/chess/pawn-chase";
+import { invitesPinnedPawnChase, forcedPinnedPawnChaseLoss } from "../src/chess/pawn-chase";
 import { immediateMaterialLoss } from "../src/chess/blunder-guard";
 import { replayAgusbmwGame } from "./fixtures/agusbmw";
 
@@ -20,6 +20,7 @@ describe("Human-like foresight: a knight pinned to the queen can be pawn-chased"
   it("recognizes precisely the ...c6 pinned knight trap that made 11.Nb5 bad", () => {
     const blunder = legal(before, "c3b5");
     expect(invitesPinnedPawnChase(before, blunder)).toBe(true);
+    expect(forcedPinnedPawnChaseLoss(before, blunder)).toBeGreaterThanOrEqual(200);
     expect(invitesPinnedPawnChase(before, legal(before, "d3d1"))).toBe(false);
     const engine = new SwiftEngine() as unknown as RootScore;
     expect(engine.moveScore(before, blunder, undefined, 0))
