@@ -2,7 +2,7 @@ import { Board, Color, Move, PieceType } from "./board";
 import { Game } from "./game";
 import { canDeltaPrune } from "./tactics";
 import { staticExchange } from "./see";
-import { invitesPinnedPawnChase } from "./pawn-chase";
+import { invitesPinnedPawnChase, forcedPinnedPawnChaseLoss } from "./pawn-chase";
 
 export interface SearchOptions {
   depth?: number;
@@ -49,6 +49,7 @@ export class SwiftEngine {
   private rootThreefoldMoves = new Set<string>();
   /** One threat check per root move, reused by successive search depths. */
   private rootPawnChase = new Map<string, boolean>();
+  private rootPawnChaseLoss = new Map<string, number>();
 
   search(board: Board, options: SearchOptions = {}): SearchResult {
     const maxDepth = Math.max(1, Math.floor(options.depth ?? 4));
@@ -57,6 +58,7 @@ export class SwiftEngine {
     const legal = board.legalMoves();
     this.rootThreefoldMoves = new Set<string>();
     this.rootPawnChase.clear();
+    this.rootPawnChaseLoss.clear();
     if (options.positionHistoryKeys?.length) {
       const counts = new Map<string, number>();
       for (const key of options.positionHistoryKeys) counts.set(key, (counts.get(key) ?? 0) + 1);
@@ -154,6 +156,11 @@ export class SwiftEngine {
         score = -childResult.score;
       }
 
+      // At the root only, a verified opponent pawn chase that pins a minor
+      // against our queen deserves modest strategic caution. The chase is
+      // proved against EVERY legal defender reply; no move is removed.
+      // This complements rather than replaces normal opponent-aware search.
+      score -= this.rootPawnChaseCost(board, move);
       if (score > bestScore) {
         bestScore = score;
         bestMove = move;
@@ -365,6 +372,25 @@ export class SwiftEngine {
       .map((move) => ({ move, score: this.moveScore(board, move, hashMove, ply) }))
       .sort((a, b) => b.score - a.score)
       .map(({ move }) => move);
+  }
+
+  /** Root-only, once per candidate per search; never enters inner eval nodes. */
+  private rootPawnChaseCost(board: Board, move: Move): number {
+    const key = move.uci();
+    const cached = this.rootPawnChaseLoss.get(key);
+    if (cached !== undefined) return cached;
+    const moving = board.pieceAt(move.from);
+    if (!moving || (moving[1] !== "n" && moving[1] !== "b") ||
+        !this.rootPawnChase.get(key)) {
+      this.rootPawnChaseLoss.set(key, 0);
+      return 0;
+    }
+    const proven = forcedPinnedPawnChaseLoss(board, move);
+    // Modest cap; an actual positional or mating compensation can still
+    // outweigh the risk, unlike a hard ban on sacrificial attacks.
+    const cost = Math.min(190, Math.round(proven * 0.85));
+    this.rootPawnChaseLoss.set(key, cost);
+    return cost;
   }
 
   private moveScore(board: Board, move: Move, hashMove?: Move, ply = 0): number {
