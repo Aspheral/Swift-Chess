@@ -1,6 +1,7 @@
 import { Board, Color, Move, PieceType } from "./board";
 import { Game } from "./game";
 import { canDeltaPrune } from "./tactics";
+import { staticExchange } from "./see";
 
 export interface SearchOptions {
   depth?: number;
@@ -372,6 +373,19 @@ export class SwiftEngine {
       const victim = pieceValues[captured[1] as PieceType];
       const attacker = pieceValues[moving[1] as PieceType];
       score += 1_000_000 + victim * 10 - attacker;
+      // Capturing a cheaper piece with a queen/rook often looks attractive
+      // to MVV-LVA even when the attacker is immediately recaptured.
+      // SEE is deliberately restricted to these rare plausible mistakes:
+      // doing it on every capture would overwhelm a browser time budget.
+      // This affects ordering only, NOT legality or the final chess score.
+      if (attacker >= 500 && attacker > victim + 150) {
+        const after = board.makeMove(move);
+        const enemy: Color = moving[0] === "w" ? "b" : "w";
+        if (after.isSquareAttacked(move.to, enemy) &&
+            staticExchange(board, move) <= -150) {
+          score -= 1_200_000;
+        }
+      }
     }
     if (move.castle) score += 100;
     if (board.createsPawnPieceThreat(move)) score += 400_000;
