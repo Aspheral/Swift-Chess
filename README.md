@@ -15,7 +15,7 @@
 <div align="center">
   <table>
     <tr>
-      <td align="center"><strong>2100 Rapid goal</strong><br><sub>2045 at the start of the latest supplied Chess.com game; not recalibrated</sub></td>
+      <td align="center"><strong>2100 Rapid goal</strong><br><sub>2061 Rapid in the latest shared account screenshot; new build not rated</sub></td>
       <td align="center"><strong>AI</strong><br><sub>Not a fixed engine</sub></td>
       <td align="center"><strong>Swift</strong><br><sub>Fast, personal, experimental</sub></td>
     </tr>
@@ -28,7 +28,7 @@ Swift is a chess AI made by Aspheral.
 
 The original idea was pretty simple: I wanted a chess program that could actually feel like it was playing chess, instead of just being a machine that looks through a position and finds the move with the highest number attached to it.
 
-Swift is working toward **2100 Chess.com Rapid Elo**, while keeping its own human-like decision process. The latest user-supplied game, against Agusbmw on November 14, 2026, listed SwiftChessTV at **2045 Rapid** at the start of the game, and ended in a loss. That is a user-supplied Chess.com game rating, **not** an independently confirmed rating for this code revision. The last completed 200-game Stockfish strength ladder gave an earlier build **1632 benchmark-calibrated Elo** (95% interval **1580–1684**). Different ratings and versions should not be treated as interchangeable; the current release still needs full-game strength verification.
+Swift is working toward **2100 Chess.com Rapid Elo**, while keeping its own human-like decision process. The latest user-shared Chess.com account screenshot on November 14, 2026 shows **2061 Rapid**. That is an observed account rating, **not** an independently measured rating for this new code revision. The last completed 200-game Stockfish strength ladder gave an earlier build **1632 benchmark-calibrated Elo** (95% interval **1580–1684**). Different ratings and versions should not be treated as interchangeable; the current release still needs full-game strength verification.
 
 This is not supposed to be Stockfish with a strength limiter.
 
@@ -155,7 +155,7 @@ That is the part we want to build.
 
 > **Early development**
 >
-> Swift is currently an experimental project. The next goal is **2100 Chess.com Rapid**, not yet achieved or verified for this release. The latest user-supplied game (November 14, 2026) listed SwiftChessTV at **2045 Rapid** at game start, not a new rating for the deployed engine. A much older Swift build scored **1632 benchmark-calibrated Elo** across 200 paired Stockfish games, with a 95% interval of **1580–1684**. The updated engine is not covered by that ladder result and must be measured independently.
+> Swift is currently an experimental project. The next goal is **2100 Chess.com Rapid**, not yet achieved or verified for this release. The latest user-shared Chess.com account screenshot (November 14, 2026) shows **2061 Rapid**, which is not a benchmark of the newly deployed source revision. A much older Swift build scored **1632 benchmark-calibrated Elo** across 200 paired Stockfish games, with a 95% interval of **1580–1684**. The updated engine is not covered by that ladder result and must be measured independently.
 
 The browser build runs Swift in a Web Worker with adaptive thinking time: quick in familiar openings, measured in quiet positions, and longer when the board becomes tactical. Competing final plans can also affect pacing. Swift can notice an unexpected evaluation swing, competing plans, or an urgent position after its first search, then spend a bounded extra calculation pass checking its decision. **Play mode is now untimed:** neither the user nor Swift can lose on the clock, while Swift continues to use position-aware per-move search limits and shows its actual measured think time. The 10+0 rapid clock logic introduced in v15 remains available in the codebase for future timed modes but is no longer active on the public Play board. This is a behavioral model, not a clock-use calibration against human game data. The 2100 Elo target remains open; rating methodology and prior ladder results are in [docs/calibration.md](docs/calibration.md).
 
