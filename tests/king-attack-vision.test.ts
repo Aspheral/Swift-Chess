@@ -3,18 +3,22 @@ import { Board, SwiftEngine } from "../src";
 import { replayAfLinggaGame } from "./fixtures/af-lingga";
 
 type KingRiskProbe = {
-  kingAttackRisk(board: Board, square: number, defender: "w" | "b", pieces: number, queensPresent: boolean): number;
+  kingAttackRisk(board: Board, square: number, defender: "w" | "b", pieces: number, queensPresent: boolean, attackingQueen: number, attackingRooks: number[]): number;
 };
 const engine = new SwiftEngine() as unknown as KingRiskProbe;
 
 function risk(board: Board, defender: "w" | "b", queensPresent = true): number {
-  let king = -1, count = 0;
+  let king = -1, count = 0, enemyQueen = -1;
+  const enemyRooks: number[] = [];
+  const enemy = defender === "w" ? "b" : "w";
   for (let square = 0; square < 64; square++) {
     const piece = board.pieceAt(square);
     if (piece) count++;
     if (piece === defender + "k") king = square;
+    if (piece === enemy + "q") enemyQueen = square;
+    if (piece === enemy + "r") enemyRooks.push(square);
   }
-  return engine.kingAttackRisk(board, king, defender, count, queensPresent);
+  return engine.kingAttackRisk(board, king, defender, count, queensPresent, enemyQueen, enemyRooks);
 }
 
 /** Rotate 180 degrees, switch colors, preserve only piece placement. */
