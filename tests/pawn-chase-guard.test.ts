@@ -21,6 +21,7 @@ describe("Human-like foresight: a knight pinned to the queen can be pawn-chased"
     const blunder = legal(before, "c3b5");
     expect(invitesPinnedPawnChase(before, blunder)).toBe(true);
     expect(forcedPinnedPawnChaseLoss(before, blunder)).toBeGreaterThanOrEqual(200);
+    expect(new SwiftEngine().search(before, { depth: 4 }).move?.uci()).toBe("d3d1");
     expect(invitesPinnedPawnChase(before, legal(before, "d3d1"))).toBe(false);
     const engine = new SwiftEngine() as unknown as RootScore;
     expect(engine.moveScore(before, blunder, undefined, 0))
@@ -48,6 +49,13 @@ describe("Human-like foresight: a knight pinned to the queen can be pawn-chased"
   it("does not invent a pawn chase if c6 is blocked", () => {
     const blocked = Board.fromFEN(before.toFEN().replace("bp2p3", "bpn1p3"));
     expect(invitesPinnedPawnChase(blocked, legal(blocked, "c3b5"))).toBe(false);
+  });
+
+  it("replays the complete historical game and exact recorded checkmate", () => {
+    expect(game.positions).toHaveLength(121);
+    expect(game.positions[120].isCheckmate()).toBe(true);
+    expect(game.positions[120].toFEN()).toBe("8/8/8/3n4/3P4/5kp1/8/5K1r w - - 6 61");
+    expect(game.sans.slice(20, 26)).toEqual(["Nb5", "c6", "a4", "cxb5", "axb5", "Bb7"]);
   });
 
   it("preserves development in ordinary openings and sound tactical queen captures", () => {
