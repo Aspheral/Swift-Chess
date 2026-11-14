@@ -13,6 +13,27 @@ type RootScore = {
   moveScore(board: Board, move: ReturnType<Board["legalMoves"]>[number], hash?: never, ply?: number): number;
 };
 
+/** 180-degree board rotation plus color swap, to check symmetric threat detection. */
+function swapSides(board: Board): Board {
+  const squares: Array<string | null> = Array(64).fill(null);
+  for (let i = 0; i < 64; i++) {
+    const p = board.pieceAt(i);
+    if (p) squares[63 - i] = p[0] === "w" ? p[1] : p[1].toUpperCase();
+  }
+  const rows: string[] = [];
+  for (let rank = 7; rank >= 0; rank--) {
+    let row = "", blanks = 0;
+    for (let file = 0; file < 8; file++) {
+      const p = squares[rank * 8 + file];
+      if (!p) blanks++;
+      else { if (blanks) { row += blanks; blanks = 0; } row += p; }
+    }
+    if (blanks) row += blanks;
+    rows.push(row);
+  }
+  return Board.fromFEN(rows.join("/") + " " + (board.turn() === "w" ? "b" : "w") + " - - 0 1");
+}
+
 describe("Human-like foresight: a knight pinned to the queen can be pawn-chased", () => {
   const game = replayAgusbmwGame();
   const before = game.positions[20];
@@ -39,6 +60,13 @@ describe("Human-like foresight: a knight pinned to the queen can be pawn-chased"
     })).sort((a, b) => a.loss - b.loss);
     console.log("AGUSBMW_PINNED_PAWN_CHASE_REPLIES " + JSON.stringify(replies.slice(0, 16)));
     expect(replies).not.toHaveLength(0);
+  });
+
+  it("recognizes the same legal pawn chase for Black after color reversal", () => {
+    const mirrored = swapSides(before);
+    const knight = legal(mirrored, "f6g4");
+    expect(invitesPinnedPawnChase(mirrored, knight)).toBe(true);
+    expect(forcedPinnedPawnChaseLoss(mirrored, knight)).toBeGreaterThanOrEqual(200);
   });
 
   it("does not invent a pawn chase if the pinning bishop is absent", () => {
