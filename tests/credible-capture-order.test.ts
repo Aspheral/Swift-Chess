@@ -40,7 +40,7 @@ describe("Credible capture-first search under king pressure", () => {
 
   it("preserves fast ordering for profitable heavy-piece captures", () => {
     const rookWins = Board.fromFEN("4k3/p7/8/8/8/8/8/R5K1 w - - 0 1");
-    const rookLost = Board.fromFEN("4k3/p7/1q6/8/8/8/8/R5K1 w - - 0 1");
+    const rookLost = Board.fromFEN("1b2k3/p7/8/8/8/8/8/R5K1 w - - 0 1");
     const engine = new SwiftEngine() as unknown as MoveScorer;
     expect(staticExchange(rookWins, move(rookWins, "a1a7"))).toBeGreaterThan(0);
     expect(staticExchange(rookLost, move(rookLost, "a1a7"))).toBeLessThan(0);
