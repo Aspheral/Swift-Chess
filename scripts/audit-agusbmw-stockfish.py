@@ -9,6 +9,9 @@ import re
 import subprocess
 
 SAMPLES = [
+    ("8.Qd3 developing queen into center", "rnbq1rk1/ppp1b1pp/4p3/3p1p2/3Pn3/2N1PNP1/PPP2PBP/R1BQ1RK1 w - - 2 8"),
+    ("9.Re1 rook maneuver", "rnbq1rk1/p1p1b1pp/1p2p3/3p1p2/3Pn3/2NQPNP1/PPP2PBP/R1B2RK1 w - - 0 9"),
+    ("10.Re2 rook redeployment", "rnbq1rk1/2p1b1pp/1p2p3/p2p1p2/3Pn3/2NQPNP1/PPP2PBP/R1B1R1K1 w - a6 0 10"),
     ("11.Nb5 before pawn attack", "rn1q1rk1/2p1b1pp/bp2p3/p2p1p2/3Pn3/2NQPNP1/PPP1RPBP/R1B3K1 w - - 2 11"),
     ("12.a4 with attacked knight", "rn1q1rk1/4b1pp/bpp1p3/pN1p1p2/3Pn3/3QPNP1/PPP1RPBP/R1B3K1 w - - 0 12"),
     ("24.Qxb4 complex queen exchange", "r6k/2q3pp/1pPr1n2/p2p1pn1/Qb1P4/4PPP1/RPR3BP/2B3K1 w - - 1 24"),
