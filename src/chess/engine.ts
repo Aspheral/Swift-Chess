@@ -378,7 +378,7 @@ export class SwiftEngine {
       // SEE is deliberately restricted to these rare plausible mistakes:
       // doing it on every capture would overwhelm a browser time budget.
       // This affects ordering only, NOT legality or the final chess score.
-      if (attacker >= 500 && attacker > victim + 150) {
+      if (attacker >= 500 && attacker > victim + 150 && !board.isInCheck(board.turn())) {
         const after = board.makeMove(move);
         const enemy: Color = moving[0] === "w" ? "b" : "w";
         if (after.isSquareAttacked(move.to, enemy) &&
