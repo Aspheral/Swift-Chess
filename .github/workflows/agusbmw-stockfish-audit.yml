@@ -1,0 +1,28 @@
+name: Agusbmw independent Stockfish audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/audit-agusbmw-stockfish.py"
+      - ".github/workflows/agusbmw-stockfish-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Stockfish depth-16 multi-PV four-checkpoint audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install independent Stockfish
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y stockfish
+          sudo ln -sf /usr/games/stockfish /usr/local/bin/stockfish
+          printf 'uci\nquit\n' | stockfish | grep -m 1 '^id name'
+      - name: Analyze historical game checkpoints
+        run: python3 scripts/audit-agusbmw-stockfish.py
