@@ -324,7 +324,7 @@ export class SwiftEngine {
       const legal = board.legalMoves();
       if (legal.length === 0) return -MATE + ply;
       let best = -INF;
-      for (const move of this.orderMoves(board, legal, undefined, 0)) {
+      for (const move of this.orderMoves(board, legal, undefined, ply)) {
         const score = -this.quiescence(board.makeMove(move), -beta, -alpha, ply + 1, qPly + 1);
         best = Math.max(best, score); alpha = Math.max(alpha, score);
         if (alpha >= beta) break;
@@ -341,7 +341,7 @@ export class SwiftEngine {
     const standPat = this.evaluate(board);
     if (standPat >= beta) return beta;
     if (standPat > alpha) alpha = standPat;
-    const captures = this.orderMoves(board, tactical.moves, undefined, 0);
+    const captures = this.orderMoves(board, tactical.moves, undefined, ply);
     for (const move of captures) {
       this.checkTime();
       const child = board.makeMove(move);
@@ -378,7 +378,8 @@ export class SwiftEngine {
       // SEE is deliberately restricted to these rare plausible mistakes:
       // doing it on every capture would overwhelm a browser time budget.
       // This affects ordering only, NOT legality or the final chess score.
-      if (attacker >= 500 && attacker > victim + 150 && !board.isInCheck(board.turn())) {
+      if (ply === 0 && attacker >= 500 && attacker > victim + 150 &&
+          !board.isInCheck(board.turn())) {
         const after = board.makeMove(move);
         const enemy: Color = moving[0] === "w" ? "b" : "w";
         if (after.isSquareAttacked(move.to, enemy) &&
