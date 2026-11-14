@@ -178,6 +178,7 @@ export class SwiftEngine {
     this.nodes++;
     // A completed fifty-move draw scores zero, unless the move delivering it
     // already checkmated the opponent. Never let a cached score override it.
+    if (board.isInsufficientMaterial()) return { score: 0, pv: [] };
     if (board.halfmoveClock() >= 100 && !board.isCheckmate()) return { score: 0, pv: [] };
     const inCheck = board.isInCheck(this.sideToMove(board));
     if (depth <= 0 && !inCheck) return { score: this.quiescence(board, alpha, beta, ply), pv: [] };
@@ -318,6 +319,7 @@ export class SwiftEngine {
   private quiescence(board: Board, alpha: number, beta: number, ply: number, qPly = 0): number {
     this.checkTime();
     this.nodes++;
+    if (board.isInsufficientMaterial()) return 0;
     if (board.halfmoveClock() >= 100 && !board.isCheckmate()) return 0;
     const side = this.sideToMove(board);
     const inCheck = board.isInCheck(side);
