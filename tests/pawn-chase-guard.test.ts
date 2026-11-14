@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Board, SwiftEngine } from "../src";
 import { invitesPinnedPawnChase } from "../src/chess/pawn-chase";
+import { immediateMaterialLoss } from "../src/chess/blunder-guard";
 import { replayAgusbmwGame } from "./fixtures/agusbmw";
 
 function legal(board: Board, uci: string) {
@@ -26,6 +27,16 @@ describe("Human-like foresight: a knight pinned to the queen can be pawn-chased"
     // In a non-root search, this optional planning heuristic must cost ZERO.
     expect(engine.moveScore(before, blunder, undefined, 2))
       .toBeGreaterThan(engine.moveScore(before, blunder, undefined, 0));
+  });
+
+  it("probes whether any legal reply to ...c6 avoids immediate material loss", () => {
+    const child = before.makeMove(legal(before, "c3b5"));
+    const pushed = child.makeMove(legal(child, "c7c6"));
+    const replies = pushed.legalMoves().map((reply) => ({
+      uci: reply.uci(), loss: immediateMaterialLoss(pushed, reply),
+    })).sort((a, b) => a.loss - b.loss);
+    console.log("AGUSBMW_PINNED_PAWN_CHASE_REPLIES " + JSON.stringify(replies.slice(0, 16)));
+    expect(replies).not.toHaveLength(0);
   });
 
   it("does not invent a pawn chase if the pinning bishop is absent", () => {
