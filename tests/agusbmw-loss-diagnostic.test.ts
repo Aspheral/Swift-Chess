@@ -46,7 +46,7 @@ describe("Agusbmw vs SwiftChessTV 2026-11-14 real-game loss", () => {
   });
 
   it("compares timed current human choice and frozen-depth root choice at actual errors", () => {
-    for (const ply of [18, 20, 22, 46, 98]) {
+    for (const ply of [14, 16, 18, 20, 22, 46, 98]) {
       const board = game.positions[ply];
       const history = game.moves.slice(0, ply);
       const profile = swiftPlayProfile(board, history);
