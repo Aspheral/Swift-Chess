@@ -19,6 +19,9 @@ describe("Agusbmw vs SwiftChessTV 2026-11-14 real-game loss", () => {
 
   it("records material/tactics and legal alternatives at the suspect decisions", () => {
     const positions = [
+      { ply: 14, label: "8.Qd3, opening development" },
+      { ply: 16, label: "9.Re1, repeated rook maneuver begins" },
+      { ply: 18, label: "10.Re2, rook maneuver continues" },
       { ply: 20, label: "11.Nb5, before the ...c6 pawn chase" },
       { ply: 22, label: "12.a4, knight b5 attacked by c6 pawn" },
       { ply: 46, label: "24.Qxb4, queen takes bishop defended by a-pawn" },
@@ -43,7 +46,7 @@ describe("Agusbmw vs SwiftChessTV 2026-11-14 real-game loss", () => {
   });
 
   it("compares timed current human choice and frozen-depth root choice at actual errors", () => {
-    for (const ply of [22, 46, 98]) {
+    for (const ply of [18, 20, 22, 46, 98]) {
       const board = game.positions[ply];
       const history = game.moves.slice(0, ply);
       const profile = swiftPlayProfile(board, history);
