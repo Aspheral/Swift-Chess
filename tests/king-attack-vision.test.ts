@@ -23,7 +23,7 @@ function switchSides(board: Board): Board {
   for (let square = 0; square < 64; square++) {
     const piece = board.pieceAt(square);
     if (piece) chars[63 - square] = piece[0] === "w"
-      ? piece[1].toUpperCase() : piece[1];
+      ? piece[1] : piece[1].toUpperCase();
   }
   const ranks: string[] = [];
   for (let rank = 7; rank >= 0; rank--) {
