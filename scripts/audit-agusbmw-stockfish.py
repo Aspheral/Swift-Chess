@@ -26,9 +26,10 @@ def wait_for(proc, token):
         if line.startswith(token):
             return line.strip()
 
-def analyze(proc, label, fen, depth=16):
+def analyze(proc, label, fen, depth=16, searchmoves=None):
     proc.stdin.write("position fen " + fen + "\n")
-    proc.stdin.write("go depth " + str(depth) + "\n")
+    cmd = "go depth " + str(depth) + (" searchmoves " + searchmoves if searchmoves else "")
+    proc.stdin.write(cmd + "\n")
     proc.stdin.flush()
     variations = {}
     while True:
@@ -72,6 +73,21 @@ def main():
         wait_for(proc, "readyok")
         for label, fen in SAMPLES:
             analyze(proc, label, fen, depth=16)
+        # A principal move excluded from a MultiPV top four needs its own
+        # restricted search before we can label it a strategic error.
+        comparisons = [
+            ("8.Qd3 as played", SAMPLES[0][1], "d1d3"),
+            ("9.Ne5 current Swift search choice", SAMPLES[1][1], "f3e5"),
+            ("9.Re1 as played", SAMPLES[1][1], "f1e1"),
+            ("10.Ne5 current Swift search choice", SAMPLES[2][1], "f3e5"),
+            ("10.Re2 as played", SAMPLES[2][1], "e1e2"),
+        ]
+        proc.stdin.write("setoption name MultiPV value 1\\n")
+        proc.stdin.write("isready\\n")
+        proc.stdin.flush()
+        wait_for(proc, "readyok")
+        for label, fen, forced in comparisons:
+            analyze(proc, label, fen, depth=16, searchmoves=forced)
     finally:
         proc.stdin.write("quit\n")
         proc.stdin.flush()
