@@ -483,8 +483,8 @@ export class SwiftEngine {
     // A king hunt becomes strategically dangerous before the first check.
     // Keep this a small positional term; concrete search still decides
     // whether an attack is sound, and queenless endings stay king-active.
-    score -= this.kingAttackRisk(board, whiteKing, "w", totalPieces, queens > 0);
-    score += this.kingAttackRisk(board, blackKing, "b", totalPieces, queens > 0);
+    score -= this.kingAttackRisk(board, whiteKing, "w", totalPieces, queens > 0, blackQueen, blackRooks);
+    score += this.kingAttackRisk(board, blackKing, "b", totalPieces, queens > 0, whiteQueen, whiteRooks);
     score -= this.prematureQueenRaidPenalty(board, whiteQueen, "w", totalPieces);
     score += this.prematureQueenRaidPenalty(board, blackQueen, "b", totalPieces);
     return score;
@@ -665,9 +665,20 @@ export class SwiftEngine {
     defender: Color,
     totalPieces: number,
     queensPresent: boolean,
+    attackingQueen: number,
+    attackingRooks: number[],
   ): number {
     if (kingSquare < 0 || !queensPresent || totalPieces < 14) return 0;
     const file = kingSquare & 7, rank = kingSquare >>> 3;
+    // The evaluator already gathered queen and rook coordinates. Do not
+    // rescan the entire board at every leaf or generate eight attack maps
+    // in positions with no nearby attacking heavy pieces.
+    const near = (square: number, distance: number) =>
+      square >= 0 &&
+      Math.max(Math.abs((square & 7) - file), Math.abs((square >>> 3) - rank)) <= distance;
+    const queenNear = near(attackingQueen, 4);
+    const rookNear = attackingRooks.some((square) => near(square, 3));
+    if (!queenNear && !rookNear) return 0;
     const opponent: Color = defender === "w" ? "b" : "w";
     let attacked = 0;
     for (let df = -1; df <= 1; df++) for (let dr = -1; dr <= 1; dr++) {
@@ -679,15 +690,6 @@ export class SwiftEngine {
     // One controlled square is normal development. The danger arises from
     // simultaneous escape-square coverage and a nearby queen or rook.
     if (attacked < 2) return 0;
-    let queenNear = false, rookNear = false;
-    for (let square = 0; square < 64; square++) {
-      const piece = board.pieceAt(square);
-      if (!piece || piece[0] !== opponent || (piece[1] !== "q" && piece[1] !== "r")) continue;
-      const distance = Math.max(Math.abs((square & 7) - file), Math.abs((square >>> 3) - rank));
-      if (piece[1] === "q" && distance <= 4) queenNear = true;
-      if (piece[1] === "r" && distance <= 3) rookNear = true;
-      if (queenNear && rookNear) break;
-    }
     // Only a few tens of centipawns, not a tactical veto against sacrifices.
     const danger = (attacked - 1) * 5 + (queenNear ? 12 : 0) +
       (rookNear ? 8 : 0) + (attacked >= 5 ? 8 : 0);
