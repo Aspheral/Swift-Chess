@@ -216,6 +216,8 @@ export default function Playground() {
         return;
       }
 
+      if (response.type !== "result") return;
+
       const finish = () => {
         const latest = activeSearchRef.current;
         if (
