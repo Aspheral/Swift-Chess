@@ -491,7 +491,7 @@ export default function Playground() {
     setReviewError(null);
     setReviewLoading(true);
 
-    const worker = new Worker(new URL("../src/chess/browser-worker.ts", import.meta.url), { type: "module" });
+    const worker = new Worker(new URL("../src/chess/coach-review-worker.ts", import.meta.url), { type: "module" });
     reviewWorkerRef.current = worker;
     worker.onmessage = (event: MessageEvent<SwiftWorkerResponse>) => {
       if (reviewRequestIdRef.current !== id || event.data.id !== id) return;
