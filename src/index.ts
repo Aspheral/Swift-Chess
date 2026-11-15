@@ -17,6 +17,7 @@ export * from "./chess/play-profile";
 export * from "./chess/mind";
 export * from "./chess/humanity";
 export * from "./chess/plan-vision";
+export * from "./chess/coach";
 
 export * from "./chess/rapid-clock";
 export * from "./chess/rapid-time";
