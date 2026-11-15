@@ -17,6 +17,12 @@ export interface QueenExchangeContext {
 
 const FILES = "abcdefgh";
 const name = (s: number) => `${FILES[s & 7]}${Math.floor(s / 8) + 1}`;
+/** Simple capture notation for explanation prose; the UCI line remains exact. */
+const captureName = (board: Board, move: Move): string => {
+  const piece = board.pieceAt(move.from);
+  const prefix = piece?.[1] === "p" ? FILES[move.from & 7] : piece?.[1].toUpperCase() ?? "?";
+  return `${prefix}x${name(move.to)}`;
+};
 const names: Record<PieceType, string> = {
   p: "pawn", n: "knight", b: "bishop", r: "rook", q: "queen", k: "king",
 };
@@ -46,16 +52,19 @@ export function queenExchangeContext(board: Board, victim: Color): QueenExchange
     let explanation: string;
     if (recapture && tradesQueens) {
       const recapturing = child.pieceAt(recapture.from);
-      explanation = `${color} can take the queen on ${name(capture.to)} with ${capture.uci()}, ` +
-        `but your ${recapturing ? names[recapturing[1] as PieceType] : "piece"} can answer with ${recapture.uci()}. ` +
-        "Both queens leave the board. That's a trade, not a queen left for free. " +
-        "Whether you'd welcome that endgame is the real question.";
+      const tradeEffect = recapturing?.[1] === "p"
+        ? ` Your pawn finishes on ${name(recapture.to)}, changing the central pawn structure.`
+        : "";
+      explanation = `${color} can play ${captureName(board, capture)}, but your ` +
+        `${recapturing ? names[recapturing[1] as PieceType] : "piece"} can take back with ${captureName(child, recapture)}. ` +
+        "Both queens leave the board. That's a queen trade, not a blunder by itself." +
+        tradeEffect + " The resulting position matters more than the capture alone.";
     } else if (recapture) {
-      explanation = `${color} can take your queen with ${capture.uci()}, and ${recapture.uci()} ` +
-        `recaptures the ${capturingPiece ? names[capturingPiece[1] as PieceType] : "piece"}. ` +
-        "That is not an even queen trade; check what material remains afterward.";
+      explanation = `${color} can play ${captureName(board, capture)}, and your ${captureName(child, recapture)} ` +
+        `takes back the ${capturingPiece ? names[capturingPiece[1] as PieceType] : "piece"}. ` +
+        "That's not an equal queen-for-queen trade; check the material left on the board.";
     } else {
-      explanation = `${color} can take the queen on ${name(capture.to)} with ${capture.uci()}, ` +
+      explanation = `${color} can take the queen on ${name(capture.to)} with ${captureName(board, capture)}, ` +
         "and there is no immediate legal recapture. That is a real warning, although " +
         "a deeper tactic might still provide compensation.";
     }
