@@ -1,5 +1,6 @@
 import { Board } from "./board";
-import { buildCoachReport } from "./coach";
+import { buildCoachReport, buildPlayedMoveReview } from "./coach";
+import { SwiftEngine } from "./engine";
 import { HumanSwiftEngine } from "./human-engine";
 import { decisionThinkPaceMs, swiftPlayProfile } from "./play-profile";
 import { allocateRapidThink } from "./rapid-time";
@@ -21,6 +22,47 @@ let analysisEngines: Record<"w" | "b", HumanSwiftEngine> = {
 
 context.onmessage = (event) => {
   const request = event.data;
+
+  if (request.type === "review") {
+    try {
+      const before = Board.fromFEN(request.fen);
+      const played = before.legalMoves().find((move) => move.uci() === request.move);
+      if (!played) {
+        context.postMessage({ type: "review-result", id: request.id, review: null });
+        return;
+      }
+
+      const immediate = buildPlayedMoveReview(before, played.uci());
+      // Forced mates are already conclusively verified by the chess rules.
+      // Search only unresolved / material questions and never on the game-
+      // playing worker: the UI launches this request in its own worker.
+      const decisive = immediate && ["mate-in-one", "mate-in-two", "checkmate"].includes(immediate.verdict);
+      const evidence = !decisive ? (() => {
+        const reference = new SwiftEngine().search(before, { depth: 4, timeMs: 550 });
+        const response = new SwiftEngine().search(before.makeMove(played), { depth: 3, timeMs: 450 });
+        return {
+          bestMove: reference.move?.uci() ?? null,
+          bestLine: (reference.pv ?? []).map((move) => move.uci()),
+          bestScore: reference.score,
+          rootDepth: reference.depth,
+          replyLine: (response.pv ?? []).map((move) => move.uci()),
+          replyScore: response.score,
+          childDepth: response.depth,
+        };
+      })() : undefined;
+
+      context.postMessage({
+        type: "review-result", id: request.id,
+        review: buildPlayedMoveReview(before, played.uci(), evidence),
+      });
+    } catch (error) {
+      context.postMessage({
+        type: "review-error", id: request.id,
+        message: error instanceof Error ? error.message : "The move review could not finish",
+      });
+    }
+    return;
+  }
 
   if (request.type === "reset") {
     engine = new HumanSwiftEngine();
