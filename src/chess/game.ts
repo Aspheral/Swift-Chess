@@ -89,6 +89,12 @@ export class Game {
     return [...this.movesState];
   }
 
+  /** Immutable position immediately before move at zero-based ply index. */
+  boardBeforePly(ply: number): Board | null {
+    if (!Number.isInteger(ply) || ply < 0 || ply >= this.movesState.length) return null;
+    return this.boardHistoryState[ply];
+  }
+
   /** Repetition identities in chronological order, including the initial position. */
   positionHistoryKeys(): string[] {
     return [...this.positionKeysState];
