@@ -29,3 +29,11 @@
 .coach-alternative{margin-top:10px;padding-left:11px;border-left:2px solid #6e4b61}
 .coach-alternative code{font:12px monospace;color:#fff0b7}
 .coach-card .coach-disclaimer{display:block;border-top:1px solid #493640;margin-top:17px;padding-top:12px}
+
+/* Selectable move history and isolated played-move reviews. */
+.coach-review{border-bottom:1px solid #765069;background:linear-gradient(155deg,#33232f,#1f1a20 75%)}
+.coach-review .coach-eval{display:block;margin-top:13px;color:#aa9faa;font:11px/1.55 Georgia,serif}
+.coach-review code{font:12px ui-monospace,SFMono-Regular,Consolas,monospace;color:#fff0b7}
+.history .move button{border:0;border-radius:5px;padding:5px 9px;margin:-5px 0;background:transparent;color:#eee;text-align:left;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;cursor:pointer}
+.history .move button:hover,.history .move button:focus-visible{background:#392834;color:#ffe1ed;outline:1px solid #8e536e}
+.history .move.review-selected button{background:#503047;color:#ffe4ee;box-shadow:inset 3px 0 #ed8fa8}
