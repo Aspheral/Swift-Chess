@@ -180,3 +180,173 @@ export function buildCoachReport(board: Board, input: CoachInput): CoachReport {
     alternatives,
   };
 }
+
+
+/** One recorded move, reviewed from the board *before* it was played. */
+export interface CoachMoveReview {
+  playedMove: string;
+  headline: string;
+  verdict: "checkmate" | "mate-in-one" | "mate-in-two" | "queen-capture" |
+    "large-drop" | "smaller-drop" | "close" | "unverified";
+  explanation: string;
+  /** Every move in this variation was replayed and checked for legality. */
+  line: string[];
+  /** Only an exhaustive mate proof can be marked forced. */
+  forced: boolean;
+  suggestedMove?: string;
+  suggestedLine?: string[];
+  centipawnDrop?: number;
+  completedDepth?: number;
+}
+
+/**
+ * Optional independent, aligned-depth searches:
+ * a depth-N search of the parent and depth-(N-1) search of the played child.
+ * Scores are from their respective sides to move, so the child's score is
+ * negated when comparing from the original mover's perspective.
+ */
+export interface CoachReviewSearchEvidence {
+  bestMove: string | null;
+  bestLine: string[];
+  bestScore: number;
+  rootDepth: number;
+  replyLine: string[];
+  replyScore: number;
+  childDepth: number;
+}
+
+/**
+ * Look only for a fully proven checking mate in two: the attacker has a
+ * checking first move, and for EVERY legal defense has a mate in one.
+ * Work is bounded by two branching gates; failing a gate means "unknown",
+ * never "not mate".
+ */
+function provenCheckingMateInTwo(board: Board): string[] | null {
+  const attacker = board.turn();
+  const defender = opposite(attacker);
+  let checksExamined = 0;
+  for (const first of board.legalMoves()) {
+    const next = board.makeMove(first);
+    if (!next.isInCheck(defender)) continue;
+    if (++checksExamined > 8) break;
+    const replies = next.legalMoves();
+    if (replies.length === 0 || replies.length > 10) continue;
+    let example: string[] | null = null;
+    let allResponsesMated = true;
+    for (const reply of replies) {
+      const afterDefense = next.makeMove(reply);
+      const finishingMate = mateInOne(afterDefense);
+      if (!finishingMate) {
+        allResponsesMated = false;
+        break;
+      }
+      if (!example) example = [first.uci(), reply.uci(), finishingMate.uci()];
+    }
+    if (allResponsesMated && example) return example;
+  }
+  return null;
+}
+
+export function buildPlayedMoveReview(
+  before: Board,
+  playedUci: string,
+  evidence?: CoachReviewSearchEvidence,
+): CoachMoveReview | null {
+  const move = findLegal(before, playedUci);
+  if (!move) return null;
+  const playedMove = move.uci();
+  const after = before.makeMove(move);
+  const legalBest = evidence?.bestMove ? findLegal(before, evidence.bestMove) : undefined;
+  const suggestedMove = legalBest && legalBest.uci() !== playedMove
+    ? legalBest.uci() : undefined;
+  const suggestedLine = suggestedMove && evidence?.bestLine[0] === suggestedMove
+    ? verifyCoachLine(before, evidence.bestLine, 6) : undefined;
+
+  const matched = !!evidence && evidence.rootDepth >= 4 && evidence.childDepth >= 3 &&
+    Number.isFinite(evidence.bestScore) && Number.isFinite(evidence.replyScore) &&
+    !!legalBest;
+  // A principal result selecting the played move is not evidence of a loss,
+  // even when two separate time-limited searches disagree numerically.
+  const centipawnDrop = matched ? suggestedMove
+    ? Math.max(0, Math.round(evidence!.bestScore + evidence!.replyScore))
+    : 0 : undefined;
+  const completedDepth = matched ? evidence!.rootDepth : undefined;
+  const candidateLine = evidence?.replyLine
+    ? verifyCoachLine(before, [playedMove, ...evidence.replyLine], 6) : [playedMove];
+  const base = { playedMove, suggestedMove, suggestedLine, centipawnDrop, completedDepth };
+
+  if (after.isCheckmate()) {
+    return {
+      ...base, verdict: "checkmate", headline: "This move delivers checkmate",
+      explanation: "The move legally checkmates the opposing king. There is no legal escape.",
+      line: [playedMove], forced: true,
+    };
+  }
+
+  const matingReply = mateInOne(after);
+  if (matingReply) {
+    // A losing situation can already be forced. Call it a blunder only if at
+    // least one other legal choice avoids mate on the next move.
+    const avoidable = before.legalMoves().some((alternative) =>
+      alternative.uci() !== playedMove && mateInOne(before.makeMove(alternative)) === null,
+    );
+    return {
+      ...base, verdict: "mate-in-one",
+      headline: avoidable ? "Blunder: this allows mate in one" : "The opponent has mate in one",
+      explanation: "The opponent can checkmate immediately with " + matingReply.uci() + "." +
+        (avoidable
+          ? " At least one other legal move would avoid this immediate mate."
+          : " No alternative avoiding the same immediate threat was found, so it may have been unavoidable."),
+      line: [playedMove, matingReply.uci()], forced: true,
+    };
+  }
+
+  const twoMoveMate = provenCheckingMateInTwo(after);
+  if (twoMoveMate) {
+    return {
+      ...base, verdict: "mate-in-two", headline: "A forced mate in two is available",
+      explanation: "After " + twoMoveMate[0] +
+        " the opponent has a check that leads to mate on their following move against every legal defense. The line shows one of those defenses.",
+      line: [playedMove, ...twoMoveMate], forced: true,
+    };
+  }
+
+  const queenAttack = queenCapture(after, before.turn());
+  if (queenAttack) {
+    return {
+      ...base, verdict: "queen-capture", headline: "Your queen can be captured",
+      explanation: "After this move, the opponent can legally capture your queen with " +
+        queenAttack.uci() + ". This is a real tactical possibility, but a capture alone does not prove a net material loss.",
+      line: [playedMove, queenAttack.uci()], forced: false,
+    };
+  }
+
+  if (centipawnDrop !== undefined && centipawnDrop >= 250) {
+    return {
+      ...base, verdict: "large-drop", headline: "A major evaluation drop",
+      explanation: "At completed aligned search depths, Swift estimates this choice is about " +
+        centipawnDrop + " centipawns worse than its searched preference. This is a search estimate, not a proven forced win.",
+      line: candidateLine, forced: false,
+    };
+  }
+  if (centipawnDrop !== undefined && centipawnDrop >= 90) {
+    return {
+      ...base, verdict: "smaller-drop", headline: "A possible improvement was missed",
+      explanation: "Swift's completed searches favor a different move by about " +
+        centipawnDrop + " centipawns. This is an estimate; the tactical cause is not yet proven.",
+      line: candidateLine, forced: false,
+    };
+  }
+  if (centipawnDrop !== undefined) {
+    return {
+      ...base, verdict: "close", headline: "No major evaluation drop found",
+      explanation: "At the completed comparison depth, Swift did not find a large advantage to switching moves. That is not proof this was the best move.",
+      line: candidateLine, forced: false,
+    };
+  }
+  return {
+    ...base, verdict: "unverified", headline: "Review is inconclusive",
+    explanation: "No short forced mate or immediate queen capture was verified. A matched-depth search did not finish, so Swift is not grading this move.",
+    line: candidateLine, forced: false,
+  };
+}
