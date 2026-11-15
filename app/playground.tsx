@@ -594,7 +594,7 @@ export default function Playground() {
                   <p><code>{playedReview.suggestedMove}</code></p>
                   {playedReview.suggestedLine && playedReview.suggestedLine.length > 1 && <p className="coach-line">{imaginedMoves(playedReview.suggestedLine)}</p>}
                 </div>}
-                {playedReview.centipawnDrop !== undefined && <small className="coach-eval">Estimated difference: {playedReview.centipawnDrop} cp · aligned search depth {playedReview.completedDepth}. Not a certified rating.</small>}
+                {playedReview.centipawnDrop !== undefined && <small className="coach-eval">Estimated difference: {playedReview.centipawnDrop} cp · matched root depth {playedReview.completedDepth}. An estimate, not a tactical proof.</small>}
               </> : <p>This move cannot currently be reviewed.</p>}
           </div>}
           {analysisMode && coachEnabled && <div className="coach-card" aria-live="polite">
