@@ -264,6 +264,8 @@ export function buildPlayedMoveReview(
 
   const matched = !!evidence && evidence.rootDepth >= 4 && evidence.childDepth >= 3 &&
     Number.isFinite(evidence.bestScore) && Number.isFinite(evidence.replyScore) &&
+    // Mate scores have special units, not centipawns. Never print them as cp.
+    Math.abs(evidence.bestScore) < 90000 && Math.abs(evidence.replyScore) < 90000 &&
     !!legalBest;
   // A principal result selecting the played move is not evidence of a loss,
   // even when two separate time-limited searches disagree numerically.
