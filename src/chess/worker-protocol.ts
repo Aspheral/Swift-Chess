@@ -3,6 +3,7 @@ import { SwiftThinkKind } from "./play-profile";
 import type { SwiftMindSnapshot } from "./mind";
 import type { SwiftDecisionTrace } from "./human-engine";
 import type { SoloPlanVision } from "./plan-vision";
+import type { CoachReport } from "./coach";
 import type { SwiftSecondLookReason } from "./adaptive-thinking";
 
 export interface SwiftWorkerSearchRequest {
@@ -52,6 +53,7 @@ export interface SwiftWorkerSearchResponse {
   mind?: SwiftMindSnapshot;
   decision?: SwiftDecisionTrace;
   planVision?: SoloPlanVision;
+  coach?: CoachReport;
 }
 
 export interface SwiftWorkerErrorResponse {
