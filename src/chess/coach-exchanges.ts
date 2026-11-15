@@ -57,7 +57,7 @@ export function queenExchangeContext(board: Board, victim: Color): QueenExchange
         : "";
       explanation = `${color} can play ${captureName(board, capture)}, but your ` +
         `${recapturing ? names[recapturing[1] as PieceType] : "piece"} can take back with ${captureName(child, recapture)}. ` +
-        "Both queens leave the board. That's a queen trade, not a blunder by itself." +
+        "Both queens leave the board. That's a queen trade, not a queen being given away." +
         tradeEffect + " The resulting position matters more than the capture alone.";
     } else if (recapture) {
       explanation = `${color} can play ${captureName(board, capture)}, and your ${captureName(child, recapture)} ` +
