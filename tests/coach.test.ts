@@ -42,7 +42,7 @@ describe("Coach Mode", () => {
     const alt = report.alternatives.find((candidate) => candidate.move === "e1g1");
     expect(alt?.kind).toBe("queen-trade");
     expect(alt?.line).toEqual(["e1g1", "d5e5", "d4e5"]);
-    expect(alt?.explanation).toMatch(/trade, not a queen left for free/i);
+    expect(alt?.explanation).toMatch(/queen trade, not a queen being given away/i);
   });
 
   it("describes castling as king development, not just an unexplained UCI move", () => {
