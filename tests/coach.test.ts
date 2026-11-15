@@ -35,6 +35,23 @@ describe("Coach Mode", () => {
     expect(alternative?.explanation).toMatch(/checkmate/i);
   });
 
+
+  it("explains a queen-trade alternative without calling the queen lost", () => {
+    const board = Board.fromFEN("r1b2b1r/p4kpp/2p5/1p1qQ1B1/3P4/8/PPP2PPP/R3K2R w KQ - 0 15");
+    const report = buildCoachReport(board, { move: "a2a3", suggestions: ["a2a3", "e1g1"] });
+    const alt = report.alternatives.find((candidate) => candidate.move === "e1g1");
+    expect(alt?.kind).toBe("queen-trade");
+    expect(alt?.line).toEqual(["e1g1", "d5e5", "d4e5"]);
+    expect(alt?.explanation).toMatch(/trade, not a queen left for free/i);
+  });
+
+  it("describes castling as king development, not just an unexplained UCI move", () => {
+    const board = Board.fromFEN("r1b2b1r/p4kpp/2p5/1p1qQ1B1/3P4/8/PPP2PPP/R3K2R w KQ - 0 15");
+    const report = buildCoachReport(board, { move: "e1g1" });
+    expect(report.headline).toMatch(/castles kingside/i);
+    expect(report.explanation).toMatch(/rook into play/i);
+  });
+
   it("does not invent an alternative, or call an unresolved move a blunder", () => {
     const report = buildCoachReport(Board.start(), {
       move: "e2e4",
