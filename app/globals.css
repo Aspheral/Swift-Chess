@@ -37,3 +37,6 @@
 .history .move button{border:0;border-radius:5px;padding:5px 9px;margin:-5px 0;background:transparent;color:#eee;text-align:left;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;cursor:pointer}
 .history .move button:hover,.history .move button:focus-visible{background:#392834;color:#ffe1ed;outline:1px solid #8e536e}
 .history .move.review-selected button{background:#503047;color:#ffe4ee;box-shadow:inset 3px 0 #ed8fa8}
+
+.coach-review .coach-retry{margin-top:10px;padding:8px 12px;border:1px solid #b97794;background:#4a2e3e;color:#ffe5ef;border-radius:6px;font:12px monospace;cursor:pointer}
+.coach-review .coach-retry:hover,.coach-review .coach-retry:focus-visible{border-color:#ffb9d0;outline-offset:2px}
