@@ -38,6 +38,21 @@ describe("Played-move Coach review", () => {
     expect(review?.line).toEqual(["g8f6", "h5f7"]);
   });
 
+  it("verifies all defenses to a checking mate in two from a documented engine position", () => {
+    const before = Board.fromFEN("5r1k/p5pp/8/3Q2N1/2B5/8/8/K7 b - - 0 1");
+    const review = buildPlayedMoveReview(before, "a7a6");
+    expect(review?.verdict).toBe("mate-in-two");
+    expect(review?.forced).toBe(true);
+    expect(review?.line[0]).toBe("a7a6");
+    let board = before;
+    for (const uci of review?.line ?? []) {
+      const move = board.legalMoves().find((candidate) => candidate.uci() === uci);
+      expect(move).toBeDefined();
+      board = board.makeMove(move!);
+    }
+    expect(board.isCheckmate()).toBe(true);
+  });
+
   it("describes a queen capture as a possibility, not proven net material loss", () => {
     const before = Board.fromFEN("4k2r/8/8/8/8/8/8/3QK3 w - - 0 1");
     const review = buildPlayedMoveReview(before, "d1h5");
