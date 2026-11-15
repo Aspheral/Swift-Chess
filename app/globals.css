@@ -8,3 +8,24 @@
 .rapid-clock.flagged{border-color:#c84d65;background:#331d25}.rapid-clock.flagged strong{color:#ff92a9}
 
 .untimed-notice{display:flex;flex-direction:column;gap:5px;padding:15px 18px;border-bottom:1px solid #302c32;background:#1c181e}.untimed-notice strong{color:#f0eaee;font:500 17px/1.3 Georgia,serif}.untimed-notice small{color:#a9a0aa;font:11px/1.5 Georgia,serif}
+
+/* Coach Mode lives in Analyze only. Keep the board usable on narrow screens. */
+.coach-switch{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px 18px;border-bottom:1px solid #302c32;background:#1b171d}
+.coach-switch>div{display:flex;flex-direction:column;gap:5px}
+.coach-switch strong{color:#f4f0f2;font:500 16px/1.3 Georgia,serif}
+.coach-switch small{color:#a49aa4;font:11px/1.4 Georgia,serif}
+.coach-switch button{min-width:52px;padding:8px 14px;border:1px solid #554750;border-radius:999px;color:#c8bfc7;background:#282129;cursor:pointer;font:600 11px/1 monospace}
+.coach-switch button.active{border-color:#ee8daa;background:#66364a;color:#ffe8ef}
+.coach-switch button:focus-visible{outline:2px solid #ffc1d5;outline-offset:3px}
+.coach-card{padding:20px 18px;border-bottom:1px solid #3c303c;background:linear-gradient(155deg,#2c202a,#19151b 70%);overflow-wrap:anywhere}
+.coach-card .coach-eyebrow{display:block;color:#eaa3bd;font:10px/1.2 monospace;letter-spacing:.14em;margin-bottom:10px}
+.coach-card>strong{display:block;color:#ffe5ef;font:400 20px/1.35 Georgia,serif}
+.coach-card p{color:#d0c4cc;font:13px/1.7 Georgia,serif;margin:10px 0 0}
+.coach-evidence{border-top:1px solid #493640;padding-top:12px;margin-top:13px}
+.coach-evidence b{display:block;font:600 10px/1.4 monospace;text-transform:uppercase;letter-spacing:.08em;color:#e7aac1}
+.coach-evidence p{margin-top:6px}
+.coach-evidence small,.coach-disclaimer{font:11px/1.55 Georgia,serif;color:#a99ca7}
+.coach-card .coach-line{font:12px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;color:#fff0b7;overflow-wrap:anywhere}
+.coach-alternative{margin-top:10px;padding-left:11px;border-left:2px solid #6e4b61}
+.coach-alternative code{font:12px monospace;color:#fff0b7}
+.coach-card .coach-disclaimer{display:block;border-top:1px solid #493640;margin-top:17px;padding-top:12px}
