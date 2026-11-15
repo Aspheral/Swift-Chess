@@ -3,7 +3,7 @@ import { SwiftThinkKind } from "./play-profile";
 import type { SwiftMindSnapshot } from "./mind";
 import type { SwiftDecisionTrace } from "./human-engine";
 import type { SoloPlanVision } from "./plan-vision";
-import type { CoachReport } from "./coach";
+import type { CoachReport, CoachMoveReview } from "./coach";
 import type { SwiftSecondLookReason } from "./adaptive-thinking";
 
 export interface SwiftWorkerSearchRequest {
@@ -23,7 +23,14 @@ export interface SwiftWorkerResetRequest {
   type: "reset";
 }
 
-export type SwiftWorkerRequest = SwiftWorkerSearchRequest | SwiftWorkerResetRequest;
+export interface SwiftWorkerReviewRequest {
+  type: "review";
+  id: number;
+  fen: string;
+  move: string;
+}
+
+export type SwiftWorkerRequest = SwiftWorkerSearchRequest | SwiftWorkerResetRequest | SwiftWorkerReviewRequest;
 
 export interface SwiftWorkerProvisionalResponse {
   type: "provisional";
@@ -62,4 +69,16 @@ export interface SwiftWorkerErrorResponse {
   message: string;
 }
 
-export type SwiftWorkerResponse = SwiftWorkerSearchResponse | SwiftWorkerProvisionalResponse | SwiftWorkerThinkingResponse | SwiftWorkerErrorResponse;
+export interface SwiftWorkerReviewResponse {
+  type: "review-result";
+  id: number;
+  review: CoachMoveReview | null;
+}
+
+export interface SwiftWorkerReviewErrorResponse {
+  type: "review-error";
+  id: number;
+  message: string;
+}
+
+export type SwiftWorkerResponse = SwiftWorkerSearchResponse | SwiftWorkerProvisionalResponse | SwiftWorkerThinkingResponse | SwiftWorkerErrorResponse | SwiftWorkerReviewResponse | SwiftWorkerReviewErrorResponse;
