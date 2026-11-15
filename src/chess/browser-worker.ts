@@ -1,4 +1,5 @@
 import { Board } from "./board";
+import { buildCoachReport } from "./coach";
 import { HumanSwiftEngine } from "./human-engine";
 import { decisionThinkPaceMs, swiftPlayProfile } from "./play-profile";
 import { allocateRapidThink } from "./rapid-time";
@@ -76,12 +77,20 @@ context.onmessage = (event) => {
     });
 
     const minimumThinkMs = rapid ? Math.min(naturalThinkMs, rapid.minimumThinkMs) : naturalThinkMs;
+    const pv = (result.pv ?? []).map((move) => move.uci());
+    const coach = request.mode === "analyze" ? buildCoachReport(board, {
+      move: result.move?.uci() ?? null,
+      pv,
+      suggestions,
+      mind: result.mind,
+      decision: result.decision,
+    }) : undefined;
 
     context.postMessage({
       type: "result",
       id: request.id,
       move: result.move?.uci() ?? null,
-      pv: (result.pv ?? []).map((move) => move.uci()),
+      pv,
       suggestions,
       opening: result.opening,
       score: result.score,
@@ -93,6 +102,7 @@ context.onmessage = (event) => {
       mind: result.mind,
       decision: result.decision,
       planVision: result.planVision,
+      coach,
     });
   } catch (error) {
     context.postMessage({
