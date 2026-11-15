@@ -445,7 +445,9 @@ export default function Playground() {
     if (moves.length) chooseMove(moves);
   }
 
-  const status = analysisMode
+  const status = analysisMode && coachEnabled && activeReviewPly >= 0
+    ? `Reviewing ${activeReviewPly % 2 === 0 ? "White" : "Black"}\'s move ${Math.floor(activeReviewPly / 2) + 1}`
+    : analysisMode
     ? thinking
       ? `Swift is analyzing ${turn === "w" ? "White" : "Black"}'s move…`
       : terminal
