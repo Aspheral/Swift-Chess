@@ -1,4 +1,5 @@
 import { Board, Color, Move, PieceType } from "./board";
+import { queenExchangeContext } from "./coach-exchanges";
 import type { SwiftDecisionTrace } from "./human-engine";
 import type { SwiftMindSnapshot } from "./mind";
 
@@ -15,7 +16,7 @@ export interface CoachAlternative {
   explanation: string;
   /** The candidate followed by a verified legal response, when available. */
   line: string[];
-  kind: "mate-threat" | "queen-threat" | "unresolved";
+  kind: "mate-threat" | "queen-trade" | "queen-threat" | "unresolved";
 }
 
 export interface CoachReport {
@@ -70,13 +71,6 @@ function mateInOne(board: Board): Move | null {
   return null;
 }
 
-function queenCapture(board: Board, victim: Color): Move | null {
-  for (const move of board.legalMoves()) {
-    if (board.pieceAt(move.to) === `${victim}q`) return move;
-  }
-  return null;
-}
-
 function explainAlternative(board: Board, candidate: Move): CoachAlternative {
   const uci = candidate.uci();
   const replyPosition = board.makeMove(candidate);
@@ -89,13 +83,13 @@ function explainAlternative(board: Board, candidate: Move): CoachAlternative {
       kind: "mate-threat",
     };
   }
-  const capturedQueen = queenCapture(replyPosition, board.turn());
-  if (capturedQueen) {
+  const queenContext = queenExchangeContext(replyPosition, board.turn());
+  if (queenContext) {
     return {
       move: uci,
-      explanation: `After ${uci}, the opponent can legally capture the queen with ${capturedQueen.uci()}. This is a tactical warning, not proof that the move loses.`,
-      line: [uci, capturedQueen.uci()],
-      kind: "queen-threat",
+      explanation: queenContext.explanation,
+      line: [uci, ...queenContext.line],
+      kind: queenContext.kind === "queen-trade" ? "queen-trade" : "queen-threat",
     };
   }
   return {
@@ -139,6 +133,9 @@ export function buildCoachReport(board: Board, input: CoachInput): CoachReport {
   if (next.isCheckmate()) {
     headline = `${uci} delivers checkmate`;
     explanation = "This move legally ends the game in checkmate. The opponent has no legal escape from check.";
+  } else if (move.castle) {
+    headline = `${uci} castles ${move.to > move.from ? "kingside" : "queenside"}`;
+    explanation = "Castling moves the king out of the center and brings the rook into play. The next question is whether the opponent can exploit the new setup.";
   } else if (move.promotion) {
     headline = `${uci} promotes the pawn`;
     explanation = `The pawn reaches the last rank and becomes a ${pieceLabels[move.promotion]}.` +
@@ -186,7 +183,7 @@ export function buildCoachReport(board: Board, input: CoachInput): CoachReport {
 export interface CoachMoveReview {
   playedMove: string;
   headline: string;
-  verdict: "checkmate" | "mate-in-one" | "mate-in-two" | "queen-capture" |
+  verdict: "checkmate" | "mate-in-one" | "mate-in-two" | "queen-trade" | "queen-capture" |
     "large-drop" | "smaller-drop" | "close" | "unverified";
   explanation: string;
   /** Every move in this variation was replayed and checked for legality. */
@@ -313,13 +310,20 @@ export function buildPlayedMoveReview(
     };
   }
 
-  const queenAttack = queenCapture(after, before.turn());
-  if (queenAttack) {
+  const queenContext = queenExchangeContext(after, before.turn());
+  if (queenContext) {
+    const isTrade = queenContext.kind === "queen-trade";
+    const castleContext = move.castle
+      ? "You castled, moving the king out of the center and a rook into play. " : "";
     return {
-      ...base, verdict: "queen-capture", headline: "Your queen can be captured",
-      explanation: "After this move, the opponent can legally capture your queen with " +
-        queenAttack.uci() + ". This is a real tactical possibility, but a capture alone does not prove a net material loss.",
-      line: [playedMove, queenAttack.uci()], forced: false,
+      ...base,
+      verdict: isTrade ? "queen-trade" : "queen-capture",
+      headline: isTrade ? "This allows a queen trade" : "The queen faces a real capture threat",
+      explanation: castleContext + queenContext.explanation +
+        (isTrade && centipawnDrop !== undefined && centipawnDrop >= 90
+          ? " Swift's search still prefers another move, but the queen exchange itself is not a free loss."
+          : ""),
+      line: [playedMove, ...queenContext.line], forced: false,
     };
   }
 
