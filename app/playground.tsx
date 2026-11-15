@@ -501,12 +501,17 @@ export default function Playground() {
       } else if (event.data.type === "review-error") {
         setReviewError("Swift could not finish reviewing this move.");
         setReviewLoading(false);
-      }
+      } else return;
+      // Completed reviews don't need a resident worker.
+      worker.terminate();
+      if (reviewWorkerRef.current === worker) reviewWorkerRef.current = null;
     };
     worker.onerror = () => {
       if (reviewRequestIdRef.current !== id) return;
       setReviewError("The review worker stopped. Choose the move again to retry.");
       setReviewLoading(false);
+      worker.terminate();
+      if (reviewWorkerRef.current === worker) reviewWorkerRef.current = null;
     };
     worker.postMessage({ type: "review", id, fen: before.toFEN(), move });
     return () => {
