@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Game, Move, Piece, SwiftOpening } from "../src";
-import type { SwiftMindSnapshot, SoloPlanVision } from "../src";
+import type { SwiftMindSnapshot, SoloPlanVision, CoachReport } from "../src";
 import type { SwiftWorkerResponse } from "../src/chess/worker-protocol";
 import { safeEmergencyProvisional } from "../src/chess/provisional-safety";
 import { isDarkSquare, squareAtVisualIndex, visualIndexForSquare } from "../src/chess/board-view";
@@ -118,6 +118,8 @@ export default function Playground() {
   const [thoughtArrows, setThoughtArrows] = useState<Arrow[]>([]);
   const [mind, setMind] = useState<SwiftMindSnapshot | null>(null);
   const [planVision, setPlanVision] = useState<SoloPlanVision | null>(null);
+  const [coachEnabled, setCoachEnabled] = useState(false);
+  const [coach, setCoach] = useState<CoachReport | null>(null);
   const [realLine, setRealLine] = useState<string[]>([]);
   const gameVersion = useRef(0);
 
@@ -165,7 +167,7 @@ export default function Playground() {
     setThinking(false);
     setSecondLookReason(null);
     setThoughtArrows([]);
-    setPlanVision(null);
+    setPlanVision(null); setCoach(null);
     setRealLine([]);
     gameVersion.current += 1;
     workerRef.current?.terminate();
@@ -231,6 +233,7 @@ export default function Playground() {
         if (response.opening) setOpening(response.opening);
         setMind(response.mind ?? null);
         setPlanVision(response.planVision ?? null);
+        setCoach(response.coach ?? null);
         setRealLine(response.pv.slice(0, 8));
         if (!analysisModeRef.current && move) {
           setActualThinkSeconds(Math.max(0, (performance.now() - latest.startedAt) / 1000));
@@ -334,7 +337,7 @@ export default function Playground() {
     setOpening(null);
     setThoughtArrows([]);
     setMind(null);
-    setPlanVision(null);
+    setPlanVision(null); setCoach(null);
     setRealLine([]);
   }
 
@@ -345,7 +348,7 @@ export default function Playground() {
     setSearchError(null);
     openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
     playerSideRef.current = side;
-    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setActualThinkSeconds(null); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlanVision(null); setRealLine([]); setPlayerSide(side); setFlipped(side === "b");
+    setBoard(gameRef.current.board()); setSelected(null); setHistory([]); setLastMove(null); setThinking(false); setActualThinkSeconds(null); setPromotion(null); setOpening(null); setThoughtArrows([]); setMind(null); setPlanVision(null); setCoach(null); setRealLine([]); setPlayerSide(side); setFlipped(side === "b");
   }
 
   function undoPlayerMove() {
@@ -378,7 +381,7 @@ export default function Playground() {
     setOpening(null);
     setThoughtArrows([]);
     setMind(null);
-    setPlanVision(null);
+    setPlanVision(null); setCoach(null);
     setRealLine([]);
   }
 
@@ -389,7 +392,7 @@ export default function Playground() {
       setThinking(false);
       setThoughtArrows([]);
       setMind(null);
-      setPlanVision(null);
+      setPlanVision(null); setCoach(null);
       setRealLine([]);
       setOpening(null);
     }
@@ -505,6 +508,29 @@ export default function Playground() {
           {!analysisMode && actualThinkSeconds !== null && !thinking && (
             <div className="human-think-time">Swift think time: <strong>{actualThinkSeconds.toFixed(1)}s</strong> (measured){secondLookDepth && <span> · {secondLookDepth}</span>}</div>
           )}
+          {analysisMode && <div className="coach-switch">
+            <div><strong>Coach mode</strong><small>Explain plans and check concrete tactical ideas.</small></div>
+            <button type="button" className={coachEnabled ? "active" : ""} aria-pressed={coachEnabled} onClick={() => setCoachEnabled((enabled) => !enabled)}>{coachEnabled ? "On" : "Off"}</button>
+          </div>}
+          {analysisMode && coachEnabled && <div className="coach-card" aria-live="polite">
+            <span className="coach-eyebrow">SWIFT COACH</span>
+            {thinking ? <p>Checking the position and its legal continuations…</p> :
+              !coach ? <p>Make a move or open Analyze to see Swift explain the next position.</p> : <>
+                <strong>{coach.headline}</strong>
+                <p>{coach.explanation}</p>
+                {coach.recordedPlan && <div className="coach-evidence"><b>Swift's plan</b><p>{coach.recordedPlan}</p></div>}
+                {coach.decisionNote && <div className="coach-evidence"><b>Why Swift chose it</b><p>{coach.decisionNote}</p></div>}
+                {coach.watchpoint && <div className="coach-evidence"><b>What Swift is watching</b><p>{coach.watchpoint}</p></div>}
+                {coach.verifiedLine.length > 1 && <div className="coach-evidence"><b>Legal search continuation</b><p className="coach-line">{imaginedMoves(coach.verifiedLine)}</p><small>An illustrative continuation, not a forced sequence.</small></div>}
+                {coach.alternatives.length > 0 && <div className="coach-evidence"><b>Why not another move?</b>
+                  {coach.alternatives.map((alternative) => <div key={alternative.move} className="coach-alternative">
+                    <code>{alternative.move}</code><p>{alternative.explanation}</p>
+                    {alternative.line.length > 1 && <p className="coach-line">{imaginedMoves(alternative.line)}</p>}
+                  </div>)}
+                </div>}
+                <small className="coach-disclaimer">Only immediate tactics and replayed moves are verified. Plans are Swift's recorded intentions. This first version does not assign blunder grades or claim a variation is forced.</small>
+              </>}
+          </div>}
           <div className="thought-card">
             <span>{analysisMode ? "Swift's analysis" : "Swift's current plan"}</span>
             <strong>{mind?.plan ? planLabel(mind.plan) : (thoughtArrows.length ? (analysisMode ? `${thoughtArrows.length} preferred move${thoughtArrows.length === 1 ? "" : "s"}` : `${thoughtArrows.length} moves in view`) : "Reading the position")}</strong>
