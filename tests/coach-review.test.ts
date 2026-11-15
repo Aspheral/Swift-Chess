@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Board, START_FEN } from "../src/chess/board";
 import { buildPlayedMoveReview } from "../src/chess/coach";
+import { queenExchangeContext } from "../src/chess/coach-exchanges";
 import { Game } from "../src/chess/game";
 
 describe("Played-move Coach review", () => {
@@ -53,13 +54,44 @@ describe("Played-move Coach review", () => {
     expect(board.isCheckmate()).toBe(true);
   });
 
-  it("describes a queen capture as a possibility, not proven net material loss", () => {
+
+  it("recognizes the screenshot's queen trade after 15. O-O, including the pawn recapture", () => {
+    // User screenshot before 15. O-O: white Qe5/Pd4, black Qd5. After
+    // ...Qxe5, dxe5 is legal, so White has not simply hung the queen.
+    const before = Board.fromFEN(
+      "r1b2b1r/p4kpp/2p5/1p1qQ1B1/3P4/8/PPP2PPP/R3K2R w KQ - 0 15",
+    );
+    expect(before.legalMoves().some((m) => m.uci() === "e1g1")).toBe(true);
+    const after = before.makeMove(before.legalMoves().find((m) => m.uci() === "e1g1")!);
+    const exchange = queenExchangeContext(after, "w");
+    expect(exchange?.kind).toBe("queen-trade");
+    expect(exchange?.localGainCp).toBeLessThan(250);
+    expect(exchange?.line).toEqual(["d5e5", "d4e5"]);
+    const report = buildPlayedMoveReview(before, "e1g1");
+    expect(report?.verdict).toBe("queen-trade");
+    expect(report?.headline).toMatch(/queen trade/i);
+    expect(report?.explanation).toMatch(/both queens leave the board/i);
+    expect(report?.explanation).not.toMatch(/blunder|free queen|queen can be captured/i);
+    expect(report?.line).toEqual(["e1g1", "d5e5", "d4e5"]);
+    expect(report?.forced).toBe(false);
+  });
+
+  it("does not let an unbalanced rook-for-queen recapture masquerade as an equal queen trade", () => {
+    const board = Board.fromFEN("4k2r/8/8/7Q/6P1/8/8/4K3 b - - 0 1");
+    const exchange = queenExchangeContext(board, "w");
+    expect(exchange?.capture).toBe("h8h5");
+    expect(exchange?.recapture).toBe("g4h5");
+    expect(exchange?.kind).toBe("queen-risk");
+    expect(exchange?.localGainCp).toBeGreaterThan(200);
+  });
+
+  it("describes a genuinely hanging queen without pretending compensation was ruled out", () => {
     const before = Board.fromFEN("4k2r/8/8/8/8/8/8/3QK3 w - - 0 1");
     const review = buildPlayedMoveReview(before, "d1h5");
     expect(review?.verdict).toBe("queen-capture");
     expect(review?.line).toEqual(["d1h5", "h8h5"]);
     expect(review?.forced).toBe(false);
-    expect(review?.explanation).toMatch(/not prove/i);
+    expect(review?.explanation).toMatch(/no immediate legal recapture/i);
   });
 
   it("only produces score-based losses from completed aligned searches", () => {
