@@ -28,6 +28,8 @@ context.onmessage = (event) => {
     return;
   }
 
+  if (request.type !== "search") return;
+
   try {
     const board = Board.fromFEN(request.fen);
     const profile = swiftPlayProfile(board, request.moveHistory);
