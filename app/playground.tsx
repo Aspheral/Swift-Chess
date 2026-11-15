@@ -138,8 +138,9 @@ export default function Playground() {
   const turn = board.toFEN().split(/\s+/)[1] as Side;
   const inCheck = board.isInCheck(turn);
   const analysisMode = mode === "analyze";
+  // A history review is opt-in; never confuse the previous move with Swift's current analysis.
   const activeReviewPly = reviewPly !== null && reviewPly >= 0 && reviewPly < history.length
-    ? reviewPly : history.length - 1;
+    ? reviewPly : -1;
   const canUndoPlayerMove = analysisMode ? history.length > 0 : history.some((_, index) =>
     (index % 2 === 0 ? "w" : "b") === playerSide,
   );
@@ -581,7 +582,7 @@ export default function Playground() {
           {analysisMode && coachEnabled && activeReviewPly >= 0 && <div className="coach-card coach-review" aria-live="polite">
             <span className="coach-eyebrow">REVIEW A PLAYED MOVE · {Math.floor(activeReviewPly / 2) + 1}{activeReviewPly % 2 === 0 ? "." : "…"} {history[activeReviewPly]}</span>
             <small className="coach-board-note">The board stays on the current position. This review uses the position before the selected move.</small>
-            {activeReviewPly !== history.length - 1 && <button className="coach-retry" type="button" onClick={() => setReviewPly(null)}>Review latest move</button>}
+            <button className="coach-retry" type="button" onClick={() => setReviewPly(null)}>Back to current analysis</button>
             {reviewLoading ? <p>Checking what happened after this move…</p> :
               reviewError ? <div><p role="alert">{reviewError}</p><button className="coach-retry" type="button" onClick={() => setReviewAttempt((attempt) => attempt + 1)}>Retry review</button></div> :
               playedReview ? <>
@@ -600,7 +601,7 @@ export default function Playground() {
                 {playedReview.centipawnDrop !== undefined && <small className="coach-eval">Estimated difference: {playedReview.centipawnDrop} cp · matched root depth {playedReview.completedDepth}. An estimate, not a tactical proof.</small>}
               </> : <p>This move cannot currently be reviewed.</p>}
           </div>}
-          {analysisMode && coachEnabled && <div className="coach-card" aria-live="polite">
+          {analysisMode && coachEnabled && activeReviewPly < 0 && <div className="coach-card" aria-live="polite">
             <span className="coach-eyebrow">SWIFT COACH</span>
             {thinking ? <p>Checking the position and its legal continuations…</p> :
               !coach ? <p>Make a move or open Analyze to see Swift explain the next position.</p> : <>
@@ -619,7 +620,7 @@ export default function Playground() {
                 <small className="coach-disclaimer">Only immediate tactics and replayed moves are verified. Plans are Swift's recorded intentions. This first version does not assign blunder grades or claim a variation is forced.</small>
               </>}
           </div>}
-          <div className="thought-card">
+          {!(analysisMode && coachEnabled && activeReviewPly >= 0) && <div className="thought-card">
             <span>{analysisMode ? "Swift's analysis" : "Swift's current plan"}</span>
             <strong>{mind?.plan ? planLabel(mind.plan) : (thoughtArrows.length ? (analysisMode ? `${thoughtArrows.length} preferred move${thoughtArrows.length === 1 ? "" : "s"}` : `${thoughtArrows.length} moves in view`) : "Reading the position")}</strong>
             <p>{mind?.planReason ?? "Swift carries plans forward when the position still supports them."}</p>
@@ -628,9 +629,9 @@ export default function Playground() {
             {planVision && <p className="mind-detail">If left unanswered, Swift imagines: <strong>{imaginedMoves(planVision.imaginedLine)}</strong>{planVision.alternativeLine.length > 1 && <> · Or: {imaginedMoves(planVision.alternativeLine)}</>}. Hypothetical own moves only, never a forced line.</p>}
             {mind && <p className="mind-detail">Watching: {mind.concern} Confidence {Math.round(mind.confidence * 100)}% · held for {mind.planAge} Swift turn{mind.planAge === 1 ? "" : "s"}{mind.setbacks ? ` · ${mind.setbacks} setback${mind.setbacks === 1 ? "" : "s"}` : ""}.</p>}
             {analysisMode && thoughtArrows.length > 1 && <div className="analysis-legend"><span className="best-swatch" />Best move <span className="alt-swatch" />Other ideas</div>}
-          </div>
+          </div}
           {opening && <div className="opening-card"><span>Opening</span><strong>{opening}</strong></div>}
-          <div className="history-head"><span>Moves</span><span>{history.length}</span></div>
+          <div className="history-head"><span>{analysisMode && coachEnabled ? "Select a move to review" : "Moves"}</span><span>{history.length}</span></div>
           <div className="history">{history.length === 0 ? <span className="muted">The first move is yours.</span> : history.map((move, index) => <div className={`move ${analysisMode && coachEnabled && activeReviewPly === index ? "review-selected" : ""}`} key={`${move}-${index}`}><span>{Math.floor(index / 2) + 1}{index % 2 === 0 ? "." : "…"}</span>{analysisMode && coachEnabled ? <button type="button" onClick={() => setReviewPly(index)} aria-label={`Review move ${Math.floor(index / 2) + 1} ${move}`} aria-pressed={activeReviewPly === index}>{move}</button> : <code>{move}</code>}</div>)}</div>
         </aside>
       </div>
