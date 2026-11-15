@@ -580,6 +580,8 @@ export default function Playground() {
           </div>}
           {analysisMode && coachEnabled && activeReviewPly >= 0 && <div className="coach-card coach-review" aria-live="polite">
             <span className="coach-eyebrow">REVIEW A PLAYED MOVE · {Math.floor(activeReviewPly / 2) + 1}{activeReviewPly % 2 === 0 ? "." : "…"} {history[activeReviewPly]}</span>
+            <small className="coach-board-note">The board stays on the current position. This review uses the position before the selected move.</small>
+            {activeReviewPly !== history.length - 1 && <button className="coach-retry" type="button" onClick={() => setReviewPly(null)}>Review latest move</button>}
             {reviewLoading ? <p>Checking what happened after this move…</p> :
               reviewError ? <div><p role="alert">{reviewError}</p><button className="coach-retry" type="button" onClick={() => setReviewAttempt((attempt) => attempt + 1)}>Retry review</button></div> :
               playedReview ? <>
