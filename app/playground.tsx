@@ -588,9 +588,9 @@ export default function Playground() {
                 <strong>{playedReview.headline}</strong>
                 <p>{playedReview.explanation}</p>
                 {playedReview.line.length > 1 && <div className="coach-evidence">
-                  <b>{playedReview.forced ? "Verified mating continuation" : "Legal tactical or searched continuation"}</b>
+                  <b>{playedReview.forced ? "Verified mating continuation" : playedReview.verdict === "queen-trade" ? "A queen exchange, with the recapture" : "Legal tactical or searched continuation"}</b>
                   <p className="coach-line">{imaginedMoves(playedReview.line)}</p>
-                  {!playedReview.forced && <small>This line is a possibility, not a forced sequence.</small>}
+                  {!playedReview.forced && <small>{playedReview.verdict === "queen-trade" ? "The opponent can choose this trade; neither queen is simply lost." : "A legal possibility, not a forced sequence."}</small>}
                 </div>}
                 {playedReview.suggestedMove && <div className="coach-evidence">
                   <b>Swift's searched alternative</b>
