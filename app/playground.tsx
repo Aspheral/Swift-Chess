@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Game, Move, Piece, SwiftOpening } from "../src";
-import type { SwiftMindSnapshot, SoloPlanVision, CoachReport } from "../src";
+import type { SwiftMindSnapshot, SoloPlanVision, CoachReport, CoachMoveReview } from "../src";
 import type { SwiftWorkerResponse } from "../src/chess/worker-protocol";
 import { safeEmergencyProvisional } from "../src/chess/provisional-safety";
 import { isDarkSquare, squareAtVisualIndex, visualIndexForSquare } from "../src/chess/board-view";
@@ -96,6 +96,8 @@ export default function Playground() {
   const gameRef = useRef<Game>(Game.start());
   const openingSeed = useRef(Date.now() & 0xffffffff);
   const workerRef = useRef<Worker | null>(null);
+  const reviewWorkerRef = useRef<Worker | null>(null);
+  const reviewRequestIdRef = useRef(0);
   const requestIdRef = useRef(0);
   const searchWatchdogRef = useRef<number | null>(null);
   const activeSearchRef = useRef<{ id: number; version: number; game: Game; startedAt: number; provisional?: string } | null>(null);
@@ -120,6 +122,10 @@ export default function Playground() {
   const [planVision, setPlanVision] = useState<SoloPlanVision | null>(null);
   const [coachEnabled, setCoachEnabled] = useState(false);
   const [coach, setCoach] = useState<CoachReport | null>(null);
+  const [reviewPly, setReviewPly] = useState<number | null>(null);
+  const [playedReview, setPlayedReview] = useState<CoachMoveReview | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const [realLine, setRealLine] = useState<string[]>([]);
   const gameVersion = useRef(0);
 
@@ -131,6 +137,8 @@ export default function Playground() {
   const turn = board.toFEN().split(/\s+/)[1] as Side;
   const inCheck = board.isInCheck(turn);
   const analysisMode = mode === "analyze";
+  const activeReviewPly = reviewPly !== null && reviewPly >= 0 && reviewPly < history.length
+    ? reviewPly : history.length - 1;
   const canUndoPlayerMove = analysisMode ? history.length > 0 : history.some((_, index) =>
     (index % 2 === 0 ? "w" : "b") === playerSide,
   );
@@ -330,6 +338,7 @@ export default function Playground() {
     analysisModeRef.current = nextMode === "analyze";
     setSearchError(null);
     setMode(nextMode);
+    setReviewPly(null);
     setSelected(null);
     setPromotion(null);
     setThinking(false);
@@ -345,6 +354,7 @@ export default function Playground() {
     gameVersion.current += 1;
     restartWorker();
     gameRef.current = Game.start();
+    setReviewPly(null);
     setSearchError(null);
     openingSeed.current = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
     playerSideRef.current = side;
@@ -358,6 +368,7 @@ export default function Playground() {
     restartWorker();
 
     const game = gameRef.current;
+    setReviewPly(null);
     game.undo();
 
     // In a normal game, rewind Swift's reply too. Analyze mode rewinds one ply
@@ -397,6 +408,7 @@ export default function Playground() {
       setOpening(null);
     }
     game.play(move);
+    setReviewPly(null);
     const next = game.board();
     setBoard(next); setSelected(null); setPromotion(null); setLastMove({ from: move.from, to: move.to }); setHistory(game.moveHistory());
     if (game.result() !== "ongoing") { setThoughtArrows([]); return; }
@@ -459,9 +471,55 @@ export default function Playground() {
     runSwift(gameVersion.current, gameRef.current);
   }, [turn, playerSide, terminal, thinking, analysisMode, searchError]);
 
+  useEffect(() => {
+    // Reviews run independently of move selection, so expensive historical
+    // checks never occupy Swift's live analysis worker.
+    const id = ++reviewRequestIdRef.current;
+    reviewWorkerRef.current?.terminate();
+    reviewWorkerRef.current = null;
+    if (!analysisMode || !coachEnabled || activeReviewPly < 0) {
+      setPlayedReview(null);
+      setReviewLoading(false);
+      setReviewError(null);
+      return;
+    }
+
+    const before = gameRef.current.boardBeforePly(activeReviewPly);
+    const move = history[activeReviewPly];
+    if (!before || !move) return;
+    setPlayedReview(null);
+    setReviewError(null);
+    setReviewLoading(true);
+
+    const worker = new Worker(new URL("../src/chess/browser-worker.ts", import.meta.url), { type: "module" });
+    reviewWorkerRef.current = worker;
+    worker.onmessage = (event: MessageEvent<SwiftWorkerResponse>) => {
+      if (reviewRequestIdRef.current !== id || event.data.id !== id) return;
+      if (event.data.type === "review-result") {
+        setPlayedReview(event.data.review);
+        setReviewLoading(false);
+      } else if (event.data.type === "review-error") {
+        setReviewError("Swift could not finish reviewing this move.");
+        setReviewLoading(false);
+      }
+    };
+    worker.onerror = () => {
+      if (reviewRequestIdRef.current !== id) return;
+      setReviewError("The review worker stopped. Choose the move again to retry.");
+      setReviewLoading(false);
+    };
+    worker.postMessage({ type: "review", id, fen: before.toFEN(), move });
+    return () => {
+      ++reviewRequestIdRef.current;
+      worker.terminate();
+      if (reviewWorkerRef.current === worker) reviewWorkerRef.current = null;
+    };
+  }, [analysisMode, coachEnabled, activeReviewPly, history]);
+
   useEffect(() => () => {
     if (searchWatchdogRef.current !== null) window.clearTimeout(searchWatchdogRef.current);
     workerRef.current?.terminate();
+    reviewWorkerRef.current?.terminate();
   }, []);
 
   return (
@@ -512,6 +570,26 @@ export default function Playground() {
             <div><strong>Coach mode</strong><small>Explain plans and check concrete tactical ideas.</small></div>
             <button type="button" className={coachEnabled ? "active" : ""} aria-pressed={coachEnabled} onClick={() => setCoachEnabled((enabled) => !enabled)}>{coachEnabled ? "On" : "Off"}</button>
           </div>}
+          {analysisMode && coachEnabled && activeReviewPly >= 0 && <div className="coach-card coach-review" aria-live="polite">
+            <span className="coach-eyebrow">REVIEW A PLAYED MOVE · {Math.floor(activeReviewPly / 2) + 1}{activeReviewPly % 2 === 0 ? "." : "…"} {history[activeReviewPly]}</span>
+            {reviewLoading ? <p>Checking what happened after this move…</p> :
+              reviewError ? <p role="alert">{reviewError}</p> :
+              playedReview ? <>
+                <strong>{playedReview.headline}</strong>
+                <p>{playedReview.explanation}</p>
+                {playedReview.line.length > 1 && <div className="coach-evidence">
+                  <b>{playedReview.forced ? "Verified mating continuation" : "Legal tactical or searched continuation"}</b>
+                  <p className="coach-line">{imaginedMoves(playedReview.line)}</p>
+                  {!playedReview.forced && <small>This line is a possibility, not a forced sequence.</small>}
+                </div>}
+                {playedReview.suggestedMove && <div className="coach-evidence">
+                  <b>Swift's searched alternative</b>
+                  <p><code>{playedReview.suggestedMove}</code></p>
+                  {playedReview.suggestedLine && playedReview.suggestedLine.length > 1 && <p className="coach-line">{imaginedMoves(playedReview.suggestedLine)}</p>}
+                </div>}
+                {playedReview.centipawnDrop !== undefined && <small className="coach-eval">Estimated difference: {playedReview.centipawnDrop} cp · aligned search depth {playedReview.completedDepth}. Not a certified rating.</small>}
+              </> : <p>This move cannot currently be reviewed.</p>}
+          </div>}
           {analysisMode && coachEnabled && <div className="coach-card" aria-live="polite">
             <span className="coach-eyebrow">SWIFT COACH</span>
             {thinking ? <p>Checking the position and its legal continuations…</p> :
@@ -543,7 +621,7 @@ export default function Playground() {
           </div>
           {opening && <div className="opening-card"><span>Opening</span><strong>{opening}</strong></div>}
           <div className="history-head"><span>Moves</span><span>{history.length}</span></div>
-          <div className="history">{history.length === 0 ? <span className="muted">The first move is yours.</span> : history.map((move, index) => <div className="move" key={`${move}-${index}`}><span>{Math.floor(index / 2) + 1}{index % 2 === 0 ? "." : "…"}</span><code>{move}</code></div>)}</div>
+          <div className="history">{history.length === 0 ? <span className="muted">The first move is yours.</span> : history.map((move, index) => <div className={`move ${analysisMode && coachEnabled && activeReviewPly === index ? "review-selected" : ""}`} key={`${move}-${index}`}><span>{Math.floor(index / 2) + 1}{index % 2 === 0 ? "." : "…"}</span>{analysisMode && coachEnabled ? <button type="button" onClick={() => setReviewPly(index)} aria-label={`Review move ${Math.floor(index / 2) + 1} ${move}`} aria-pressed={activeReviewPly === index}>{move}</button> : <code>{move}</code>}</div>)}</div>
         </aside>
       </div>
     </section>
