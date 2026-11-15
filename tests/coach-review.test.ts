@@ -88,7 +88,7 @@ describe("Played-move Coach review", () => {
   it("does not invent a queen trade when the apparent pawn recapture is pinned", () => {
     // Black ...Qxe5 clears d5, revealing Rd8 against Kd1 behind white Pd4.
     // dxe5 would expose the white king to the rook and is not legal.
-    const before = Board.fromFEN("3r3k/8/8/3qQ3/3P4/8/P7/3K4 w - - 0 1");
+    const before = Board.fromFEN("3r2k1/8/8/3qQ3/3P4/8/P7/3K4 w - - 0 1");
     const a3 = before.legalMoves().find((move) => move.uci() === "a2a3");
     expect(a3).toBeDefined();
     const after = before.makeMove(a3!);
