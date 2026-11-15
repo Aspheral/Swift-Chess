@@ -126,6 +126,7 @@ export default function Playground() {
   const [playedReview, setPlayedReview] = useState<CoachMoveReview | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewAttempt, setReviewAttempt] = useState(0);
   const [realLine, setRealLine] = useState<string[]>([]);
   const gameVersion = useRef(0);
 
@@ -510,7 +511,7 @@ export default function Playground() {
     };
     worker.onerror = () => {
       if (reviewRequestIdRef.current !== id) return;
-      setReviewError("The review worker stopped. Choose the move again to retry.");
+      setReviewError("The review worker stopped unexpectedly.");
       setReviewLoading(false);
       worker.terminate();
       if (reviewWorkerRef.current === worker) reviewWorkerRef.current = null;
@@ -521,7 +522,7 @@ export default function Playground() {
       worker.terminate();
       if (reviewWorkerRef.current === worker) reviewWorkerRef.current = null;
     };
-  }, [analysisMode, coachEnabled, activeReviewPly, history]);
+  }, [analysisMode, coachEnabled, activeReviewPly, history, reviewAttempt]);
 
   useEffect(() => () => {
     if (searchWatchdogRef.current !== null) window.clearTimeout(searchWatchdogRef.current);
@@ -580,7 +581,7 @@ export default function Playground() {
           {analysisMode && coachEnabled && activeReviewPly >= 0 && <div className="coach-card coach-review" aria-live="polite">
             <span className="coach-eyebrow">REVIEW A PLAYED MOVE · {Math.floor(activeReviewPly / 2) + 1}{activeReviewPly % 2 === 0 ? "." : "…"} {history[activeReviewPly]}</span>
             {reviewLoading ? <p>Checking what happened after this move…</p> :
-              reviewError ? <p role="alert">{reviewError}</p> :
+              reviewError ? <div><p role="alert">{reviewError}</p><button className="coach-retry" type="button" onClick={() => setReviewAttempt((attempt) => attempt + 1)}>Retry review</button></div> :
               playedReview ? <>
                 <strong>{playedReview.headline}</strong>
                 <p>{playedReview.explanation}</p>
