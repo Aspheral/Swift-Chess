@@ -629,7 +629,7 @@ export default function Playground() {
             {planVision && <p className="mind-detail">If left unanswered, Swift imagines: <strong>{imaginedMoves(planVision.imaginedLine)}</strong>{planVision.alternativeLine.length > 1 && <> · Or: {imaginedMoves(planVision.alternativeLine)}</>}. Hypothetical own moves only, never a forced line.</p>}
             {mind && <p className="mind-detail">Watching: {mind.concern} Confidence {Math.round(mind.confidence * 100)}% · held for {mind.planAge} Swift turn{mind.planAge === 1 ? "" : "s"}{mind.setbacks ? ` · ${mind.setbacks} setback${mind.setbacks === 1 ? "" : "s"}` : ""}.</p>}
             {analysisMode && thoughtArrows.length > 1 && <div className="analysis-legend"><span className="best-swatch" />Best move <span className="alt-swatch" />Other ideas</div>}
-          </div}
+          </div>}
           {opening && <div className="opening-card"><span>Opening</span><strong>{opening}</strong></div>}
           <div className="history-head"><span>{analysisMode && coachEnabled ? "Select a move to review" : "Moves"}</span><span>{history.length}</span></div>
           <div className="history">{history.length === 0 ? <span className="muted">The first move is yours.</span> : history.map((move, index) => <div className={`move ${analysisMode && coachEnabled && activeReviewPly === index ? "review-selected" : ""}`} key={`${move}-${index}`}><span>{Math.floor(index / 2) + 1}{index % 2 === 0 ? "." : "…"}</span>{analysisMode && coachEnabled ? <button type="button" onClick={() => setReviewPly(index)} aria-label={`Review move ${Math.floor(index / 2) + 1} ${move}`} aria-pressed={activeReviewPly === index}>{move}</button> : <code>{move}</code>}</div>)}</div>
