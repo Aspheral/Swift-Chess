@@ -166,7 +166,7 @@ def game_to_pgn(game, label, engine, depth):
     pgn.headers["Result"] = result
     if (result == "*") != (reason == "ongoing"):
         raise ValueError("Inconsistent completion claim")
-    if board.fen() != game.get("finalFen"):
+    # Swift serializes the FEN en-passant target even if no pawn can capture.\n    if board.fen(en_passant="fen") != game.get("finalFen"):
         raise ValueError("Final FEN does not match replay for " + label)
 
     swift_moves = [row for row in all_moves if row["isSwift"]]
