@@ -1,0 +1,129 @@
+name: Swift 2150 Extended Strength Ladder
+
+# 120 completed full games across ten opening families and two colors.
+# This measures a reproducible UCI-limited Stockfish benchmark, NOT Chess.com Elo.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/swift-2150-strength-ladder.yml"
+      - "scripts/aggregate-2150-extended.mjs"
+      - "tests/stockfish-gate.test.ts"
+
+permissions:
+  contents: read
+
+jobs:
+  paired-ladder:
+    name: Stockfish ${{ matrix.elo }} / openings ${{ matrix.shard.id }} (10 games)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        elo: [1800, 2000, 2150, 2350, 2550, 2750]
+        shard:
+          - { id: 0, start: 0 }
+          - { id: 1, start: 5 }
+    env:
+      SWIFT_RUN_STOCKFISH_GATE: "1"
+      SWIFT_CALIBRATION_MODE: "human"
+      SWIFT_STOCKFISH_ELO: ${{ matrix.elo }}
+      SWIFT_CALIBRATION_BATCH: ${{ matrix.shard.id }}
+      SWIFT_CALIBRATION_OPENING_PAIRS: "5"
+      SWIFT_CALIBRATION_OPENING_START: ${{ matrix.shard.start }}
+      SWIFT_CALIBRATION_REQUIRE_TARGET: "0"
+      SWIFT_MAX_PLIES: "500"
+      SWIFT_CALIBRATION_TEST_TIMEOUT_MS: "6600000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+      - run: pnpm install --no-frozen-lockfile
+      - name: Install independent UCI Stockfish
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y stockfish
+          if ! command -v stockfish >/dev/null; then
+            sudo ln -s /usr/games/stockfish /usr/local/bin/stockfish
+          fi
+          printf 'uci\nquit\n' | stockfish | grep -m 1 '^id name'
+      - name: Play ten paired-color full games and preserve all moves
+        run: pnpm exec vitest run tests/stockfish-gate.test.ts --config vitest.config.mts
+      - name: Upload complete games, including records when a game fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-2150-expanded-${{ matrix.elo }}-batch-${{ matrix.shard.id }}
+          path: calibration-results/human-elo-${{ matrix.elo }}-batch-${{ matrix.shard.id }}.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  estimate:
+    name: Verify all 120 games and calculate Elo-equivalent uncertainty
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: always()
+    needs: [paired-ladder]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: swift-2150-expanded-*
+          path: expanded-downloads
+          merge-multiple: true
+      - name: Check all results, colors, openings, seeds, protocol and uncertainty
+        run: node scripts/aggregate-2150-extended.mjs expanded-downloads calibration-results/swift-2150-extended-ladder.json
+      - name: Keep evidence and interval, never silently invent missing games
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-2150-expanded-rating-report
+          path: calibration-results/swift-2150-extended-ladder.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  tactics:
+    name: Preserve PGNs and independent tactical review
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    if: always()
+    needs: [paired-ladder]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: swift-2150-expanded-*
+          path: expanded-downloads
+          merge-multiple: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install analysis dependencies
+        run: |
+          python -m pip install python-chess==1.999
+          sudo apt-get update -qq
+          sudo apt-get install -y stockfish
+          if ! command -v stockfish >/dev/null; then
+            sudo ln -s /usr/games/stockfish /usr/local/bin/stockfish
+          fi
+      - name: Replay games legally, export PGNs, audit tactical losses
+        run: python scripts/analyze-2150-games.py --input expanded-downloads --output 2150-expanded-review --depth 8
+      - name: Keep all PGNs and review artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-2150-expanded-pgn-and-analysis
+          path: 2150-expanded-review/
+          if-no-files-found: warn
+          retention-days: 30
