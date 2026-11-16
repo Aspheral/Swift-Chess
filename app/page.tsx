@@ -12,7 +12,7 @@ export default function Home() {
         <div className="copy">
           <p className="eyebrow">PLAY CHESS, TAKE YOUR TIME</p>
           <h1>Think the position.<br /><em>Then make a move.</em></h1>
-          <p className="lede">Swift is made for the rhythm of a good game: quick in familiar positions, more deliberate when the board gets sharp, and always looking for a move that feels right on the board.</p><div className="rating-strip"><strong>1900 Rapid</strong><span>Playing-strength goal, not a verified rating</span><small>Earlier benchmark: 1632 calibrated Elo (200 games). New profile awaits testing.</small></div>
+          <p className="lede">Swift is made for the rhythm of a good game: quick in familiar positions, more deliberate when the board gets sharp, and always looking for a move that feels right on the board.</p><div className="rating-strip"><strong>2150 Rapid</strong><span>Next playing-strength goal, not a verified rating</span><small>Latest limited lab pilot: 10 wins, 4 draws, 0 losses in 14 games versus UCI-limited Stockfish (1700–2400). Broader calibration is underway. This is not a Chess.com Elo measurement.</small></div>
           <div className="actions"><a href="#play">Play a game</a><a className="secondary" href="https://github.com/Aspheral/Swift-Chess">View the project ↗</a></div>
         </div>
         <div className="board" aria-hidden="true">{Array.from({length:64},(_,i)=><div key={i} className={(Math.floor(i/8)+i)%2===0?"light":"dark"}>{[0,7].includes(Math.floor(i/8)) && [0,7].includes(i%8) ? "♜" : ""}</div>)}</div>
