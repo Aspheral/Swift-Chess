@@ -4,34 +4,38 @@ import { planProgressMetric } from "./mind";
 import { understandPosition } from "./understanding";
 
 /**
- * Measure what a REAL, legal candidate changes on the board for the plan
- * Swift has already been pursuing. This is a small strategic tie-breaker,
- * NEVER a chess evaluation or an imagined opponent-proof continuation.
+ * Measure strategic progress on the ACTUAL two-ply board after Swift's legal
+ * candidate and the opponent's reply from a completed verification search.
  *
- * The candidate's tactical acceptability must already have been established
- * by an independent search of the position with the opponent to move.
- * Switch the snapshot back to Swift's perspective ONLY to measure its static
- * own-side plan metric; do not use this snapshot as an actual game position.
+ * This is a bounded tie-breaker, not a chess evaluation or a forced variation.
+ * If the opponent reply is missing or either move leaves a tactical emergency,
+ * decline to claim progress. The caller must already have verified both
+ * candidate legality and concrete tactical safety independently.
  */
 export function planOutcomeDelta(
   board: Board,
   move: Move,
   plan: IdeaKind,
   beforeMetric: number,
+  opponentReplyUci?: string,
 ): number {
+  if (!opponentReplyUci) return 0;
   const after = board.makeMove(move);
-  const opponent = after.turn();
-  // Checks, mates and other forcing positions belong to tactical calculation.
-  // Do not award imaginary quiet-plan progress while the opponent is in check.
-  if (after.isCheckmate() || after.isInCheck(opponent)) return 0;
+  const enemy = after.turn();
+  // Forcing checks belong to tactics, not a speculative continuing plan.
+  if (after.isCheckmate() || after.isInCheck(enemy)) return 0;
 
-  const own = board.turn();
-  const ownSideView = Board.fromFEN(after.toFEN().replace(/ [wb] /, ` ${own} `));
+  const reply = after.legalMoves().find((candidate) => candidate.uci() === opponentReplyUci);
+  if (!reply) return 0;
+  const defended = after.makeMove(reply);
+  if (defended.isCheckmate() || defended.isInCheck(board.turn()) ||
+      defended.turn() !== board.turn()) return 0;
+
   const updated: IdeaGeneration = {
-    understanding: understandPosition(ownSideView),
+    understanding: understandPosition(defended),
     ideas: [],
     candidates: [],
   };
-  const afterMetric = planProgressMetric(ownSideView, updated, plan);
+  const afterMetric = planProgressMetric(defended, updated, plan);
   return Math.max(-1, Math.min(1, afterMetric - beforeMetric));
 }
