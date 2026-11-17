@@ -313,10 +313,15 @@ export class HumanSwiftEngine {
     if (planCandidate && safetyLimit >= 2 &&
         !safetyCandidates.some((candidate) => candidate.move.uci() === planCandidate.move.uci())) {
       // Prefer replacing a non-principal, non-forcing proposal.
-      const replaceIndex = safetyCandidates.findLastIndex((candidate) =>
-        candidate.move.uci() !== engineMoveUci &&
-        !candidate.ideaKinds.includes("tactical"),
-      );
+      let replaceIndex = -1;
+      for (let index = safetyCandidates.length - 1; index >= 0; index--) {
+        const candidate = safetyCandidates[index];
+        if (candidate.move.uci() !== engineMoveUci &&
+            !candidate.ideaKinds.includes("tactical")) {
+          replaceIndex = index;
+          break;
+        }
+      }
       if (replaceIndex >= 0) safetyCandidates[replaceIndex] = planCandidate;
     }
 
