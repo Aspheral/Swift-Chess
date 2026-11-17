@@ -12,23 +12,25 @@ describe("Measurable strategic plan evidence", () => {
   it("distinguishes real minor-piece development from an irrelevant pawn move", () => {
     const board = Board.start();
     const before = planProgressMetric(board, generateIdeas(board), "develop");
-    const developing = planOutcomeDelta(board, move(board, "g1f3"), "develop", before);
-    const unrelated = planOutcomeDelta(board, move(board, "a2a3"), "develop", before);
+    const developing = planOutcomeDelta(board, move(board, "g1f3"), "develop", before, "a7a6");
+    const unrelated = planOutcomeDelta(board, move(board, "a2a3"), "develop", before, "a7a6");
     expect(developing).toBeGreaterThan(0.1);
     expect(unrelated).toBeCloseTo(0);
+    expect(planOutcomeDelta(board, move(board, "g1f3"), "develop", before)).toBe(0);
+    expect(planOutcomeDelta(board, move(board, "g1f3"), "develop", before, "g8g7")).toBe(0);
   });
 
   it("does not treat a checking move as unopposed long-term progress", () => {
-    const board = Board.fromFEN("6k1/8/8/8/8/8/6Q1/6K1 w - - 0 1");
+    const board = Board.fromFEN("4k3/8/8/8/8/8/4R3/4K3 w - - 0 1");
     const before = planProgressMetric(board, generateIdeas(board), "create-threat");
-    expect(planOutcomeDelta(board, move(board, "g2g7"), "create-threat", before)).toBe(0);
+    expect(planOutcomeDelta(board, move(board, "e2e7"), "create-threat", before, "e8f8")).toBe(0);
   });
 
   it("measures a plan without mutating the real side to move", () => {
     const board = Board.start();
     const before = planProgressMetric(board, generateIdeas(board), "develop");
     const fen = board.toFEN();
-    planOutcomeDelta(board, move(board, "b1c3"), "develop", before);
+    planOutcomeDelta(board, move(board, "b1c3"), "develop", before, "a7a6");
     expect(board.toFEN()).toBe(fen);
     expect(board.turn()).toBe("w");
   });
