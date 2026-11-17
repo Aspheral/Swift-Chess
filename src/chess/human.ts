@@ -32,6 +32,8 @@ export interface HumanSelectionOptions extends HumanStyleOptions {
   candidates?: CandidateScore[];
   /** Tiny counterfactual-plan tie-break, never a verified engine score. */
   planVisionBonus?: Record<string, number>;
+  /** Bounded evidence that a concretely safe move advances Swift's existing plan. */
+  planProgressBonus?: Record<string, number>;
 }
 
 export type HumanGameStage = "opening" | "middlegame" | "endgame";
@@ -121,25 +123,35 @@ export function humanPlanLatitude(
   mind: SwiftMindSnapshot | undefined,
   profile: HumanErrorProfile,
 ): number {
+  // Previously this required planAge >= 4 and confidence >= .72, even though
+  // most real game plans last just one or two turns. That made the strategic
+  // layer almost entirely explanatory. Allow modest independence after a plan
+  // survives one response from the opponent, but never on its first turn.
   if (
     !mind?.plan ||
-    mind.planAge < 4 ||
-    mind.confidence < 0.72 ||
-    mind.setbacks > 0
+    mind.planAge < 2 ||
+    mind.confidence < 0.50 ||
+    mind.setbacks > 0 ||
+    (mind.planProgress ?? 0) <= -0.08
   ) return 0;
 
-  if (profile.tacticalPressure >= 0.06 || profile.practicalPressure >= 0.30) return 0;
+  // A live tactical problem is not permission to make a "human" mistake.
+  // The later matched-depth verification and mating guards remain mandatory.
+  if (profile.tacticalPressure >= 0.16 || profile.practicalPressure >= 0.45) return 0;
 
-  const maturity = clamp((mind.planAge - 3) / 4);
-  const conviction = clamp((mind.confidence - 0.72) / 0.20);
-  const tacticalCalm = clamp(1 - profile.tacticalPressure / 0.06);
-  const practicalCalm = clamp(1 - profile.practicalPressure / 0.30);
-  const quietness = tacticalCalm * practicalCalm;
+  const maturity = clamp((mind.planAge - 1) / 4);
+  const conviction = clamp((mind.confidence - 0.50) / 0.40);
+  // Preserve full latitude for genuinely quiet positions, taper it away as
+  // attack and king-safety signals grow. This is NOT a default error budget.
+  const tacticalCalm = 1 - clamp((profile.tacticalPressure - 0.04) / 0.12);
+  const practicalCalm = 1 - clamp((profile.practicalPressure - 0.20) / 0.25);
+  const setbackInProgress = (mind.planProgress ?? 0) < -0.02 ? 0.6 : 1;
 
-  // This is now a tie-break-sized freedom window, not a strength handicap.
-  // Swift may prefer a move for a mature strategic reason only when concrete
-  // search sees the alternatives as essentially equivalent.
-  return Math.min(6, (3 + conviction * 2 + maturity) * quietness);
+  // Centipawns of score freedom, available ONLY to candidates that support
+  // the remembered plan and have passed independent consequence searches.
+  // Even the maximum is a near-equal choice, not a deliberate blunder.
+  return Math.min(18, (8 + 6 * maturity + 4 * conviction) *
+    tacticalCalm * practicalCalm * setbackInProgress);
 }
 
 function isCentralPawnMove(board: Board, move: Move): boolean {
@@ -370,7 +382,12 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
     const visionBonus = candidate.score >= topScore - 12
       ? Math.max(0, Math.min(5, options.planVisionBonus?.[candidate.move.uci()] ?? 0))
       : 0;
-    const value = candidate.score - rankPenalty + practicalRisk + styleValue(board, candidate, profile, options) + visionBonus;
+    const progressBonus = activePlan && candidate.ideaKinds.includes(activePlan) &&
+      candidate.score >= topScore - 18
+      ? Math.max(-3, Math.min(6, options.planProgressBonus?.[candidate.move.uci()] ?? 0))
+      : 0;
+    const value = candidate.score - rankPenalty + practicalRisk +
+      styleValue(board, candidate, profile, options) + visionBonus + progressBonus;
     return { candidate, value };
   });
 
