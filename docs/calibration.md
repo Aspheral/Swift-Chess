@@ -1,8 +1,14 @@
 # Swift rating calibration
 
-An earlier Swift configuration was calibrated at approximately **1632 Elo** against Stockfish's UCI strength limiter. The current `adaptive-human-v15` candidate aims for **2000 rapid Elo**, but has not yet been calibrated.
+## Current experiment and next milestone
 
-This is a benchmark estimate, not an official human federation or online-platform rating.
+Swift's next laboratory goal is **2500 Stockfish UCI-Elo equivalent**, separate from its **2150 Chess.com Rapid** goal. An expanded **120-game** ladder completed November 16, 2026 and fitted **2385 Stockfish UCI-Elo equivalent**, with a conditional 95% bootstrap benchmark interval **2354–2422**. Ten opening families were tested with both colors against UCI strength-limited Stockfish settings 1800, 2000, 2150, 2350, 2550, and 2750. [Complete workflow evidence](https://github.com/Aspheral/Swift-Chess/actions/runs/43802486328).
+
+**This result is not an estimate of Chess.com or FIDE Elo.** The test used fixed 100-ms Stockfish moves against Swift's adaptive thinking-time profile, so time budgets differ. The interval describes uncertainty within the limited-Stockfish test protocol, not systematic differences from real rapid games. The last user-shared Swift account screenshot (November 14, 2026) showed **2061 Chess.com Rapid**, which is not verified for the exact laboratory build.
+
+Swift's live strength should grow alongside its creator. Laboratory improvements do not automatically change live difficulty.
+
+An earlier Swift configuration was calibrated at approximately **1632 Elo** against Stockfish's UCI strength limiter. That historical estimate belongs to an older engine and test population.
 
 ## Historical estimate (not the current profile)
 
@@ -37,8 +43,8 @@ The final ladder uses a 360-ply safety ceiling after one legitimate game remaine
 
 ## What this number means
 
-**1632 is the last completed benchmark, not a verified rating for the latest Swift profile.**
+**1632 is a historical benchmark for an older Swift profile; 2385 is the latest measured internal lab equivalent, not a verified Chess.com rating.**
 
 It should not be described as a verified human Elo. Stockfish's `UCI_LimitStrength` is a useful reproducible calibration opponent, but its rating scale is still a proxy. Hardware, time controls, opponent pool, and the mapping between engine-limited Elo and human ratings all matter.
 
-For public-facing copy, use **2000 rapid target (unverified)**, and separately label the previous **1632 calibrated Elo** result as historical. A new 200-game ladder is required to support a new calibrated estimate.
+For public-facing copy, distinguish the **2500 laboratory target**, **2385 internal benchmark estimate** (120 games, 95% conditional interval 2354–2422), and **2150 verified Chess.com Rapid target** (unconfirmed). The old 1632 equivalent remains a historical result for a different revision.
