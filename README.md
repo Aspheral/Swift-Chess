@@ -15,7 +15,7 @@
 <div align="center">
   <table>
     <tr>
-      <td align="center"><strong>2100 Rapid goal</strong><br><sub>2061 Rapid in the latest shared account screenshot; new build not rated</sub></td>
+      <td align="center"><strong>2500 lab benchmark goal</strong><br><sub>2385 UCI-Elo equivalent (120 games); separate 2150 Chess.com Rapid goal</sub></td>
       <td align="center"><strong>AI</strong><br><sub>Not a fixed engine</sub></td>
       <td align="center"><strong>Swift</strong><br><sub>Fast, personal, experimental</sub></td>
     </tr>
@@ -28,7 +28,7 @@ Swift is a chess AI made by Aspheral.
 
 The original idea was pretty simple: I wanted a chess program that could actually feel like it was playing chess, instead of just being a machine that looks through a position and finds the move with the highest number attached to it.
 
-Swift is working toward **2100 Chess.com Rapid Elo**, while keeping its own human-like decision process. The latest user-shared Chess.com account screenshot on November 14, 2026 shows **2061 Rapid**. That is an observed account rating, **not** an independently measured rating for this new code revision. The last completed 200-game Stockfish strength ladder gave an earlier build **1632 benchmark-calibrated Elo** (95% interval **1580–1684**). Different ratings and versions should not be treated as interchangeable; the current release still needs full-game strength verification.
+Swift's next internal laboratory goal is **2500 Stockfish UCI-Elo equivalent**, while its separate Chess.com Rapid goal remains **2150 verified**. An expanded 120-game paired-opening Stockfish ladder completed November 16, 2026 and estimated **2385 UCI-Elo equivalent** with a 95% benchmark interval of **2354–2422** for the tested adaptive human profile. This is **not a Chess.com Elo measurement**. The last user-shared Swift Chess.com account screenshot on November 14, 2026 showed **2061 Rapid**, which is not independent verification of the tested source revision. An older build measured **1632 UCI-calibrated Elo** (200 games; 95% interval 1580–1684), but the versions and protocols should not be treated as equivalent. See [calibration notes](docs/calibration.md).
 
 This is not supposed to be Stockfish with a strength limiter.
 
@@ -155,9 +155,9 @@ That is the part we want to build.
 
 > **Early development**
 >
-> Swift is currently an experimental project. The next goal is **2100 Chess.com Rapid**, not yet achieved or verified for this release. The latest user-shared Chess.com account screenshot (November 14, 2026) shows **2061 Rapid**, which is not a benchmark of the newly deployed source revision. A much older Swift build scored **1632 benchmark-calibrated Elo** across 200 paired Stockfish games, with a 95% interval of **1580–1684**. The updated engine is not covered by that ladder result and must be measured independently.
+> Swift is an experimental project. Its next laboratory milestone is **2500 Stockfish UCI-Elo equivalent**. The latest controlled 120-game test fitted **2385** (95% conditional benchmark interval **2354–2422**). This result does **not** establish a Chess.com Rapid rating. Swift's separate **2150 Chess.com Rapid** milestone remains unverified; the most recent user-shared account screenshot, November 14, 2026, showed **2061 Rapid**.
 
-The browser build runs Swift in a Web Worker with adaptive thinking time: quick in familiar openings, measured in quiet positions, and longer when the board becomes tactical. Competing final plans can also affect pacing. Swift can notice an unexpected evaluation swing, competing plans, or an urgent position after its first search, then spend a bounded extra calculation pass checking its decision. **Play mode is now untimed:** neither the user nor Swift can lose on the clock, while Swift continues to use position-aware per-move search limits and shows its actual measured think time. The 10+0 rapid clock logic introduced in v15 remains available in the codebase for future timed modes but is no longer active on the public Play board. This is a behavioral model, not a clock-use calibration against human game data. The 2100 Elo target remains open; rating methodology and prior ladder results are in [docs/calibration.md](docs/calibration.md).
+The browser build runs Swift in a Web Worker with adaptive thinking time: quick in familiar openings, measured in quiet positions, and longer when the board becomes tactical. Competing final plans can also affect pacing. Swift can notice an unexpected evaluation swing, competing plans, or an urgent position after its first search, then spend a bounded extra calculation pass checking its decision. **Play mode is now untimed:** neither the user nor Swift can lose on the clock, while Swift continues to use position-aware per-move search limits and shows its actual measured think time. The 10+0 rapid clock logic introduced in v15 remains available in the codebase for future timed modes but is no longer active on the public Play board. This is a behavioral model, not a clock-use calibration against human game data. The 2500 laboratory goal and separate 2150 Chess.com Rapid goal remain open; rating methodology and prior ladder results are in [docs/calibration.md](docs/calibration.md).
 
 The architecture is still being built around the idea first, rather than building a conventional engine and trying to bolt a personality onto it afterward.
 
@@ -170,6 +170,10 @@ The project will be developed experimentally. Ideas will be tested, thrown away,
 There is no promise that the first approach will be the final approach.
 
 That is kind of the point.
+
+## Playing-strength policy
+
+Swift's live playing strength grows alongside its creator. If Swift becomes consistently too difficult, freeze the live difficulty while continuing stronger experiments separately. Improving human-like thinking does not require deliberate bad moves or automatic difficulty increases.
 
 ## Long-term goal
 
