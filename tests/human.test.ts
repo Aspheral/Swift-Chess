@@ -119,10 +119,57 @@ describe("Swift human move selection", () => {
       observedHistoryLength: 8,
     };
 
-    expect(humanPlanLatitude(mind, calm)).toBeGreaterThan(4);
-    expect(humanPlanLatitude(mind, calm)).toBeLessThanOrEqual(6);
-    expect(humanPlanLatitude(mind, { ...calm, tacticalPressure: 0.06 })).toBe(0);
+    expect(humanPlanLatitude(mind, calm)).toBeGreaterThan(10);
+    expect(humanPlanLatitude(mind, calm)).toBeLessThanOrEqual(18);
+    expect(humanPlanLatitude(mind, { ...calm, tacticalPressure: 0.06 }))
+      .toBeLessThan(humanPlanLatitude(mind, calm));
+    expect(humanPlanLatitude(mind, { ...calm, tacticalPressure: 0.16 })).toBe(0);
+    expect(humanPlanLatitude(mind, { ...calm, practicalPressure: 0.45 })).toBe(0);
+    expect(humanPlanLatitude({ ...mind, planAge: 1 }, calm)).toBe(0);
+    expect(humanPlanLatitude({ ...mind, confidence: 0.49 }, calm)).toBe(0);
+    expect(humanPlanLatitude({ ...mind, planProgress: -0.09 }, calm)).toBe(0);
     expect(humanPlanLatitude({ ...mind, setbacks: 1 }, calm)).toBe(0);
+  });
+
+  it("lets a remembered development plan affect a close zero-randomness decision", () => {
+    const board = Board.start();
+    const quiet = board.legalMoves().find((move) => move.uci() === "a2a3");
+    const develop = board.legalMoves().find((move) => move.uci() === "g1f3");
+    if (!quiet || !develop) throw new Error("Expected development fixture moves");
+    const candidates: CandidateScore[] = [
+      { move: quiet, score: 100, ideaKinds: ["simplify"], reasons: ["slightly higher concrete score"] },
+      { move: develop, score: 89, ideaKinds: ["develop"], reasons: ["advance piece development"] },
+    ];
+    const mind: SwiftMindSnapshot = {
+      plan: "develop",
+      planAge: 2,
+      confidence: 0.70,
+      planProgress: 0.05,
+      setbacks: 0,
+      concern: "Continue development.",
+      opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 2 },
+      observedHistoryLength: 4,
+    };
+    const withoutPlan = selectHumanMove(board, {
+      candidates, randomness: 0, errorBudget: 0.025,
+      development: 0, initiative: 0, simplification: 0,
+    });
+    expect(withoutPlan.move?.uci()).toBe("a2a3");
+
+    const withPlan = selectHumanMove(board, {
+      candidates, randomness: 0, errorBudget: 0.025,
+      development: 0, initiative: 0, simplification: 0,
+      mind, planProgressBonus: { g1f3: 5 },
+    });
+    expect(withPlan.move?.uci()).toBe("g1f3");
+
+    // An unverified or dramatically weaker move never gets a free pass:
+    const losing = [{ ...candidates[0] }, { ...candidates[1], score: 65 }];
+    const unsafe = selectHumanMove(board, {
+      candidates: losing, randomness: 0, errorBudget: 0.025,
+      mind, planProgressBonus: { g1f3: 999 },
+    });
+    expect(unsafe.move?.uci()).toBe("a2a3");
   });
 
   it("returns no move for a checkmated position", () => {
