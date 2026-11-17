@@ -411,9 +411,10 @@ export class HumanSwiftEngine {
     const planVisionBonus = soloPlanTieBreaks(visions);
 
     // A remembered plan should be influential only when a legal, already
-    // consequence-verified move changes something measurable on the board.
+    // consequence-verified move advances its goal AFTER the opponent's
+    // independently searched reply. This refuses unopposed fantasy progress.
     // These points are tiny tie-breaks, not additional evaluation centipawns.
-    // We never project an unopposed line as if it were a forced continuation.
+    // A missing reply yields no bonus; never invent a favorable continuation.
     const planProgressBonus: Record<string, number> = {};
     if (maturePlan && observedMind.plan) {
       const beforeMetric = planProgressMetric(board, ideaGeneration, observedMind.plan);
@@ -421,7 +422,8 @@ export class HumanSwiftEngine {
       for (const candidate of movementSafe) {
         if (!candidate.ideaKinds.includes(observedMind.plan) ||
             candidate.score < bestVerified - 18) continue;
-        const delta = planOutcomeDelta(board, candidate.move, observedMind.plan, beforeMetric);
+        const delta = planOutcomeDelta(board, candidate.move, observedMind.plan,
+          beforeMetric, candidate.verifiedReply);
         const bonus = Math.max(-3, Math.min(6, delta * 24));
         if (Math.abs(bonus) >= 0.25) planProgressBonus[candidate.move.uci()] = bonus;
       }
@@ -552,7 +554,10 @@ export class HumanSwiftEngine {
     if (probe.depth < depth) return null;
     const concreteScore = -probe.score;
     if (concreteScore < baseline - margin) return null;
-    return { ...candidate, score: concreteScore, reasons: [...candidate.reasons, "Concrete consequence search kept this move inside Swift's safety margin."] };
+    return {
+      ...candidate, score: concreteScore, verifiedReply: probe.move?.uci(),
+      reasons: [...candidate.reasons, "Concrete consequence search kept this move inside Swift's safety margin."],
+    };
   }
 
   private isSafeCandidate(board: Board, move: Move, baseline: number, margin: number, depth: number, timeMs?: number): boolean {
