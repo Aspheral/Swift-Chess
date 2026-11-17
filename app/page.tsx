@@ -12,7 +12,7 @@ export default function Home() {
         <div className="copy">
           <p className="eyebrow">PLAY CHESS, TAKE YOUR TIME</p>
           <h1>Think the position.<br /><em>Then make a move.</em></h1>
-          <p className="lede">Swift is made for the rhythm of a good game: quick in familiar positions, more deliberate when the board gets sharp, and always looking for a move that feels right on the board.</p><div className="rating-strip"><strong>2150 Rapid</strong><span>Next playing-strength goal, not a verified rating</span><small>Latest limited lab pilot: 10 wins, 4 draws, 0 losses in 14 games versus UCI-limited Stockfish (1700–2400). Broader calibration is underway. This is not a Chess.com Elo measurement.</small></div>
+          <p className="lede">Swift is made for the rhythm of a good game: quick in familiar positions, more deliberate when the board gets sharp, and always looking for a move that feels right on the board.</p><div className="rating-strip"><strong>2500 Lab Elo goal</strong><span>Current benchmark: 2385 Stockfish UCI-Elo equivalent (120 games; 95% interval 2354–2422)</span><small>Separate milestone: 2150 verified Chess.com Rapid. Lab Elo is not Chess.com Elo, and live playing strength grows alongside its creator rather than automatically increasing.</small></div>
           <div className="actions"><a href="#play">Play a game</a><a className="secondary" href="https://github.com/Aspheral/Swift-Chess">View the project ↗</a></div>
         </div>
         <div className="board" aria-hidden="true">{Array.from({length:64},(_,i)=><div key={i} className={(Math.floor(i/8)+i)%2===0?"light":"dark"}>{[0,7].includes(Math.floor(i/8)) && [0,7].includes(i%8) ? "♜" : ""}</div>)}</div>
