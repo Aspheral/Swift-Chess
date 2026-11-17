@@ -21,9 +21,9 @@ describe("Measurable strategic plan evidence", () => {
   });
 
   it("does not treat a checking move as unopposed long-term progress", () => {
-    const board = Board.fromFEN("4k3/8/8/8/8/8/4R3/4K3 w - - 0 1");
+    const board = Board.fromFEN("4k3/8/8/8/8/8/R7/4K3 w - - 0 1");
     const before = planProgressMetric(board, generateIdeas(board), "create-threat");
-    expect(planOutcomeDelta(board, move(board, "e2e7"), "create-threat", before, "e8f8")).toBe(0);
+    expect(planOutcomeDelta(board, move(board, "a2e2"), "create-threat", before, "e8f8")).toBe(0);
   });
 
   it("measures a plan without mutating the real side to move", () => {
