@@ -1,6 +1,7 @@
 name: Human neural rating-strata sampling research
 
 # Offline training only. Never deploy an experimental Swift model.
+# This exact-archive run tests whether scarce elite-move examples help top-1 accuracy.
 on:
   push:
     branches: [experiment/human-policy-rating-balanced-context]
