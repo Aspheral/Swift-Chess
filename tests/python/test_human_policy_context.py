@@ -160,7 +160,7 @@ def test_balanced_training_does_not_repeat_scarce_elite_moves(tmp_path: Path):
     ]
     rows = []
     for i in range(120):
-        rating = 2480 if i == 7 else 1920
+        rating = 2480 if i == 3 else 1920
         game_id = f"https://lichess.org/rare-elite-{i}"
         rows.append({
             "id": game_id, "white_elo": rating, "black_elo": rating,
@@ -175,5 +175,5 @@ def test_balanced_training_does_not_repeat_scarce_elite_moves(tmp_path: Path):
     assert set(ids) == {"train", "val", "test"}
     elite = [row for row in balanced["train"]
              if rating_band(row[2]) == "2400-2550"]
-    assert len(elite) <= 8
+    assert len(elite) == 8  # known train-split elite game, eight eligible plies
     assert len(elite) == len({(x[0], x[1], x[2], x[3]) for x in elite})
