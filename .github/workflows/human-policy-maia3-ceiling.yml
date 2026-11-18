@@ -1,0 +1,64 @@
+name: Human policy published Maia3 comparator
+
+on:
+  push:
+    branches:
+      - experiment/human-policy-maia3-ceiling
+    paths:
+      - scripts/human_policy/**
+      - tests/python/test_maia3_ceiling.py
+      - .github/workflows/human-policy-maia3-ceiling.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r scripts/human_policy/requirements.txt
+      - run: python -m pytest -q tests/python/test_maia3_ceiling.py
+
+  compare:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[compare maia3]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r scripts/human_policy/requirements.txt
+      - name: Install published human move prediction model for offline comparison
+        run: python -m pip install "git+https://github.com/CSSLab/maia3.git"
+      - name: Reuse exact unretrained 2015+2017 human reference game split
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p artifacts/maia3-comparison
+          gh run download 44236202724 -R Aspheral/Swift-Chess \
+            -n swift-human-policy-balanced-2015-2017-trained-prototype \
+            -D artifacts/maia3-comparison
+      - name: Compare Maia3 zero-shot versus Swift tiny trained model on identical held-out positions
+        run: |
+          python -m scripts.human_policy.maia3_ceiling \
+            --games artifacts/maia3-comparison/games.jsonl \
+            --student-checkpoint artifacts/maia3-comparison/human-model.json \
+            --model maia3-5m --max-test 400 --output artifacts/maia3-comparison/maia3-comparison.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-human-policy-published-model-same-holdout
+          path: artifacts/maia3-comparison
+          retention-days: 30
+          if-no-files-found: warn
