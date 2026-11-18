@@ -1,0 +1,89 @@
+name: Human neural rating-strata sampling research
+
+# Offline training only. Never deploy an experimental Swift model.
+# This exact-archive run tests whether scarce elite-move examples help top-1 accuracy.
+on:
+  push:
+    branches: [experiment/human-policy-rating-balanced-context]
+    paths:
+      - "scripts/human_policy/**"
+      - "tests/python/**"
+      - ".github/workflows/human-policy-rating-balanced.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r scripts/human_policy/requirements.txt
+      - name: Verify entire Python human-policy suite
+        run: python -m pytest -q tests/python/test_human_policy.py tests/python/test_human_policy_context.py
+
+  train-balanced:
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run rating-balanced]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r scripts/human_policy/requirements.txt
+      - name: Restore exact original Lichess training and held-out games
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p artifacts/rating-balanced
+          gh run download 44236202724 -R Aspheral/Swift-Chess \
+            --name swift-human-policy-balanced-2015-2017-trained-prototype \
+            --dir artifacts/rating-balanced
+      - name: Train with equal training position quotas by human rating band
+        run: |
+          python -m scripts.human_policy.train_contextual \
+            --games artifacts/rating-balanced/games.jsonl \
+            --output artifacts/rating-balanced/rating-balanced-weights.pt \
+            --metrics artifacts/rating-balanced/rating-balanced-metrics.json \
+            --balance-training-rating-bands \
+            --max-train-positions 40000 --max-eval-positions 3500 \
+            --epochs 2 --batch-size 16 --seed 2026
+      - name: Verify original unseen positions remain unchanged
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('artifacts/rating-balanced')
+          old=json.loads((base/'metrics.json').read_text())
+          new=json.loads((base/'rating-balanced-metrics.json').read_text())
+          for field in ('games_sha256','games'):
+            assert old['dataset'][field]==new['dataset'][field], f'{field} changed'
+          for split in ('val','test'):
+            assert old['dataset']['positions'][split]==new['dataset']['positions'][split]
+          assert new['dataset']['balance_training_rating_bands'] is True
+          result={'baseline_unchanged_holdout_top1':old['test']['top1'],
+                  'balanced_top1':new['test']['top1'],
+                  'gain_percentage_points':round(100*(new['test']['top1']-old['test']['top1']),3),
+                  'goal_60pct_met':new['test']['top1']>=0.60,
+                  'train_band_counts':new['dataset']['training_rating_bands'],
+                  'test_band_counts':new['test']['by_rating_band']}
+          (base/'rating-balanced-comparison.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-human-policy-rating-balanced-experiment
+          path: artifacts/rating-balanced
+          retention-days: 30
+          if-no-files-found: warn

@@ -111,3 +111,69 @@ def test_model_learns_preferences_from_all_legal_moves_and_backpropagates():
         loss.backward()
         optim.step()
     assert float(loss.detach()) < initial * 0.7
+
+
+def test_rating_balanced_training_keeps_the_original_unseen_positions(tmp_path: Path):
+    from scripts.human_policy.collect import split_for_game, rating_band
+    # A real sample has many low-rated moves and very few elite-rated moves.
+    # The training reservoir should use each rating stratum equitably,
+    # WITHOUT modifying the established validation and test examples.
+    moves = [
+        "e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5",
+        "c2c3", "g8f6", "d2d3", "d7d6", "e1g1", "e8g8",
+        "b1d2", "c8g4",
+    ]
+    games = tmp_path / "balanced-game-sample.jsonl"
+    rows = []
+    for i in range(320):
+        player_rating = (1900, 2120, 2320, 2480)[i % 4]
+        game_id = f"https://lichess.org/strata-sample-{i}"
+        rows.append({
+            "id": game_id, "white_elo": player_rating,
+            "black_elo": player_rating,
+            "split": split_for_game(game_id),
+            "moves": moves,
+        })
+    games.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    kwargs = dict(max_positions=80, max_eval_positions=28,
+                  min_ply=4, max_ply=13, seed=2026)
+    ordinary, plain_ids = load_context_positions(str(games), **kwargs)
+    balanced, balanced_ids = load_context_positions(
+        str(games), balance_training_rating_bands=True, **kwargs)
+    assert balanced_ids == plain_ids
+    assert balanced["val"] == ordinary["val"]
+    assert balanced["test"] == ordinary["test"]
+    # The balanced choice has exactly 20 genuinely distinct training
+    # positions per band, no manufactured duplicates.
+    counts = {band: sum(rating_band(position[2]) == band
+                        for position in balanced["train"])
+              for band in ("1850-2049", "2050-2249", "2250-2399", "2400-2550")}
+    assert counts == {band: 20 for band in counts}
+    assert len(balanced["train"]) == 80
+
+
+def test_balanced_training_does_not_repeat_scarce_elite_moves(tmp_path: Path):
+    from scripts.human_policy.collect import split_for_game, rating_band
+    moves = [
+        "e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5",
+        "c2c3", "g8f6", "d2d3", "d7d6", "e1g1", "e8g8",
+    ]
+    rows = []
+    for i in range(120):
+        rating = 2480 if i == 3 else 1920
+        game_id = f"https://lichess.org/rare-elite-{i}"
+        rows.append({
+            "id": game_id, "white_elo": rating, "black_elo": rating,
+            "split": split_for_game(game_id), "moves": moves,
+        })
+    file = tmp_path / "rare-human.jsonl"
+    file.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    balanced, ids = load_context_positions(
+        str(file), max_positions=40, max_eval_positions=12,
+        min_ply=4, max_ply=11, seed=2026,
+        balance_training_rating_bands=True)
+    assert set(ids) == {"train", "val", "test"}
+    elite = [row for row in balanced["train"]
+             if rating_band(row[2]) == "2400-2550"]
+    assert len(elite) == 8  # known train-split elite game, eight eligible plies
+    assert len(elite) == len({(x[0], x[1], x[2], x[3]) for x in elite})
