@@ -63,7 +63,7 @@ def rating_band(rating: int) -> str:
 
 def game_filter(headers: dict[str, str], lo: int = 1850, hi: int = 2550,
                 min_base_seconds: int = 600) -> str | None:
-    if not re.match(r"^\\s*Rated\\b", headers.get("Event", ""), re.IGNORECASE):
+    if not re.match(r"^\s*Rated\b", headers.get("Event", ""), re.IGNORECASE):
         return "not-rated"
     if headers.get("Variant", "Standard").lower() not in ("standard", "chess"):
         return "variant"
