@@ -128,11 +128,21 @@ function strategicIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): 
 
   const enemyKing = u.king[enemyColor];
   if (enemyKing.exposed) {
+    // A new threat must CHANGE the position. Previously any quiet move
+    // qualified whenever an opponent piece was ALREADY attacked, so even
+    // an unrelated king shuffle inherited a bogus "create-threat" label.
+    const alreadyAttacked = new Set(enemy
+      .filter((piece) => attacksSquare(board, color, piece.square))
+      .map((piece) => piece.square));
     const candidates = quietMoves.filter((move) => {
       const next = board.makeMove(move);
-      return next.isInCheck(enemyColor) || enemy.some((p) => attacksSquare(next, color, p.square));
+      return next.isInCheck(enemyColor) ||
+        enemy.some((piece) =>
+          !alreadyAttacked.has(piece.square) &&
+          attacksSquare(next, color, piece.square),
+        );
     });
-    if (candidates.length) ideas.push({ kind: "create-threat", priority: 65, reason: "The opposing king is exposed, so a concrete new check or attack can increase the pressure.", candidates: uniqueMoves(candidates).slice(0, 8) });
+    if (candidates.length) ideas.push({ kind: "create-threat", priority: 65, reason: "The opposing king is exposed, so a genuinely new check or piece attack can increase the pressure.", candidates: uniqueMoves(candidates).slice(0, 8) });
   }
 
   if (u.pawns[color].passed > 0) {
