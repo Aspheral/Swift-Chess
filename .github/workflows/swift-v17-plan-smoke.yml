@@ -19,6 +19,10 @@ permissions:
 
 jobs:
   plan-smoke:
+    # Neural training commits leave the neural preference disabled. Running
+    # expensive full games on every data-only commit cannot test the model.
+    # The exact trained-checkpoint comparison gets its own release review.
+    if: github.head_ref != 'research/lichess-human-policy-1850-2550'
     name: Stockfish ${{ matrix.elo }} / opening batch ${{ matrix.opening.batch }} (two colors)
     runs-on: ubuntu-latest
     timeout-minutes: 90
