@@ -9,6 +9,7 @@ import torch
 from scripts.human_policy.collect import collect, game_filter, rating_band, split_for_game
 from scripts.human_policy.features import FEATURE_SIZE, move_features, feature_fixture
 from scripts.human_policy.train import PolicyNet, sample_batch, export_checkpoint, load_positions
+from scripts.human_policy.collect_stratified import collect_stratified
 
 
 def test_rating_filters_rated_bots_and_time():
@@ -116,3 +117,25 @@ def test_train_validation_holdout_never_overlap(tmp_path: Path):
     samples, ids = load_positions(str(games), max_positions=400, min_ply=4, max_ply=12)
     assert len(samples["train"]) > 0 and len(samples["val"]) > 0 and len(samples["test"]) > 0
     assert not (ids["train"] & ids["val"] or ids["train"] & ids["test"] or ids["val"] & ids["test"])
+
+def test_stratified_bulk_collector_reaches_all_rating_bands(tmp_path: Path):
+    headers = ('[Event "Rated Rapid game"]\n[Site "https://lichess.org/{id}"]\n'
+               '[Result "1/2-1/2"]\n[WhiteElo "{rating}"]\n[BlackElo "{rating}"]\n'
+               '[TimeControl "600+0"]\n[Variant "Standard"]\n\n')
+    moves = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6 6. O-O O-O 1/2-1/2\n\n"
+    first = tmp_path / "low.pgn"
+    second = tmp_path / "high.pgn"
+    first.write_text("".join(headers.format(id=f"L{i}", rating=1900) + moves for i in range(8)) +
+                     headers.format(id="M1", rating=2100) + moves)
+    second.write_text(headers.format(id="H1", rating=2300) + moves +
+                      headers.format(id="X1", rating=2500) + moves)
+    out = tmp_path / "balanced.jsonl"
+    summary = collect_stratified([str(first), str(second)], str(out),
+                                 max_per_band=1, min_plies=12, seed=9)
+    rows = [json.loads(line) for line in out.read_text().splitlines()]
+    assert len(rows) == 4
+    assert {rating_band(row["white_elo"]) for row in rows} == {
+        "1850-2049", "2050-2249", "2250-2399", "2400-2550",
+    }
+    assert summary["accepted"] == 4 and summary["scanned"] == 11
+    assert set(summary["rating_bands"].values()) == {1}
