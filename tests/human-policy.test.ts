@@ -67,6 +67,17 @@ describe("Human-policy neural network, disabled-by-default", () => {
     expect(model.enabled_by_default).toBe(false);
   });
 
+  it("does not turn a tiny uncertain neural difference into a full 4cp bonus", () => {
+    const board = Board.start();
+    const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
+    const d4 = board.legalMoves().find((move) => move.uci() === "d2d4");
+    if (!e4 || !d4) throw Error("Missing fixture move");
+    const uncertain = oneMovePreference();
+    uncertain.layers[0].scale[0] = 0.0005;
+    const bonus = humanPolicyBonuses(board, [d4, e4], uncertain, 2200);
+    expect(bonus[e4.uci()]).toBeLessThan(0.5);
+  });
+
   it("prefers a human-policy-scored move without overriding search safety", () => {
     const board = Board.start();
     const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
