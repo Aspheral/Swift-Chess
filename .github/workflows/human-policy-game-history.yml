@@ -1,0 +1,84 @@
+name: Human game-history policy research
+
+# Research-only training on an unchanged 3,500-position human holdout.
+
+on:
+  push:
+    branches: [experiment/human-policy-game-history-v1]
+    paths:
+      - "scripts/human_policy/**"
+      - "tests/python/test_human_policy_context.py"
+      - ".github/workflows/human-policy-game-history.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r scripts/human_policy/requirements.txt
+      - name: All Python neural policy regression tests
+        run: python -m pytest -q tests/python/test_human_policy.py tests/python/test_human_policy_context.py
+
+  context-benchmark:
+    needs: tests
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run contextual]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r scripts/human_policy/requirements.txt
+      - name: Restore original 4,661 Lichess games and exact held-out split
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p artifacts/contextual
+          gh run download 44236202724 -R Aspheral/Swift-Chess \
+            -n swift-human-policy-balanced-2015-2017-trained-prototype \
+            -D artifacts/contextual
+      - name: Train rating-conditioned history-aware chess neural policy
+        run: |
+          python -m scripts.human_policy.train_contextual \
+            --games artifacts/contextual/games.jsonl \
+            --output artifacts/contextual/contextual-weights.pt \
+            --metrics artifacts/contextual/contextual-metrics.json \
+            --max-train-positions 40000 --max-eval-positions 3500 \
+            --epochs 2 --batch-size 16 --seed 2026
+      - name: Check same data and 60% exact-move target
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          d=pathlib.Path('artifacts/contextual')
+          before=json.loads((d/'metrics.json').read_text())
+          after=json.loads((d/'contextual-metrics.json').read_text())
+          assert after['dataset']['games_sha256']==before['dataset']['games_sha256']
+          assert after['dataset']['games']==before['dataset']['games']
+          assert after['dataset']['positions']==before['dataset']['positions']
+          result={'baseline_top1':before['test']['top1'],
+                  'contextual_top1':after['test']['top1'],
+                  'gain_points':round(100*(after['test']['top1']-before['test']['top1']),3),
+                  'goal_exact_move_top1':0.60,
+                  'goal_met':after['test']['top1']>=0.60}
+          (d/'contextual-comparison.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-human-policy-history-aware-2015-2017
+          path: artifacts/contextual
+          retention-days: 30
+          if-no-files-found: warn
