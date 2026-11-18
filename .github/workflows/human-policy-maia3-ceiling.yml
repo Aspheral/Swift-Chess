@@ -1,6 +1,7 @@
 name: Human policy published Maia3 comparator
 
 # Independent offline teacher comparison; no site deployment or model promotion.
+# Rerun after fixing UCI option negotiation (MultiPV is controlled by python-chess).
 
 on:
   push:
