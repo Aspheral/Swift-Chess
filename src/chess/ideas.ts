@@ -158,7 +158,18 @@ function strategicIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): 
   }
 
   const opponentDev = u.development[enemyColor];
-  if (u.development[color] < opponentDev && quietMoves.length) ideas.push({ kind: "develop", priority: 60, reason: "Development is behind, so improving piece coordination has strategic value.", candidates: quietMoves.filter((m) => ["n", "b", "k"].includes(pieceType(board, m) ?? "")).slice(0, 8) });
+  // A score deficit is not itself evidence that development is possible.
+  // In endgames with no remaining undeveloped minor pieces, the old
+  // heuristic called legal KING walks "development" for dozens of turns.
+  // Only home-square minor pieces can actually complete opening development.
+  if (u.development[color] < opponentDev && undeveloped.length) {
+    const developingMoves = fromSquares(quietMoves, new Set(undeveloped.map((p) => p.square)));
+    if (developingMoves.length) ideas.push({
+      kind: "develop", priority: 60,
+      reason: "Development is behind, and an undeveloped minor piece can be activated.",
+      candidates: developingMoves.slice(0, 8),
+    });
+  }
   if ((u.materialAdvantage === "white" && color === "w") || (u.materialAdvantage === "black" && color === "b")) {
     const candidates = captures(board, legal);
     if (candidates.length) ideas.push({ kind: "simplify", priority: 58, reason: "Material advantage makes favorable simplification a candidate plan.", candidates: uniqueMoves(candidates).slice(0, 8) });
