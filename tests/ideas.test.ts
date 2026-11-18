@@ -47,6 +47,7 @@ describe("Swift idea generation", () => {
     expect(result.understanding.development.b).toBeGreaterThan(result.understanding.development.w);
     expect(board.legalMoves().length).toBeGreaterThan(0);
     expect(result.ideas.filter((idea) => idea.kind === "develop")).toEqual([]);
+    // The current side cannot 'catch up on development' with king moves.
   });
 
   it("keeps legitimate first-move minor piece development available", () => {
