@@ -20,7 +20,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from .collect import rating_band, split_for_game
+from .collect import BANDS, rating_band, split_for_game
 from .features import FEATURE_SIZE, move_features
 
 HISTORY_PLIES = 8
@@ -61,7 +61,8 @@ def contextual_features(board: chess.Board, move: chess.Move, rating: int,
 def load_context_positions(games_file: str, max_positions: int = 40000,
                            min_ply: int = 12, max_ply: int = 150,
                            max_eval_positions: int | None = 3500,
-                           seed: int = 2026
+                           seed: int = 2026,
+                           balance_training_rating_bands: bool = False
                            ) -> tuple[dict[str, list[ContextExample]],
                                       dict[str, set[str]]]:
     """Same game ID splits and SAME reservoir choices as train.load_positions.
@@ -115,7 +116,82 @@ def load_context_positions(games_file: str, max_positions: int = 40000,
                     ) from exc
     if ids["train"] & ids["val"] or ids["train"] & ids["test"] or ids["val"] & ids["test"]:
         raise AssertionError("Game-level train/evaluation leakage")
+    if balance_training_rating_bands:
+        # A SECOND pass alters training only. Validation and test are
+        # bit-for-bit identical to the historic 3,500-position benchmark.
+        samples["train"] = _balanced_training_positions(
+            games_file, ids["train"], max_positions, min_ply, max_ply, seed
+        )
     return samples, ids
+
+
+
+def _balanced_training_positions(
+    games_file: str, train_ids: set[str], max_positions: int,
+    min_ply: int, max_ply: int, seed: int,
+) -> list[ContextExample]:
+    """Water-fill four rating bands with genuine, never cloned human plies.
+
+    Sampling is per *moving player's* Lichess rating, not the strongest
+    player in the game. Even when elite examples are scarce, all genuine
+    available elite moves can be included. Other bands fill the remainder,
+    maintaining the same maximum training budget.
+    """
+    if max_positions < 4:
+        raise ValueError("Balanced training requires at least four positions")
+    bands = [f"{lo}-{hi}" for lo, hi in BANDS]
+    rng = random.Random(seed + 981)
+    reservoirs: dict[str, list[ContextExample]] = {band: [] for band in bands}
+    seen: Counter[str] = Counter()
+
+    with open(games_file, encoding="utf-8") as source:
+        for raw in source:
+            row = json.loads(raw)
+            if row["id"] not in train_ids:
+                continue
+            board = chess.Board()
+            history: list[str] = []
+            for ply, uci in enumerate(row["moves"]):
+                move = chess.Move.from_uci(uci)
+                if move not in board.legal_moves:
+                    raise ValueError(f"Illegal human move in {row['id']} at ply {ply}")
+                if min_ply <= ply <= max_ply and board.legal_moves.count() > 1:
+                    rating = int(row["white_elo"] if board.turn else row["black_elo"])
+                    band = rating_band(rating)
+                    if band not in reservoirs:
+                        raise ValueError("Human rating outside the accepted 1850-2550 range")
+                    sample: ContextExample = (
+                        board.fen(), uci, rating, tuple(history[-HISTORY_PLIES:])
+                    )
+                    seen[band] += 1
+                    current = reservoirs[band]
+                    if len(current) < max_positions:
+                        current.append(sample)
+                    else:
+                        replace = rng.randrange(seen[band])
+                        if replace < max_positions:
+                            current[replace] = sample
+                board.push(move)
+                history.append(uci)
+    allocation = {band: 0 for band in bands}
+    remaining = min(max_positions, sum(len(reservoirs[band]) for band in bands))
+    # Fair water-filling: when a scarce band is exhausted, remaining slots
+    # redistribute across the other bands rather than duplicating its moves.
+    while remaining:
+        progressed = False
+        for band in bands:
+            if remaining and allocation[band] < len(reservoirs[band]):
+                allocation[band] += 1
+                remaining -= 1
+                progressed = True
+        if not progressed:
+            break
+    selected = [
+        sample for band in bands
+        for sample in reservoirs[band][:allocation[band]]
+    ]
+    rng.shuffle(selected)
+    return selected
 
 
 class ContextPolicyNet(nn.Module):
@@ -231,7 +307,8 @@ def evaluate_context(net: ContextPolicyNet,
 def train_context(games: str, output: str, metrics: str,
                   max_train: int = 40000, max_eval: int = 3500,
                   epochs: int = 2, batch_size: int = 16,
-                  seed: int = 2026) -> dict:
+                  seed: int = 2026,
+                  balance_training_rating_bands: bool = False) -> dict:
     if not 1 <= epochs <= 30 or not 1 <= batch_size <= 128:
         raise ValueError("Training epochs/batch size out of range")
     random.seed(seed)
@@ -248,6 +325,7 @@ def train_context(games: str, output: str, metrics: str,
     examples, ids = load_context_positions(
         games, max_positions=max_train, max_eval_positions=max_eval,
         seed=seed,
+        balance_training_rating_bands=balance_training_rating_bands,
     )
     if min(len(examples[s]) for s in SPLITS) < 20:
         raise ValueError("Not enough disjoint training, validation, test positions")
@@ -290,6 +368,10 @@ def train_context(games: str, output: str, metrics: str,
         "source": manifest.get("source"), "seed": seed,
         "epochs": epochs, "batch_size": batch_size,
         "history_plies": HISTORY_PLIES,
+        "balance_training_rating_bands": balance_training_rating_bands,
+        "training_rating_bands": dict(sorted(Counter(
+            rating_band(position[2]) for position in examples["train"]
+        ).items())),
         "feature_size": CONTEXT_FEATURES,
         "architecture": "1949 -> 128 -> 64 -> 1, full-legal supervised imitation",
         "training_history": history,
@@ -327,10 +409,13 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--balance-training-rating-bands", action="store_true",
+                        help="Rebalance real train plies only, preserve evaluation")
     args = parser.parse_args()
     train_context(args.games, args.output, args.metrics,
                   args.max_train_positions, args.max_eval_positions,
-                  args.epochs, args.batch_size, args.seed)
+                  args.epochs, args.batch_size, args.seed,
+                  args.balance_training_rating_bands)
 
 
 if __name__ == "__main__":
