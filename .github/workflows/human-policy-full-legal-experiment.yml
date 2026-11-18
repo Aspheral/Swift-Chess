@@ -1,5 +1,7 @@
 name: Human neural policy full-legal training research
 
+# Research-only: exact game-level holdout, no browser deployment or model promotion.
+
 on:
   push:
     branches:
