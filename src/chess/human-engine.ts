@@ -2,7 +2,7 @@ import { Board, Move } from "./board";
 import { Game } from "./game";
 import { SearchOptions, SearchResult, SwiftEngine } from "./engine";
 import { CandidateScore, scoreCandidates } from "./scoring";
-import { generateIdeas } from "./ideas";
+import { generateIdeas, type IdeaKind } from "./ideas";
 import { HumanErrorProfile, humanErrorProfile, selectHumanMove, HumanSelectionOptions } from "./human";
 import { SwiftOpening, openingBookMove, verifiedScotchDefence } from "./openings";
 import { findTacticalPriority, isOwnQueenUnderAttack } from "./fast-tactics";
@@ -62,6 +62,16 @@ export interface HumanSearchResult extends SearchResult {
   decision?: SwiftDecisionTrace;
   secondLook?: SwiftSecondLook & { initialDepth: number; finalDepth: number; improvedDepth: boolean };
   planVision?: SoloPlanVision;
+}
+
+/** A necessary defensive response is not evidence that the strategic goal failed. */
+export function isNecessaryPlanInterruption(
+  board: Board,
+  ideaKinds: ReadonlyArray<IdeaKind>,
+): boolean {
+  return board.isInCheck(board.turn()) ||
+    ideaKinds.includes("tactical") ||
+    ideaKinds.includes("defend");
 }
 
 export function shouldPreferPlanToBook(mind: SwiftMindSnapshot, historyLength: number): boolean {
@@ -452,7 +462,18 @@ export class HumanSwiftEngine {
     }
 
     const selectedCandidate = movementSafe.find((candidate) => candidate.move.uci() === selectedMove.uci());
-    if (observedMind.plan && selectedCandidate && !selectedCandidate.ideaKinds.includes(observedMind.plan)) this.mind.recordSetback("The current plan had no convincing continuation, so Swift changed course for this move.");
+    if (observedMind.plan && selectedCandidate &&
+        !selectedCandidate.ideaKinds.includes(observedMind.plan)) {
+      if (isNecessaryPlanInterruption(board, selectedCandidate.ideaKinds)) {
+        this.mind.recordInterruption(
+          "An immediate tactical or defensive requirement interrupted the remembered plan.",
+        );
+      } else {
+        this.mind.recordSetback(
+          "The current plan had no convincing continuation, so Swift changed course for this move.",
+        );
+      }
+    }
     const reasons = selectedCandidate?.reasons.length ? [...selectedCandidate.reasons] : [`This move supports Swift's continuing plan to ${this.mind.planDescription()}.`];
     if ((planProgressBonus[selectedMove.uci()] ?? 0) > 0.5) {
       reasons.push("This concretely safe move also improved a measurable aspect of Swift's continuing plan.");
