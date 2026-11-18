@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Board, HumanSwiftEngine, SwiftEngine } from "../src";
-import { isImmediateMoveReversal, shouldPreferPlanToBook } from "../src/chess/human-engine";
+import { isImmediateMoveReversal, isNecessaryPlanInterruption, shouldPreferPlanToBook } from "../src/chess/human-engine";
 import type { SwiftMindSnapshot } from "../src/chess/mind";
 
 describe("Integrated Swift human engine", () => {
@@ -61,6 +61,20 @@ describe("Integrated Swift human engine", () => {
     const result = new HumanSwiftEngine().search(board, { depth: 2, safetyDepth: 2, randomness: 0, errorBudget: 0.35, seed: 11, moveHistory: ["g1f3", "g8h6"] });
     expect(result.move).not.toBeNull();
     expect(result.move?.uci()).not.toBe("h6g8");
+  });
+
+  it("distinguishes a forced defensive detour from an abandoned plan", () => {
+    const board = Board.start();
+    const move = board.legalMoves().find((m) => m.uci() === "g1f3");
+    if (!move) throw new Error("Missing g1f3");
+    expect(isNecessaryPlanInterruption(board, ["defend"])).toBe(true);
+    expect(isNecessaryPlanInterruption(board, ["tactical"])).toBe(true);
+    expect(isNecessaryPlanInterruption(board, ["develop"])).toBe(false);
+    expect(isNecessaryPlanInterruption(board, ["create-threat"])).toBe(false);
+
+    const inCheck = Board.fromFEN("4k3/8/8/8/8/8/4r3/4K3 w - - 0 1");
+    expect(inCheck.isInCheck("w")).toBe(true);
+    expect(isNecessaryPlanInterruption(inCheck, ["improve-piece"])).toBe(true);
   });
 
   it("distinguishes a genuine reversal from another move by the same piece", () => {

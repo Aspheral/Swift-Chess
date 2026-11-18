@@ -128,11 +128,21 @@ function strategicIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): 
 
   const enemyKing = u.king[enemyColor];
   if (enemyKing.exposed) {
+    // A new threat must CHANGE the position. Previously any quiet move
+    // qualified whenever an opponent piece was ALREADY attacked, so even
+    // an unrelated king shuffle inherited a bogus "create-threat" label.
+    const alreadyAttacked = new Set(enemy
+      .filter((piece) => attacksSquare(board, color, piece.square))
+      .map((piece) => piece.square));
     const candidates = quietMoves.filter((move) => {
       const next = board.makeMove(move);
-      return next.isInCheck(enemyColor) || enemy.some((p) => attacksSquare(next, color, p.square));
+      return next.isInCheck(enemyColor) ||
+        enemy.some((piece) =>
+          !alreadyAttacked.has(piece.square) &&
+          attacksSquare(next, color, piece.square),
+        );
     });
-    if (candidates.length) ideas.push({ kind: "create-threat", priority: 65, reason: "The opposing king is exposed, so a concrete new check or attack can increase the pressure.", candidates: uniqueMoves(candidates).slice(0, 8) });
+    if (candidates.length) ideas.push({ kind: "create-threat", priority: 65, reason: "The opposing king is exposed, so a genuinely new check or piece attack can increase the pressure.", candidates: uniqueMoves(candidates).slice(0, 8) });
   }
 
   if (u.pawns[color].passed > 0) {
@@ -158,7 +168,18 @@ function strategicIdeas(board: Board, u: PositionUnderstanding, legal: Move[]): 
   }
 
   const opponentDev = u.development[enemyColor];
-  if (u.development[color] < opponentDev && quietMoves.length) ideas.push({ kind: "develop", priority: 60, reason: "Development is behind, so improving piece coordination has strategic value.", candidates: quietMoves.filter((m) => ["n", "b", "k"].includes(pieceType(board, m) ?? "")).slice(0, 8) });
+  // A score deficit is not itself evidence that development is possible.
+  // In endgames with no remaining undeveloped minor pieces, the old
+  // heuristic called legal KING walks "development" for dozens of turns.
+  // Only home-square minor pieces can actually complete opening development.
+  if (u.development[color] < opponentDev && undeveloped.length) {
+    const developingMoves = fromSquares(quietMoves, new Set(undeveloped.map((p) => p.square)));
+    if (developingMoves.length) ideas.push({
+      kind: "develop", priority: 60,
+      reason: "Development is behind, and an undeveloped minor piece can be activated.",
+      candidates: developingMoves.slice(0, 8),
+    });
+  }
   if ((u.materialAdvantage === "white" && color === "w") || (u.materialAdvantage === "black" && color === "b")) {
     const candidates = captures(board, legal);
     if (candidates.length) ideas.push({ kind: "simplify", priority: 58, reason: "Material advantage makes favorable simplification a candidate plan.", candidates: uniqueMoves(candidates).slice(0, 8) });
