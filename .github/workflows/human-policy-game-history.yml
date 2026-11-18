@@ -1,5 +1,7 @@
 name: Human game-history policy research
 
+# Research-only training on an unchanged 3,500-position human holdout.
+
 on:
   push:
     branches: [experiment/human-policy-game-history-v1]
