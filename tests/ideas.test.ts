@@ -59,6 +59,7 @@ describe("Swift idea generation", () => {
     const ideas = generateIdeas(board).ideas.filter((idea) => idea.kind === "create-threat");
     const kingDrift = board.legalMoves().find((move) => move.uci() === "e1d1");
     expect(kingDrift).toBeDefined();
+    // A white knight's PRE-EXISTING attack on d5 must not turn Kd1 into a plan.
     expect(board.isSquareAttacked(35, "w")).toBe(true); // black knight on d5
     expect(ideas.flatMap((idea) => idea.candidates.map((move) => move.uci())))
       .not.toContain("e1d1");
