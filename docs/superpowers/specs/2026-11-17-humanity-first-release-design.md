@@ -20,6 +20,40 @@ to game the humanization metric. Do not claim that engine disagreement alone
 demonstrates human decision-making. Actual human game comparisons and blinded
 ratings are desired additional evidence.
 
+## Updated release thresholds: strictly above 90%
+
+The owner has set a **strict >90/100 subjective humanization gate** for
+every reviewed game **and** the aggregate game-average. The standard applies
+to each new engine/profile revision. Any game below that threshold, any missing
+manual review, any unconfirmed candidate SHA or absent Elo estimate means
+REJECTED or INCOMPLETE, never APPROVED. Do not hide anomalous games or choose
+only favorable openings. Preserve inter-rater uncertainty and compare
+with blinded genuine human game traces; do not report this percentage as an
+objective likelihood that the player is human.
+
+Use <https://chesscheatdetector.com/how-it-works/> as an **external independent
+statistical check** of each game's engine-like patterns. Record the exact
+version/date, input, top-move agreement, clear-best-move agreement, average
+centipawn loss and suspicion category/score if available. If an analysis is
+supplied by the owner rather than rerun independently, state that.
+A strong engine-like flag **holds deployment pending detailed forensic review**.
+Do not optimize toward escaping an anti-cheat classifier or trade away the
+actual human reasoning objective. One detector score is not the humanization
+score. If site access is unavailable, mark the independent check INCOMPLETE.
+
+The **November 17, 2026** SwiftChessTV–mishacorn959a example was flagged:
+49% top-engine choices, 83% of 23 clear-best choices, 31cp average loss
+(owner-provided detector summary), while the game ended with Swift winning
+on time. Full move-by-move manual preliminary comments are at
+`docs/humanity-reviews/2026-11-17-swiftchesstv-vs-mishacorn959a.md`.
+Do not retrospectively label the unknown test commit/profile as v16 or v17.
+The sample's provisional subjective score is **61/100**, explicitly
+incomplete without verified engine analysis and human controls. It fails the
+>90 release standard.
+
+Do not run undisclosed engines in Chess.com's human rated pool. Test against
+opponents only in authorized bot contexts or on Swift's disclosed test site.
+
 ## Immediate operating rule
 
 Before *any* new model is deployed, require:
