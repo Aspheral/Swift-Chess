@@ -103,7 +103,8 @@ def benchmark(games: str, student_checkpoint: str, output: str,
     engine_cmd = [sys.executable, "-m", "maia3.uci",
                   "--model", maia_model, "--device", "cpu", "--no-use-amp"]
     with chess.engine.SimpleEngine.popen_uci(engine_cmd, timeout=120) as eng:
-        eng.configure({"Temperature": "0", "MultiPV": 1})
+        # python-chess manages MultiPV itself; only configure deterministic sampling.
+        eng.configure({"Temperature": "0"})
 
         def predict_published(fen: str, rating: int) -> str:
             eng.configure({"SelfElo": rating, "OppoElo": rating})
