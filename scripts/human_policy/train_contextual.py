@@ -22,7 +22,6 @@ import torch.nn as nn
 
 from .collect import rating_band, split_for_game
 from .features import FEATURE_SIZE, move_features
-from .train import full_legal_loss
 
 HISTORY_PLIES = 8
 HISTORY_FEATURES = HISTORY_PLIES * 128
@@ -167,6 +166,22 @@ def context_full_legal_batch(examples: list[ContextExample]
         batch[i, :len(row)] = row
         mask[i, :len(row)] = True
     return torch.from_numpy(batch), torch.from_numpy(mask), torch.tensor(targets, dtype=torch.long)
+
+
+def full_legal_loss(logits: torch.Tensor, legal_mask: torch.Tensor,
+                    targets: torch.Tensor) -> torch.Tensor:
+    """Full legal-candidate cross entropy; padding has no effect or gradient."""
+    if logits.ndim != 2 or logits.shape != legal_mask.shape or \
+            targets.shape != (logits.shape[0],):
+        raise ValueError("Incompatible legal-move training dimensions")
+    if torch.any(targets < 0) or torch.any(targets >= logits.shape[1]) or \
+            not bool(legal_mask.gather(1, targets[:, None]).all()):
+        raise ValueError("Target must index a valid legal candidate")
+    if not bool(legal_mask.any(dim=1).all()):
+        raise ValueError("A sample has no legal candidate")
+    return nn.functional.cross_entropy(
+        logits.masked_fill(~legal_mask, float("-inf")), targets
+    )
 
 
 @torch.no_grad()
