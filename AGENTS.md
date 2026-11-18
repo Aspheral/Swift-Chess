@@ -17,6 +17,41 @@ The 2500 Stockfish UCI-Elo-equivalent goal is a *secondary laboratory target*.
 The separate Chess.com Rapid goal must not be conflated with Stockfish's
 strength-limited setting.
 
+## Mandatory >90% humanity quality gate (owner requirement, 2026-11-17)
+
+**A changed Swift playing model must earn a manually reviewed human-likeness
+score STRICTLY ABOVE 90/100 both in the across-game average and in every
+individual reviewed test game.** A low-scoring game is a release blocker that
+requires diagnosis and a new verified candidate; do not erase it from the
+sample, quietly reclassify it, or inflate its rubric. This percentage is a
+transparent, subjective human-chess plausibility audit, **not** a validated
+probability that a person played the moves. Include rated-human reference
+games and blinded judgments wherever possible.
+
+As an independent cross-check, consult
+<https://chesscheatdetector.com/how-it-works/> and analyze the completed
+games with that detector when its submission facility is available.
+Its Stockfish agreement, critical-decision agreement, average centipawn loss,
+rating-conditioned human prediction and final anomaly classification are
+research evidence. Record each analyzed game's exact input, date, score and
+original results, and explicitly label results that the owner supplied rather
+than pretending the assistant independently submitted them. Any
+**strong/elevated engine-like flag must HOLD the release** until investigated
+with full move/clock/plan traces; do not game the classifier or merely lower
+engine accuracy to evade detection. A quiet detector is not sufficient for
+release approval.
+
+The November 17 SwiftChessTV vs mishacorn959a 65-move game is a **known
+humanization regression fixture**, reviewed in
+`docs/humanity-reviews/2026-11-17-swiftchesstv-vs-mishacorn959a.md`. The owner
+reports detector concerns (49% top-1 agreement, 83% best-of-clear-gap decisions,
+31cp average centipawn loss) and this sample is not approval evidence.
+
+**Fair play:** All engine testing against humans must take place with clear
+disclosure and platform authorization (or on Swift's own controlled site).
+Do not use external detector metrics to conceal engine use in rated human
+games.
+
 ## HARD RELEASE HOLD: all model versions, including previews
 
 **Do not push, merge, promote, or intentionally deploy a changed Swift playing
