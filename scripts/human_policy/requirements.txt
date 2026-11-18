@@ -1,0 +1,6 @@
+# Human move imitation and neural policy training (not needed by Swift's website).
+chess>=1.11.2,<2
+zstandard>=0.23,<1
+numpy>=1.26,<3
+torch>=2.3,<3
+pytest>=8,<10
