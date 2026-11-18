@@ -20,6 +20,7 @@ def test_rating_filters_rated_bots_and_time():
     assert game_filter({**base, "BlackElo": "2551"}) == "outside-rating-band"
     assert game_filter({**base, "WhiteTitle": "BOT"}) == "bot-title"
     assert game_filter({**base, "Event": "Casual Rapid game"}) == "not-rated"
+    assert game_filter({**base, "Event": "Unrated Rapid game"}) == "not-rated"
     assert game_filter({**base, "Variant": "Chess960"}) == "variant"
     assert game_filter({**base, "TimeControl": "60+0"}) == "too-fast"
     assert game_filter({**base, "Result": "*"}) == "unresolved"
