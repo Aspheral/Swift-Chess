@@ -114,6 +114,50 @@ def sample_batch(examples: list[Example], seed: int, negatives: int = 7
     return torch.from_numpy(np.stack(batch)), torch.tensor(targets, dtype=torch.long)
 
 
+def full_legal_batch(examples: list[Example]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Collect ALL legal candidates, with a valid-move mask per position.
+
+    Train with exactly the candidate set used in evaluation, instead of the
+    old 1-positive-vs-7-random-negatives task. Padding must NEVER become an
+    apparent legal alternative and the target slot is the actual legal index.
+    """
+    if not examples:
+        raise ValueError("Full-legal training requires at least one position")
+    rows: list[np.ndarray] = []
+    targets: list[int] = []
+    max_moves = 0
+    for fen, played_uci, rating in examples:
+        board = chess.Board(fen)
+        legal, features = all_legal_features(board, rating)
+        if not legal or len(legal) < 2:
+            raise ValueError("Full-legal training requires at least two legal moves")
+        selected = next((i for i, m in enumerate(legal) if m.uci() == played_uci), -1)
+        if selected < 0:
+            raise ValueError("Human move is not legal in its own PGN position")
+        rows.append(features)
+        targets.append(selected)
+        max_moves = max(max_moves, len(legal))
+    X = np.zeros((len(rows), max_moves, FEATURE_SIZE), dtype=np.float32)
+    mask = np.zeros((len(rows), max_moves), dtype=np.bool_)
+    for i, row in enumerate(rows):
+        X[i, :len(row)] = row
+        mask[i, :len(row)] = True
+    return (torch.from_numpy(X), torch.from_numpy(mask),
+            torch.tensor(targets, dtype=torch.long))
+
+
+def full_legal_loss(logits: torch.Tensor, legal_mask: torch.Tensor,
+                    targets: torch.Tensor) -> torch.Tensor:
+    """Masked full-legal cross entropy; illegal/padded logits get zero gradient."""
+    if logits.ndim != 2 or logits.shape != legal_mask.shape or             targets.shape != (logits.shape[0],):
+        raise ValueError("Full-legal logits, mask and targets have incompatible shapes")
+    if torch.any(targets < 0) or torch.any(targets >= logits.shape[1]) or             not bool(legal_mask.gather(1, targets[:, None]).all()):
+        raise ValueError("Full-legal target is outside the legal move set")
+    if not bool(legal_mask.any(dim=1).all()):
+        raise ValueError("Every training position must have a legal move")
+    return nn.functional.cross_entropy(logits.masked_fill(~legal_mask, float("-inf")), targets)
+
+
 @torch.no_grad()
 def evaluate(net: PolicyNet, positions: list[Example]) -> dict:
     """Full legal move evaluation, never just sampled training negatives."""
@@ -188,7 +232,10 @@ def export_checkpoint(net: PolicyNet, destination: str, training: dict,
 
 def train(games: str, output: str, metrics_file: str, max_train: int = 15000,
           max_eval: int = 1200, epochs: int = 2, batch_size: int = 48,
-          negatives: int = 7, seed: int = 2026) -> dict:
+          negatives: int = 7, seed: int = 2026,
+          objective: str = "sampled") -> dict:
+    if objective not in ("sampled", "full-legal"):
+        raise ValueError("Expected sampled or full-legal move training")
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -215,17 +262,27 @@ def train(games: str, output: str, metrics_file: str, max_train: int = 15000,
         losses: list[float] = []
         for at in range(0, len(positions["train"]), batch_size):
             batch = positions["train"][at:at + batch_size]
-            X, y = sample_batch(batch, seed + epoch * 1000000 + at, negatives)
-            logits = model(X.reshape(-1, FEATURE_SIZE)).reshape(len(batch), negatives + 1)
-            loss = nn.functional.cross_entropy(logits, y)
+            if objective == "full-legal":
+                X, legal_mask, y = full_legal_batch(batch)
+                logits = model(X.reshape(-1, FEATURE_SIZE)).reshape(len(batch), -1)
+                loss = full_legal_loss(logits, legal_mask, y)
+            else:
+                X, y = sample_batch(batch, seed + epoch * 1000000 + at, negatives)
+                logits = model(X.reshape(-1, FEATURE_SIZE)).reshape(len(batch), negatives + 1)
+                loss = nn.functional.cross_entropy(logits, y)
             optim.zero_grad(set_to_none=True)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optim.step()
             losses.append(float(loss.detach()))
         valid = evaluate(model, positions["val"])
-        history.append({"epoch": epoch + 1, "train_sampled_loss": round(float(np.mean(losses)), 5),
-                        "validation_top1": valid["top1"], "validation_nll": valid["nll"]})
+        history.append({
+            "epoch": epoch + 1,
+            "train_objective": objective,
+            "train_loss": round(float(np.mean(losses)), 5),
+            "validation_top1": valid["top1"],
+            "validation_nll": valid["nll"],
+        })
         print(json.dumps(history[-1]), flush=True)
         if valid["nll"] < best_loss:
             best_loss = valid["nll"]
@@ -241,7 +298,8 @@ def train(games: str, output: str, metrics_file: str, max_train: int = 15000,
         "positions": {key: len(positions[key]) for key in TRAINING_SPLITS},
         "elo_range": [1850, 2550], "seed": seed,
         "epochs": epochs, "batch_size": batch_size,
-        "negative_moves_per_positive": negatives,
+        "objective": objective,
+        "negative_moves_per_positive": negatives if objective == "sampled" else "all-legal",
         "training_history": history,
     }
     report = {
@@ -274,10 +332,11 @@ def main() -> None:
     p.add_argument("--epochs", type=int, default=2)
     p.add_argument("--batch-size", type=int, default=48)
     p.add_argument("--negatives", type=int, default=7)
+    p.add_argument("--objective", choices=("sampled", "full-legal"), default="sampled")
     p.add_argument("--seed", type=int, default=2026)
     a = p.parse_args()
     train(a.games, a.output, a.metrics, a.max_train_positions, a.max_eval_positions,
-          a.epochs, a.batch_size, a.negatives, a.seed)
+          a.epochs, a.batch_size, a.negatives, a.seed, a.objective)
 
 
 if __name__ == "__main__":
