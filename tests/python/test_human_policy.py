@@ -8,7 +8,7 @@ import torch
 
 from scripts.human_policy.collect import collect, game_filter, rating_band, split_for_game
 from scripts.human_policy.features import FEATURE_SIZE, move_features, feature_fixture
-from scripts.human_policy.train import PolicyNet, sample_batch, export_checkpoint, load_positions
+from scripts.human_policy.train import PolicyNet, sample_batch, full_legal_batch, full_legal_loss, export_checkpoint, load_positions
 from scripts.human_policy.collect_stratified import collect_stratified
 
 
@@ -140,3 +140,43 @@ def test_stratified_bulk_collector_reaches_all_rating_bands(tmp_path: Path):
     }
     assert summary["accepted"] == 4 and summary["scanned"] == 11
     assert set(summary["rating_bands"].values()) == {1}
+
+
+def test_full_legal_training_uses_every_legal_move_and_masks_padding():
+    import torch.nn.functional as F
+    opening = chess.Board()
+    endgame = chess.Board("8/8/8/8/8/8/7k/K7 w - - 0 1")
+    assert endgame.is_valid()
+    endgame_move = list(endgame.legal_moves)[0]
+    examples = [
+        (opening.fen(), "e2e4", 2200),
+        (endgame.fen(), endgame_move.uci(), 2200),
+    ]
+    features, mask, labels = full_legal_batch(examples)
+    assert features.shape == (2, 20, FEATURE_SIZE)
+    assert mask.shape == (2, 20)
+    assert labels.shape == (2,)
+    assert mask[0].sum() == 20
+    assert mask[1].sum() == endgame.legal_moves.count()
+    assert mask[1].sum() < mask[0].sum()
+    assert all(mask[row, target] for row, target in enumerate(labels))
+    assert features[0, labels[0], 768 + chess.E2] == 1
+    assert features[0, labels[0], 832 + chess.E4] == 1
+    raw = torch.full((2, 20), 0.0, requires_grad=True)
+    with torch.no_grad():
+        raw[1, mask[1] == 0] = 1000  # impossible padded "moves"
+    loss = full_legal_loss(raw, mask, labels)
+    assert torch.isfinite(loss)
+    reference = F.cross_entropy(raw.masked_fill(~mask, float("-inf")), labels)
+    assert torch.allclose(loss, reference, atol=1e-6)
+    loss.backward()
+    assert raw.grad is not None
+    assert (raw.grad[1, mask[1] == 0] == 0).all()
+
+
+def test_full_legal_loss_refuses_invalid_targets():
+    from pytest import raises
+    logits = torch.ones((2, 4))
+    mask = torch.tensor([[True, True, False, False], [True, False, False, False]])
+    with raises(ValueError, match="target"):
+        full_legal_loss(logits, mask, torch.tensor([0, 1]))

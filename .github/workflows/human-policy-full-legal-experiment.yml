@@ -1,0 +1,95 @@
+name: Human neural policy full-legal training research
+
+# Research-only: exact game-level holdout, no browser deployment or model promotion.
+
+on:
+  push:
+    branches:
+      - experiment/human-policy-full-legal-top1
+    paths:
+      - "scripts/human_policy/**"
+      - "tests/python/test_human_policy.py"
+      - ".github/workflows/human-policy-full-legal-experiment.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r scripts/human_policy/requirements.txt
+      - run: python -m pytest -q tests/python/test_human_policy.py
+
+  train:
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run full-legal]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r scripts/human_policy/requirements.txt
+      - name: Reuse the EXACT same 2015+2017 game-level holdout as the 25.23% benchmark
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p artifacts/human-policy
+          gh run download 44236202724 -R Aspheral/Swift-Chess \
+            --name swift-human-policy-balanced-2015-2017-trained-prototype \
+            --dir artifacts/human-policy
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          d=Path('artifacts/human-policy')
+          manifest=json.loads((d/'games.jsonl.manifest.json').read_text())
+          observed=hashlib.sha256((d/'games.jsonl').read_bytes()).hexdigest()
+          assert manifest['games_sha256']==observed, 'Unexpected training corpus'
+          assert manifest['accepted']==4661 and len(manifest['splits'])==3
+          print('Verified same train/validation/test corpus SHA256:',observed)
+          PY
+      - name: Train human policy on every legal move, not seven random alternatives
+        run: |
+          python -m scripts.human_policy.train \
+            --games artifacts/human-policy/games.jsonl \
+            --output artifacts/human-policy/full-legal-model.json \
+            --metrics artifacts/human-policy/full-legal-metrics.json \
+            --max-train-positions 40000 --max-eval-positions 3500 \
+            --objective full-legal --epochs 3 --batch-size 16 --seed 2026
+      - name: Explicit, same-holdout objective comparison
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=Path('artifacts/human-policy')
+          before=json.loads((d/'metrics.json').read_text())
+          after=json.loads((d/'full-legal-metrics.json').read_text())
+          assert before['dataset']['games_sha256']==after['dataset']['games_sha256']
+          assert before['dataset']['games']==after['dataset']['games']
+          assert before['dataset']['positions']==after['dataset']['positions']
+          report={'sample':'same 3500 unseen human moves', 'baseline_top1':before['test']['top1'],
+                  'candidate_top1':after['test']['top1'],
+                  'delta_percentage_points':round(100*(after['test']['top1']-before['test']['top1']),3),
+                  'target_top1':0.60,
+                  'target_reached':after['test']['top1']>=0.60}
+          (d/'objective-comparison.json').write_text(json.dumps(report,indent=2)+'\n')
+          print(json.dumps(report,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-human-policy-full-legal-compare
+          path: artifacts/human-policy
+          retention-days: 30
+          if-no-files-found: warn
