@@ -9,6 +9,7 @@ import { findTacticalPriority, isOwnQueenUnderAttack } from "./fast-tactics";
 import { deriveSeed } from "./random";
 import { planProgressMetric, SwiftMind, SwiftMindSnapshot } from "./mind";
 import { planOutcomeDelta } from "./plan-evidence";
+import { humanPolicyBonuses, type HumanPolicyModel } from "./human-policy";
 import { selectiveCandidateDepths } from "./selective-calculation";
 import { AdaptiveThinkingOptions, planAdaptiveSecondLook, SwiftSecondLook, SwiftSecondLookReason } from "./adaptive-thinking";
 import { avoidImmediateMajorBlunder, avoidImmediateCheckmate } from "./blunder-guard";
@@ -42,6 +43,12 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
   onInitialMove?: (move: Move, completedDepth: number) => void;
   /** Disable hypothetical own-move planning for ablation or faster baselines. */
   planVision?: boolean;
+  /** A separately-trained, manually reviewed human neural policy checkpoint. */
+  humanPolicyModel?: HumanPolicyModel;
+  /** Explicit opt-in. Default false; never loaded automatically by production. */
+  enableHumanPolicy?: boolean;
+  /** Desired Lichess-style rating conditioning for experimental research. */
+  humanPolicyRating?: number;
 }
 
 export type SwiftDecisionSource = "tactical" | "opening-book" | "human-plan" | "engine-fallback" | "strict";
@@ -439,7 +446,16 @@ export class HumanSwiftEngine {
       }
     }
 
-    const selected = selectHumanMove(board, { planProgressBonus, planVisionBonus, candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length), randomness: technicalEndgame ? 0 : options.randomness, riskTolerance: technicalEndgame ? 0.2 : options.riskTolerance, errorBudget: baseErrorBudget, seed: options.seed === undefined ? undefined : deriveSeed(options.seed, history.length), initiative: options.initiative, simplification: options.simplification, development: options.development, pawnBreaks: options.pawnBreaks, history, mind: observedMind, candidates: movementSafe, strictBestPlay: options.strictBestPlay });
+    // Experimental neural imitation prior only: no network call can add a
+    // candidate, bypass matched-depth safety, or supply a chess evaluation.
+    // Production does not load a model and this flag defaults to OFF.
+    const humanPolicyBonus = options.enableHumanPolicy === true &&
+      options.humanPolicyModel && !technicalEndgame
+      ? humanPolicyBonuses(board, movementSafe.map((candidate) => candidate.move),
+          options.humanPolicyModel, options.humanPolicyRating ?? 2200)
+      : {};
+
+    const selected = selectHumanMove(board, { humanPolicyBonus, planProgressBonus, planVisionBonus, candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length), randomness: technicalEndgame ? 0 : options.randomness, riskTolerance: technicalEndgame ? 0.2 : options.riskTolerance, errorBudget: baseErrorBudget, seed: options.seed === undefined ? undefined : deriveSeed(options.seed, history.length), initiative: options.initiative, simplification: options.simplification, development: options.development, pawnBreaks: options.pawnBreaks, history, mind: observedMind, candidates: movementSafe, strictBestPlay: options.strictBestPlay });
     const selectedMove = selected.move;
     const safeKeys = new Set(movementSafe.map((candidate) => candidate.move.uci()));
     if (!selectedMove || !safeKeys.has(selectedMove.uci())) {
