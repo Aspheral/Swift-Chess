@@ -36,6 +36,16 @@ describe("Human-policy neural network, disabled-by-default", () => {
     expect(x[913 + 6]).toBe(0);    // 2200 is centered
     expect(x[913 + 8]).toBe(1);    // own kingside castling
     expect(x[913 + 10]).toBe(1);   // opponent kingside castling
+    // Exact active one-hot indices exported by the independently trained
+    // Python chess encoder. This catches cross-language feature drift.
+    const nonzeroIndices = Array.from(x, (value, i) => value ? i : -1)
+      .filter((i) => i >= 0);
+    expect(nonzeroIndices).toEqual([
+      8,9,10,11,12,13,14,15,65,70,130,133,192,199,259,324,
+      432,433,434,435,436,437,438,439,505,510,570,573,632,639,
+      699,764,780,860,896,921,922,923,924,
+    ]);
+
 
     const blackBoard = board.makeMove(e4);
     const e5 = blackBoard.legalMoves().find((move) => move.uci() === "e7e5");
