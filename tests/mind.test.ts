@@ -169,6 +169,7 @@ describe("Swift persistent mind", () => {
     expect(interrupted.setbacks).toBe(0);
     expect(interrupted.confidence).toBeLessThan(initial.confidence);
     expect(interrupted.confidence).toBeGreaterThan(initial.confidence - 0.08);
+    expect(interrupted.lastReason).toContain("defensive requirement");
 
     // Genuine new evidence on a later turn may still change the plan.
     const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
