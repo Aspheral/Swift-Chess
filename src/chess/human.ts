@@ -34,6 +34,8 @@ export interface HumanSelectionOptions extends HumanStyleOptions {
   planVisionBonus?: Record<string, number>;
   /** Bounded evidence that a concretely safe move advances Swift's existing plan. */
   planProgressBonus?: Record<string, number>;
+  /** Optional learned human move prior. Applied only after verified safety, <=4cp. */
+  humanPolicyBonus?: Record<string, number>;
 }
 
 export type HumanGameStage = "opening" | "middlegame" | "endgame";
@@ -386,8 +388,11 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
       candidate.score >= topScore - 18
       ? Math.max(-3, Math.min(6, options.planProgressBonus?.[candidate.move.uci()] ?? 0))
       : 0;
+    const humanPolicyBonus = candidate.score >= topScore - 12
+      ? Math.max(0, Math.min(4, options.humanPolicyBonus?.[candidate.move.uci()] ?? 0))
+      : 0;
     const value = candidate.score - rankPenalty + practicalRisk +
-      styleValue(board, candidate, profile, options) + visionBonus + progressBonus;
+      styleValue(board, candidate, profile, options) + visionBonus + progressBonus + humanPolicyBonus;
     return { candidate, value };
   });
 
