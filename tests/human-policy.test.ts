@@ -67,7 +67,7 @@ describe("Human-policy neural network, disabled-by-default", () => {
     expect(humanBonuses[e4.uci()]).toBeLessThanOrEqual(4);
     const candidates: CandidateScore[] = [
       { move: d4, score: 100, ideaKinds: ["develop"], reasons: ["verified"] },
-      { move: e4, score: 100, ideaKinds: ["pawn-break"], reasons: ["verified"] },
+      { move: e4, score: 100, ideaKinds: ["develop"], reasons: ["verified"] },
     ];
     const baseline = selectHumanMove(board, {
       candidates, randomness: 0, errorBudget: 0.1, initiative: 0,
