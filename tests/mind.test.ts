@@ -156,6 +156,29 @@ describe("Swift persistent mind", () => {
     expect(third.setbacks).toBe(3);
   });
 
+  it("preserves a coherent plan across a necessary defensive detour", () => {
+    const board = Board.start();
+    const mind = new SwiftMind();
+    const initial = mind.observe(board, ideas(board, [["develop", 75], ["defend", 65]]), quietProfile, []);
+    expect(initial.plan).toBe("develop");
+    const interrupted = mind.recordInterruption(
+      "An immediate defensive requirement takes priority this move.",
+    );
+    expect(interrupted.plan).toBe("develop");
+    expect(interrupted.planAge).toBe(initial.planAge);
+    expect(interrupted.setbacks).toBe(0);
+    expect(interrupted.confidence).toBeLessThan(initial.confidence);
+    expect(interrupted.confidence).toBeGreaterThan(initial.confidence - 0.08);
+
+    // Genuine new evidence on a later turn may still change the plan.
+    const e4 = board.legalMoves().find((move) => move.uci() === "e2e4");
+    if (!e4) throw new Error("Missing e2e4");
+    const next = board.makeMove(e4);
+    const continued = mind.observe(next, ideas(next, [["develop", 75], ["defend", 65]]), quietProfile, ["e2e4"]);
+    expect(continued.plan).toBe("develop");
+    expect(continued.planAge).toBe(2);
+  });
+
   it("remembers the reason for the move it chose", () => {
     const mind = new SwiftMind();
     const state = mind.recordDecision("e2e4", "Claim space and keep development flexible.");
