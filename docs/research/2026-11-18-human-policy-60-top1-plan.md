@@ -9,7 +9,9 @@ predict the **exact legal move the human chose**, measured against ALL legal
 moves, **>=60.0% top-1 overall**. Keep >=3,500 fixed test positions at minimum,
 and publish a 95% game-cluster bootstrap interval, the match rate within every
 rating band and stage, sample counts, and the full code/data checkpoint hashes.
-Do not relax the population, remove difficult middlegames or use a
+Require **at least 500 held-out move decisions per rating band**, so a
+high overall score cannot disguise lack of 2400–2550 coverage (the old
+reference has only 54 such moves). Do not relax the population, remove difficult middlegames or use a
 different top-k/forced-only score to declare success. Ideally add a second
 fully future-dated external test month where both models have never trained.
 
