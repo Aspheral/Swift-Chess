@@ -37,4 +37,24 @@ describe("Swift idea generation", () => {
     expect(result.ideas.some((idea) => idea.reason.includes("penetrated"))).toBe(false);
   });
 
+  it("never mislabels king-only endgame moves as late development", () => {
+    // Actual final position from the 2350/London v17 smoke-game trace.
+    // Black has a developed bishop; White has only a king. The old
+    // relative-development heuristic incorrectly offered White's king
+    // walks as development and reinforced an obsolete long-term plan.
+    const board = Board.fromFEN("8/8/7K/5b2/8/4k1q1/8/8 w - - 14 104");
+    const result = generateIdeas(board);
+    expect(result.understanding.development.b).toBeGreaterThan(result.understanding.development.w);
+    expect(board.legalMoves().length).toBeGreaterThan(0);
+    expect(result.ideas.filter((idea) => idea.kind === "develop")).toEqual([]);
+  });
+
+  it("keeps legitimate first-move minor piece development available", () => {
+    const result = generateIdeas(Board.start());
+    const develop = result.ideas.filter((idea) => idea.kind === "develop");
+    expect(develop.length).toBeGreaterThan(0);
+    expect(develop.some((idea) => idea.candidates.some((move) => move.uci() === "g1f3"))).toBe(true);
+  });
+
+
 });
