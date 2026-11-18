@@ -352,6 +352,16 @@ export class SwiftMind {
     return this.snapshot();
   }
 
+  /** A justified tactical or defensive detour does not disprove an existing plan.
+   * Keep the goal, but do not manufacture progress or confidence.
+   */
+  recordInterruption(reason: string): SwiftMindSnapshot {
+    this.state.lastReason = reason;
+    this.state.planProgressNote = "A necessary defensive move interrupted the plan.";
+    this.state.confidence = clamp(this.state.confidence - 0.03);
+    return this.snapshot();
+  }
+
   recordSetback(reason: string): SwiftMindSnapshot {
     this.state.setbacks += 1;
     this.state.confidence = clamp(this.state.confidence * 0.62);

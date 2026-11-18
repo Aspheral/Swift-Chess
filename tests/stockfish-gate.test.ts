@@ -82,6 +82,23 @@ interface CalibrationGame {
   moves: string[];
   finalFen: string;
   humanity: ReturnType<typeof summarizeHumanity>;
+  decisions: Array<{
+    ply: number;
+    player: "Swift";
+    uci: string;
+    elapsedMs: number;
+    depth: number;
+    nodes: number;
+    score: number;
+    source: string | null;
+    engineMove: string | null;
+    engineAgreement: boolean | null;
+    reasons: string[];
+    plan: string | null;
+    planAge: number | null;
+    planConfidence: number | null;
+    planProgress: number | null;
+  }>;
 }
 
 interface MatchStats {
@@ -326,14 +343,34 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
       const swiftDepths: number[] = [];
       const swiftNodes: number[] = [];
       const swiftHumanity: HumanityObservation[] = [];
+      const decisions: CalibrationGame["decisions"] = [];
 
       while (game.result() === "ongoing" && game.moveHistory().length < MAX_PLIES) {
         const board = game.board();
         let uci: string;
 
         if ((game.turn() === "w") === swiftIsWhite) {
+          const started = Date.now();
           const swift = swiftMove(board, engine, game, baseSeed);
+          const elapsedMs = Date.now() - started;
           uci = swift.move.uci();
+          decisions.push({
+            ply: game.moveHistory().length + 1,
+            player: "Swift",
+            uci,
+            elapsedMs,
+            depth: swift.depth,
+            nodes: swift.nodes,
+            score: swift.score,
+            source: swift.humanity.decision?.source ?? null,
+            engineMove: swift.humanity.decision?.engineMove ?? null,
+            engineAgreement: swift.humanity.decision?.engineAgreement ?? null,
+            reasons: swift.humanity.decision?.reasons ?? [],
+            plan: swift.humanity.mind?.plan ?? null,
+            planAge: swift.humanity.mind?.planAge ?? null,
+            planConfidence: swift.humanity.mind?.confidence ?? null,
+            planProgress: swift.humanity.mind?.planProgress ?? null,
+          });
           swiftDepths.push(swift.depth);
           swiftNodes.push(swift.nodes);
           swiftHumanity.push(swift.humanity);
@@ -387,6 +424,7 @@ const runStockfishGate = process.env.SWIFT_RUN_STOCKFISH_GATE === "1";
         moves,
         finalFen: game.fen(),
         humanity: summarizeHumanity(swiftHumanity),
+        decisions,
       });
 
       console.log(

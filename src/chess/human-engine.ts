@@ -2,12 +2,14 @@ import { Board, Move } from "./board";
 import { Game } from "./game";
 import { SearchOptions, SearchResult, SwiftEngine } from "./engine";
 import { CandidateScore, scoreCandidates } from "./scoring";
-import { generateIdeas } from "./ideas";
+import { generateIdeas, type IdeaKind } from "./ideas";
 import { HumanErrorProfile, humanErrorProfile, selectHumanMove, HumanSelectionOptions } from "./human";
 import { SwiftOpening, openingBookMove, verifiedScotchDefence } from "./openings";
 import { findTacticalPriority, isOwnQueenUnderAttack } from "./fast-tactics";
 import { deriveSeed } from "./random";
-import { SwiftMind, SwiftMindSnapshot } from "./mind";
+import { planProgressMetric, SwiftMind, SwiftMindSnapshot } from "./mind";
+import { planOutcomeDelta } from "./plan-evidence";
+import { humanPolicyBonuses, type HumanPolicyModel } from "./human-policy";
 import { selectiveCandidateDepths } from "./selective-calculation";
 import { AdaptiveThinkingOptions, planAdaptiveSecondLook, SwiftSecondLook, SwiftSecondLookReason } from "./adaptive-thinking";
 import { avoidImmediateMajorBlunder, avoidImmediateCheckmate } from "./blunder-guard";
@@ -41,6 +43,12 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
   onInitialMove?: (move: Move, completedDepth: number) => void;
   /** Disable hypothetical own-move planning for ablation or faster baselines. */
   planVision?: boolean;
+  /** A separately-trained, manually reviewed human neural policy checkpoint. */
+  humanPolicyModel?: HumanPolicyModel;
+  /** Explicit opt-in. Default false; never loaded automatically by production. */
+  enableHumanPolicy?: boolean;
+  /** Desired Lichess-style rating conditioning for experimental research. */
+  humanPolicyRating?: number;
 }
 
 export type SwiftDecisionSource = "tactical" | "opening-book" | "human-plan" | "engine-fallback" | "strict";
@@ -61,6 +69,16 @@ export interface HumanSearchResult extends SearchResult {
   decision?: SwiftDecisionTrace;
   secondLook?: SwiftSecondLook & { initialDepth: number; finalDepth: number; improvedDepth: boolean };
   planVision?: SoloPlanVision;
+}
+
+/** A necessary defensive response is not evidence that the strategic goal failed. */
+export function isNecessaryPlanInterruption(
+  board: Board,
+  ideaKinds: ReadonlyArray<IdeaKind>,
+): boolean {
+  return board.isInCheck(board.turn()) ||
+    ideaKinds.includes("tactical") ||
+    ideaKinds.includes("defend");
 }
 
 export function shouldPreferPlanToBook(mind: SwiftMindSnapshot, historyLength: number): boolean {
@@ -298,6 +316,32 @@ export class HumanSwiftEngine {
       else safetyCandidates.push(engineCandidate);
     }
 
+    // Don't allow a small concrete-candidate menu to erase Swift's remembered
+    // plan before its consequences have even been checked. Reserve ONE slot
+    // for the best plan-supporting alternative when a plan has actually
+    // survived an opponent response. The principal search move remains.
+    const maturePlan = observedMind.plan && observedMind.planAge >= 2 &&
+      observedMind.confidence >= 0.50 && observedMind.setbacks === 0 &&
+      (observedMind.planProgress ?? 0) > -0.08 &&
+      profile.tacticalPressure < 0.16 && profile.practicalPressure < 0.45;
+    const planCandidate = maturePlan
+      ? candidateScores.find((candidate) => candidate.ideaKinds.includes(observedMind.plan!))
+      : undefined;
+    if (planCandidate && safetyLimit >= 2 &&
+        !safetyCandidates.some((candidate) => candidate.move.uci() === planCandidate.move.uci())) {
+      // Prefer replacing a non-principal, non-forcing proposal.
+      let replaceIndex = -1;
+      for (let index = safetyCandidates.length - 1; index >= 0; index--) {
+        const candidate = safetyCandidates[index];
+        if (candidate.move.uci() !== engineMoveUci &&
+            !candidate.ideaKinds.includes("tactical")) {
+          replaceIndex = index;
+          break;
+        }
+      }
+      if (replaceIndex >= 0) safetyCandidates[replaceIndex] = planCandidate;
+    }
+
     const candidateDepths = selectiveCandidateDepths(basePonderDepth, safetyCandidates, (ideaKinds) => this.mind.planBias(ideaKinds));
     // Compare every candidate at the same depth with the same search budget.
     // A score from the main root search or a deeper probe is not interchangeable
@@ -383,7 +427,35 @@ export class HumanSwiftEngine {
       : [];
     const planVisionBonus = soloPlanTieBreaks(visions);
 
-    const selected = selectHumanMove(board, { planVisionBonus, candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length), randomness: technicalEndgame ? 0 : options.randomness, riskTolerance: technicalEndgame ? 0.2 : options.riskTolerance, errorBudget: baseErrorBudget, seed: options.seed === undefined ? undefined : deriveSeed(options.seed, history.length), initiative: options.initiative, simplification: options.simplification, development: options.development, pawnBreaks: options.pawnBreaks, history, mind: observedMind, candidates: movementSafe, strictBestPlay: options.strictBestPlay });
+    // A remembered plan should be influential only when a legal, already
+    // consequence-verified move advances its goal AFTER the opponent's
+    // independently searched reply. This refuses unopposed fantasy progress.
+    // These points are tiny tie-breaks, not additional evaluation centipawns.
+    // A missing reply yields no bonus; never invent a favorable continuation.
+    const planProgressBonus: Record<string, number> = {};
+    if (maturePlan && observedMind.plan) {
+      const beforeMetric = planProgressMetric(board, ideaGeneration, observedMind.plan);
+      const bestVerified = Math.max(...movementSafe.map((candidate) => candidate.score));
+      for (const candidate of movementSafe) {
+        if (!candidate.ideaKinds.includes(observedMind.plan) ||
+            candidate.score < bestVerified - 18) continue;
+        const delta = planOutcomeDelta(board, candidate.move, observedMind.plan,
+          beforeMetric, candidate.verifiedReply);
+        const bonus = Math.max(-3, Math.min(6, delta * 24));
+        if (Math.abs(bonus) >= 0.25) planProgressBonus[candidate.move.uci()] = bonus;
+      }
+    }
+
+    // Experimental neural imitation prior only: no network call can add a
+    // candidate, bypass matched-depth safety, or supply a chess evaluation.
+    // Production does not load a model and this flag defaults to OFF.
+    const humanPolicyBonus = options.enableHumanPolicy === true &&
+      options.humanPolicyModel && !technicalEndgame
+      ? humanPolicyBonuses(board, movementSafe.map((candidate) => candidate.move),
+          options.humanPolicyModel, options.humanPolicyRating ?? 2200)
+      : {};
+
+    const selected = selectHumanMove(board, { humanPolicyBonus, planProgressBonus, planVisionBonus, candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length), randomness: technicalEndgame ? 0 : options.randomness, riskTolerance: technicalEndgame ? 0.2 : options.riskTolerance, errorBudget: baseErrorBudget, seed: options.seed === undefined ? undefined : deriveSeed(options.seed, history.length), initiative: options.initiative, simplification: options.simplification, development: options.development, pawnBreaks: options.pawnBreaks, history, mind: observedMind, candidates: movementSafe, strictBestPlay: options.strictBestPlay });
     const selectedMove = selected.move;
     const safeKeys = new Set(movementSafe.map((candidate) => candidate.move.uci()));
     if (!selectedMove || !safeKeys.has(selectedMove.uci())) {
@@ -406,8 +478,22 @@ export class HumanSwiftEngine {
     }
 
     const selectedCandidate = movementSafe.find((candidate) => candidate.move.uci() === selectedMove.uci());
-    if (observedMind.plan && selectedCandidate && !selectedCandidate.ideaKinds.includes(observedMind.plan)) this.mind.recordSetback("The current plan had no convincing continuation, so Swift changed course for this move.");
-    const reasons = selectedCandidate?.reasons.length ? selectedCandidate.reasons : [`This move supports Swift's continuing plan to ${this.mind.planDescription()}.`];
+    if (observedMind.plan && selectedCandidate &&
+        !selectedCandidate.ideaKinds.includes(observedMind.plan)) {
+      if (isNecessaryPlanInterruption(board, selectedCandidate.ideaKinds)) {
+        this.mind.recordInterruption(
+          "An immediate tactical or defensive requirement interrupted the remembered plan.",
+        );
+      } else {
+        this.mind.recordSetback(
+          "The current plan had no convincing continuation, so Swift changed course for this move.",
+        );
+      }
+    }
+    const reasons = selectedCandidate?.reasons.length ? [...selectedCandidate.reasons] : [`This move supports Swift's continuing plan to ${this.mind.planDescription()}.`];
+    if ((planProgressBonus[selectedMove.uci()] ?? 0) > 0.5) {
+      reasons.push("This concretely safe move also improved a measurable aspect of Swift's continuing plan.");
+    }
     return decision(selectedMove, "human-plan", reasons, movementSafe, {
       planVision: visions.find((vision) => vision.rootMove === selectedMove.uci()),
     });
@@ -505,7 +591,10 @@ export class HumanSwiftEngine {
     if (probe.depth < depth) return null;
     const concreteScore = -probe.score;
     if (concreteScore < baseline - margin) return null;
-    return { ...candidate, score: concreteScore, reasons: [...candidate.reasons, "Concrete consequence search kept this move inside Swift's safety margin."] };
+    return {
+      ...candidate, score: concreteScore, verifiedReply: probe.move?.uci(),
+      reasons: [...candidate.reasons, "Concrete consequence search kept this move inside Swift's safety margin."],
+    };
   }
 
   private isSafeCandidate(board: Board, move: Move, baseline: number, margin: number, depth: number, timeMs?: number): boolean {

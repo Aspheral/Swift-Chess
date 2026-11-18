@@ -1,0 +1,73 @@
+name: Swift v17 Plan Independence Smoke
+
+# Six paired opening matches (12 full games), both colors.
+# Compare to v16's recorded cases on the SAME two openings and batch seeds.
+# This is a regression smoke, NOT a new Elo estimate.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/chess/human.ts"
+      - "src/chess/human-engine.ts"
+      - "src/chess/plan-evidence.ts"
+      - "src/chess/play-profile.ts"
+      - ".github/workflows/swift-v17-plan-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan-smoke:
+    # Neural training commits leave the neural preference disabled. Running
+    # expensive full games on every data-only commit cannot test the model.
+    # The exact trained-checkpoint comparison gets its own release review.
+    if: github.head_ref != 'research/lichess-human-policy-1850-2550'
+    name: Stockfish ${{ matrix.elo }} / opening batch ${{ matrix.opening.batch }} (two colors)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        elo: [2000, 2350, 2550]
+        opening:
+          - { batch: 0, start: 0 }
+          - { batch: 1, start: 5 }
+    env:
+      SWIFT_RUN_STOCKFISH_GATE: "1"
+      SWIFT_CALIBRATION_MODE: "human"
+      SWIFT_STOCKFISH_ELO: ${{ matrix.elo }}
+      SWIFT_CALIBRATION_BATCH: ${{ matrix.opening.batch }}
+      SWIFT_CALIBRATION_OPENING_PAIRS: "1"
+      SWIFT_CALIBRATION_OPENING_START: ${{ matrix.opening.start }}
+      SWIFT_CALIBRATION_REQUIRE_TARGET: "0"
+      SWIFT_MAX_PLIES: "500"
+      SWIFT_CALIBRATION_TEST_TIMEOUT_MS: "5100000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+      - run: pnpm install --no-frozen-lockfile
+      - name: Install UCI Stockfish opponent
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y stockfish
+          if ! command -v stockfish >/dev/null; then
+            sudo ln -s /usr/games/stockfish /usr/local/bin/stockfish
+          fi
+      - name: Play paired-color full games and record decisions
+        run: pnpm exec vitest run tests/stockfish-gate.test.ts --config vitest.config.mts
+      - name: Preserve actual games
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-v17-plan-smoke-${{ matrix.elo }}-${{ matrix.opening.batch }}
+          path: calibration-results/human-elo-${{ matrix.elo }}-batch-${{ matrix.opening.batch }}.json
+          if-no-files-found: warn
+          retention-days: 30
