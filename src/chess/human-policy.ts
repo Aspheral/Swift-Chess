@@ -162,8 +162,10 @@ export function humanPolicyBonuses(board: Board, verifiedMoves: Move[],
   if (best - worst < 0.00001) return {};
   const result: Record<string, number> = {};
   verifiedMoves.forEach((move, i) => {
+    // Do not stretch a nearly-tied neural prediction to the maximum bonus.
+    // At least ~2 logits of learned separation are needed for the full 4cp.
     result[move.uci()] = clamp(
-      MAX_HUMAN_POLICY_CP * (scores[i] - worst) / (best - worst), 0, MAX_HUMAN_POLICY_CP);
+      MAX_HUMAN_POLICY_CP * (scores[i] - worst) / 2.0, 0, MAX_HUMAN_POLICY_CP);
   });
   return result;
 }
