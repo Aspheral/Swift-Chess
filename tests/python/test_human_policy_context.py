@@ -18,8 +18,8 @@ from scripts.human_policy.train_contextual import (
     load_context_positions,
     context_full_legal_batch,
     ContextPolicyNet,
+    full_legal_loss,
 )
-from scripts.human_policy.train import full_legal_loss
 
 
 def test_same_position_different_prior_moves_produces_different_context():
