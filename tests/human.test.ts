@@ -15,6 +15,55 @@ describe("Swift human move selection", () => {
     expect(result.candidates.length).toBeLessThanOrEqual(3);
   });
 
+  it("does not pick a 20cp style trap when deliberation returns one concretely sound move", () => {
+    const board = Board.start();
+    const principal = board.legalMoves().find((move) => move.uci() === "e2e4");
+    const stylistic = board.legalMoves().find((move) => move.uci() === "g1f3");
+    if (!principal || !stylistic) throw new Error("Expected legal opening moves");
+    const candidates: CandidateScore[] = [
+      { move: principal, score: 100, ideaKinds: ["simplify"], reasons: ["concretely strongest"] },
+      { move: stylistic, score: 80, ideaKinds: ["develop"], reasons: ["remembered development plan"] },
+    ];
+    const mind: SwiftMindSnapshot = {
+      plan: "develop", planAge: 5, confidence: 0.95, setbacks: 0,
+      concern: "No urgent defect dominates the position.",
+      opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 4 },
+      observedHistoryLength: 8,
+    };
+    // The previous implementation protected only nonzero randomness. A
+    // deterministic style favorite bypassed the concrete-quality shortlist.
+    for (const randomness of [0, 0.1, 1]) for (const seed of [1, 7, 42, 100]) {
+      const result = selectHumanMove(board, { candidates, candidateLimit: 2,
+        randomness, errorBudget: 1, development: 1, simplification: 0,
+        mind, seed });
+      expect(result.move?.uci()).toBe("e2e4");
+    }
+  });
+
+  it("avoids a quiet multi-turn rook circuit without forbidding a needed defense", () => {
+    const board = Board.fromFEN("4k3/8/8/8/p7/8/8/2R1K3 w - - 0 7");
+    const returnToA1 = board.legalMoves().find((move) => move.uci() === "c1a1");
+    const improveToD1 = board.legalMoves().find((move) => move.uci() === "c1d1");
+    if (!returnToA1 || !improveToD1) throw new Error("Expected legal rook moves");
+    const candidates: CandidateScore[] = [
+      { move: returnToA1, score: 100, ideaKinds: ["improve-piece"], reasons: ["reroute"] },
+      { move: improveToD1, score: 100, ideaKinds: ["improve-piece"], reasons: ["activate"] },
+    ];
+    const route = ["a1a3", "a7a6", "a3c3", "a6a5", "c3c1", "a5a4"];
+    const beforeMemory = selectHumanMove(board, { candidates, randomness: 0 });
+    const afterMemory = selectHumanMove(board, { candidates, randomness: 0, history: route });
+    expect(beforeMemory.move?.uci()).toBe("c1a1");
+    expect(afterMemory.move?.uci()).toBe("c1d1");
+
+    // A concrete defensive purpose exempts the returning rook move.
+    const defending = [
+      { ...candidates[0], ideaKinds: ["defend"] as CandidateScore["ideaKinds"] },
+      candidates[1],
+    ];
+    expect(selectHumanMove(board, { candidates: defending, randomness: 0, history: route }).move?.uci())
+      .toBe("c1a1");
+  });
+
   it("preserves different strategic ideas in a small candidate menu", () => {
     const board = Board.start();
     const legal = board.legalMoves();
@@ -119,10 +168,57 @@ describe("Swift human move selection", () => {
       observedHistoryLength: 8,
     };
 
-    expect(humanPlanLatitude(mind, calm)).toBeGreaterThan(4);
-    expect(humanPlanLatitude(mind, calm)).toBeLessThanOrEqual(6);
-    expect(humanPlanLatitude(mind, { ...calm, tacticalPressure: 0.06 })).toBe(0);
+    expect(humanPlanLatitude(mind, calm)).toBeGreaterThan(10);
+    expect(humanPlanLatitude(mind, calm)).toBeLessThanOrEqual(18);
+    expect(humanPlanLatitude(mind, { ...calm, tacticalPressure: 0.06 }))
+      .toBeLessThan(humanPlanLatitude(mind, calm));
+    expect(humanPlanLatitude(mind, { ...calm, tacticalPressure: 0.16 })).toBe(0);
+    expect(humanPlanLatitude(mind, { ...calm, practicalPressure: 0.45 })).toBe(0);
+    expect(humanPlanLatitude({ ...mind, planAge: 1 }, calm)).toBe(0);
+    expect(humanPlanLatitude({ ...mind, confidence: 0.49 }, calm)).toBe(0);
+    expect(humanPlanLatitude({ ...mind, planProgress: -0.09 }, calm)).toBe(0);
     expect(humanPlanLatitude({ ...mind, setbacks: 1 }, calm)).toBe(0);
+  });
+
+  it("lets a remembered development plan affect a close zero-randomness decision", () => {
+    const board = Board.start();
+    const quiet = board.legalMoves().find((move) => move.uci() === "a2a3");
+    const develop = board.legalMoves().find((move) => move.uci() === "g1f3");
+    if (!quiet || !develop) throw new Error("Expected development fixture moves");
+    const candidates: CandidateScore[] = [
+      { move: quiet, score: 100, ideaKinds: ["simplify"], reasons: ["slightly higher concrete score"] },
+      { move: develop, score: 89, ideaKinds: ["develop"], reasons: ["advance piece development"] },
+    ];
+    const mind: SwiftMindSnapshot = {
+      plan: "develop",
+      planAge: 2,
+      confidence: 0.70,
+      planProgress: 0.05,
+      setbacks: 0,
+      concern: "Continue development.",
+      opponent: { aggression: 0, exchangeSeeking: 0, pawnActivity: 0, observedMoves: 2 },
+      observedHistoryLength: 4,
+    };
+    const withoutPlan = selectHumanMove(board, {
+      candidates, randomness: 0, errorBudget: 0.025,
+      development: 0, initiative: 0, simplification: 0,
+    });
+    expect(withoutPlan.move?.uci()).toBe("a2a3");
+
+    const withPlan = selectHumanMove(board, {
+      candidates, randomness: 0, errorBudget: 0.025,
+      development: 0, initiative: 0, simplification: 0,
+      mind, planProgressBonus: { g1f3: 5 },
+    });
+    expect(withPlan.move?.uci()).toBe("g1f3");
+
+    // An unverified or dramatically weaker move never gets a free pass:
+    const losing = [{ ...candidates[0] }, { ...candidates[1], score: 65 }];
+    const unsafe = selectHumanMove(board, {
+      candidates: losing, randomness: 0, errorBudget: 0.025,
+      mind, planProgressBonus: { g1f3: 999 },
+    });
+    expect(unsafe.move?.uci()).toBe("a2a3");
   });
 
   it("returns no move for a checkmated position", () => {

@@ -1,5 +1,7 @@
 import { Board, Color } from "./board";
 import { ChessIdea, IdeaGeneration, IdeaKind } from "./ideas";
+import { assessPlanFollowThrough } from "./plan-followthrough";
+import { historyContinuity } from "./history-continuity";
 
 export interface SwiftOpponentModel {
   aggression: number;
@@ -11,6 +13,8 @@ export interface SwiftOpponentModel {
 export interface SwiftMindSnapshot {
   plan: IdeaKind | null;
   planAge: number;
+  /** Consecutive turns where the actual position did not advance the plan. */
+  planStallCycles?: number;
   confidence: number;
   planReason?: string;
   planProgress?: number;
@@ -245,6 +249,7 @@ export class SwiftMind {
   private state: SwiftMindSnapshot = {
     plan: null,
     planAge: 0,
+    planStallCycles: 0,
     confidence: 0,
     setbacks: 0,
     concern: "No urgent defect dominates the position.",
@@ -252,14 +257,17 @@ export class SwiftMind {
     observedHistoryLength: 0,
   };
   private lastObservedPositionKey = "";
+  private observedHistory: string[] = [];
   private lastPlanMetric: number | null = null;
   private lastMetricPlan: IdeaKind | null = null;
   private readonly opponentHistory = new OpponentHistoryTracker();
 
   observe(board: Board, generation: IdeaGeneration, profile: MindPositionProfile, history: string[] = []): SwiftMindSnapshot {
-    if (history.length < this.state.observedHistoryLength) this.reset();
-
     const positionKey = board.toFEN().split(/\s+/).slice(0, 4).join(" ");
+    // Undo, alternative line with the same move count, or a new loaded FEN
+    // invalidates strategic memory. Continuing legal moves preserve it.
+    if (historyContinuity(this.observedHistory, history,
+      this.lastObservedPositionKey, positionKey) === "forked") this.reset();
     if (positionKey === this.lastObservedPositionKey && history.length === this.state.observedHistoryLength) {
       // Re-searching the same position is more calculation, not more life experience.
       // Do not let UI refreshes, analysis retries, or deeper searches manufacture
@@ -285,6 +293,12 @@ export class SwiftMind {
     const tacticalEmergency = profile.tacticalPressure >= 0.24 || board.isInCheck(board.turn());
     const kingThreats = generation.understanding.king[board.turn()];
     const rookInvasionEmergency = (kingThreats.rookInvasionPressure >= 2 || kingThreats.loomingRookInvasion >= 2) && best?.kind === "defend";
+    const momentum = assessPlanFollowThrough({
+      priorStalls: this.state.planStallCycles ?? 0,
+      planAge: this.state.planAge,
+      progress: planProgress,
+      tacticalEmergency,
+    });
 
     if (!best) {
       this.state.plan = null;
@@ -306,9 +320,14 @@ export class SwiftMind {
       const currentIdea = bestIdeaForPlan(ideas, current);
       this.state.planAge += 1;
       this.state.planReason = currentIdea?.reason ?? this.state.planReason;
-      this.state.confidence = clamp(this.state.confidence + confidenceGain(currentPriority, this.state.setbacks));
+      // A plan earns confidence from progress, not just from surviving a turn.
+      this.state.confidence = clamp(this.state.confidence +
+        confidenceGain(currentPriority, this.state.setbacks) * momentum.confidenceGrowthScale);
     } else {
-      const inertia = rookInvasionEmergency ? 6 : 10 + this.state.confidence * 12 + Math.min(6, this.state.planAge * 1.5);
+      // Repeated failure to advance a plan makes a genuinely better rival more
+      // persuasive, but NEVER switches plans without independent idea evidence.
+      const baseInertia = 10 + this.state.confidence * 12 + Math.min(6, this.state.planAge * 1.5);
+      const inertia = rookInvasionEmergency ? 6 : Math.max(4, baseInertia - momentum.inertiaReduction);
       if (bestPriority >= currentPriority + inertia) {
         this.state.plan = best.kind;
         this.state.planAge = 1;
@@ -318,13 +337,17 @@ export class SwiftMind {
       } else {
         this.state.planAge += 1;
         this.state.planReason = bestIdeaForPlan(ideas, current)?.reason ?? this.state.planReason;
-        this.state.confidence = clamp(this.state.confidence + confidenceGain(currentPriority, this.state.setbacks) * 0.55);
+        this.state.confidence = clamp(this.state.confidence +
+          confidenceGain(currentPriority, this.state.setbacks) * 0.55 * momentum.confidenceGrowthScale);
       }
     }
+    this.state.planStallCycles = this.state.plan && this.state.plan === current ? momentum.stalledCycles : 0;
 
     if (this.state.plan && this.state.plan === current && currentMetric !== null) {
       this.state.planProgress = planProgress;
-      this.state.planProgressNote = progressNote(planProgress);
+      this.state.planProgressNote = momentum.reconsider && !tacticalEmergency
+        ? "This plan has not made measurable progress for several turns; reassess competing ideas."
+        : progressNote(planProgress);
       if (!tacticalEmergency) {
         if (planProgress >= 0.025) {
           this.state.confidence = clamp(this.state.confidence + Math.min(0.03, planProgress * 0.2));
@@ -340,6 +363,7 @@ export class SwiftMind {
     this.state.concern = describeConcern(generation, profile);
     this.state.opponent = this.opponentHistory.observe(history, board.turn());
     this.state.observedHistoryLength = history.length;
+    this.observedHistory = [...history];
     this.lastObservedPositionKey = positionKey;
     this.lastMetricPlan = this.state.plan;
     this.lastPlanMetric = this.state.plan ? planProgressMetric(board, generation, this.state.plan) : null;
@@ -359,6 +383,7 @@ export class SwiftMind {
     if (this.state.confidence < 0.28) {
       this.state.plan = null;
       this.state.planAge = 0;
+      this.state.planStallCycles = 0;
       this.state.planReason = undefined;
       this.state.planProgress = 0;
       this.state.planProgressNote = undefined;
@@ -383,6 +408,7 @@ export class SwiftMind {
     this.state = {
       plan: null,
       planAge: 0,
+      planStallCycles: 0,
       confidence: 0,
       setbacks: 0,
       concern: "No urgent defect dominates the position.",
@@ -390,6 +416,7 @@ export class SwiftMind {
       observedHistoryLength: 0,
     };
     this.lastObservedPositionKey = "";
+    this.observedHistory = [];
     this.lastPlanMetric = null;
     this.lastMetricPlan = null;
     this.opponentHistory.reset();

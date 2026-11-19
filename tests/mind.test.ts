@@ -40,6 +40,93 @@ function snapshot(plan: SwiftMindSnapshot["plan"], confidence = 0.8, planAge = 3
 }
 
 describe("Swift persistent mind", () => {
+  it("reconsiders a genuinely stronger plan after several unproductive actual turns", () => {
+    let board = Board.start();
+    const mind = new SwiftMind();
+    const history: string[] = [];
+    mind.observe(board, ideas(board, [["develop", 65], ["attack", 60]]), quietProfile, history);
+    const pairs = [
+      ["a2a3", "a7a6"],
+      ["h2h3", "h7h6"],
+      ["b2b3", "b7b6"],
+      ["g2g3", "g7g6"],
+    ];
+    for (const [own, other] of pairs) {
+      for (const uci of [own, other]) {
+        const move = board.legalMoves().find((candidate) => candidate.uci() === uci);
+        if (!move) throw new Error(`Illegal follow-through fixture: ${uci}`);
+        board = board.makeMove(move);
+        history.push(uci);
+      }
+      const state = mind.observe(board, ideas(board, [["attack", 83], ["develop", 65]]), quietProfile, history);
+      if (history.length <= 4) expect(state.plan).toBe("develop");
+    }
+    const reconsidered = mind.snapshot();
+    expect(reconsidered.plan).toBe("attack");
+    expect(reconsidered.planAge).toBe(1);
+    expect(reconsidered.planStallCycles).toBe(0);
+    // Extra calculation on the SAME position must not invent more stalls.
+    const repeated = mind.observe(board, ideas(board, [["attack", 83], ["develop", 65]]), quietProfile, history);
+    expect(repeated.planStallCycles).toBe(reconsidered.planStallCycles);
+  });
+
+  it("does not abandon the best existing idea just because its progress is slow", () => {
+    let board = Board.start();
+    const mind = new SwiftMind();
+    const history: string[] = [];
+    mind.observe(board, ideas(board, [["develop", 85], ["attack", 70]]), quietProfile, history);
+    for (const uci of ["a2a3", "a7a6", "h2h3", "h7h6", "b2b3", "b7b6"]) {
+      const move = board.legalMoves().find((candidate) => candidate.uci() === uci);
+      if (!move) throw new Error(`Illegal follow-through fixture: ${uci}`);
+      board = board.makeMove(move);
+      history.push(uci);
+      if (board.turn() === "w") {
+        mind.observe(board, ideas(board, [["develop", 85], ["attack", 70]]), quietProfile, history);
+      }
+    }
+    const state = mind.snapshot();
+    expect(state.plan).toBe("develop");
+    expect(state.planStallCycles).toBe(3);
+    expect(state.planProgressNote).toContain("reassess");
+  });
+
+  it("drops stale plan and confidence when an equal-length move history forks", () => {
+    function replay(history: string[]): Board {
+      let board = Board.start();
+      for (const uci of history) {
+        const move = board.legalMoves().find((candidate) => candidate.uci() === uci);
+        if (!move) throw new Error(`Illegal fixture move: ${uci}`);
+        board = board.makeMove(move);
+      }
+      return board;
+    }
+    const original = ["e2e4", "e7e5", "g1f3", "b8c6"];
+    const different = ["e2e4", "c7c5", "g1f3", "b8c6"];
+    const mind = new SwiftMind();
+    const before = replay(original);
+    mind.observe(before, ideas(before, [["attack", 90]]), quietProfile, original);
+    mind.recordDecision("g1f3", "Attack central squares");
+    mind.recordSetback("An old line's plan failed");
+    const changedBoard = replay(different);
+    const restarted = mind.observe(changedBoard,
+      ideas(changedBoard, [["defend", 88], ["attack", 60]]), quietProfile, different);
+    expect(restarted.plan).toBe("defend");
+    expect(restarted.planAge).toBe(1);
+    expect(restarted.setbacks).toBe(0);
+    expect(restarted.lastMove).toBeUndefined();
+    expect(restarted.observedHistoryLength).toBe(different.length);
+  });
+
+  it("does not inherit a plan after a new FEN is loaded without moves", () => {
+    const a = Board.start();
+    const b = Board.fromFEN("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
+    const mind = new SwiftMind();
+    mind.observe(a, ideas(a, [["develop", 90]]), quietProfile, []);
+    const newPosition = mind.observe(b, ideas(b, [["defend", 85]]), quietProfile, []);
+    expect(newPosition.plan).toBe("defend");
+    expect(newPosition.planAge).toBe(1);
+  });
+
   it("keeps a viable plan across actual turns", () => {
     const board = Board.start();
     const mind = new SwiftMind();

@@ -6,6 +6,8 @@ export interface CandidateScore {
   score: number;
   ideaKinds: ChessIdea["kind"][];
   reasons: string[];
+  /** Opponent's concrete reply from a completed child verification, if available. */
+  verifiedReply?: string;
 }
 
 export interface CandidateGeneration {

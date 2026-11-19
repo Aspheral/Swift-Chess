@@ -2,6 +2,7 @@ import { Board, Move } from "./board";
 import { CandidateScore, scoreCandidates } from "./scoring";
 import { understandPosition } from "./understanding";
 import { createSeededRandom } from "./random";
+import { deliberationShortlist, recentPieceCircuitLength } from "./deliberation";
 import type { SwiftMindSnapshot } from "./mind";
 
 export interface HumanStyleOptions {
@@ -32,6 +33,8 @@ export interface HumanSelectionOptions extends HumanStyleOptions {
   candidates?: CandidateScore[];
   /** Tiny counterfactual-plan tie-break, never a verified engine score. */
   planVisionBonus?: Record<string, number>;
+  /** Bounded evidence that a concretely safe move advances Swift's existing plan. */
+  planProgressBonus?: Record<string, number>;
 }
 
 export type HumanGameStage = "opening" | "middlegame" | "endgame";
@@ -121,25 +124,35 @@ export function humanPlanLatitude(
   mind: SwiftMindSnapshot | undefined,
   profile: HumanErrorProfile,
 ): number {
+  // Previously this required planAge >= 4 and confidence >= .72, even though
+  // most real game plans last just one or two turns. That made the strategic
+  // layer almost entirely explanatory. Allow modest independence after a plan
+  // survives one response from the opponent, but never on its first turn.
   if (
     !mind?.plan ||
-    mind.planAge < 4 ||
-    mind.confidence < 0.72 ||
-    mind.setbacks > 0
+    mind.planAge < 2 ||
+    mind.confidence < 0.50 ||
+    mind.setbacks > 0 ||
+    (mind.planProgress ?? 0) <= -0.08
   ) return 0;
 
-  if (profile.tacticalPressure >= 0.06 || profile.practicalPressure >= 0.30) return 0;
+  // A live tactical problem is not permission to make a "human" mistake.
+  // The later matched-depth verification and mating guards remain mandatory.
+  if (profile.tacticalPressure >= 0.16 || profile.practicalPressure >= 0.45) return 0;
 
-  const maturity = clamp((mind.planAge - 3) / 4);
-  const conviction = clamp((mind.confidence - 0.72) / 0.20);
-  const tacticalCalm = clamp(1 - profile.tacticalPressure / 0.06);
-  const practicalCalm = clamp(1 - profile.practicalPressure / 0.30);
-  const quietness = tacticalCalm * practicalCalm;
+  const maturity = clamp((mind.planAge - 1) / 4);
+  const conviction = clamp((mind.confidence - 0.50) / 0.40);
+  // Preserve full latitude for genuinely quiet positions, taper it away as
+  // attack and king-safety signals grow. This is NOT a default error budget.
+  const tacticalCalm = 1 - clamp((profile.tacticalPressure - 0.04) / 0.12);
+  const practicalCalm = 1 - clamp((profile.practicalPressure - 0.20) / 0.25);
+  const setbackInProgress = (mind.planProgress ?? 0) < -0.02 ? 0.6 : 1;
 
-  // This is now a tie-break-sized freedom window, not a strength handicap.
-  // Swift may prefer a move for a mature strategic reason only when concrete
-  // search sees the alternatives as essentially equivalent.
-  return Math.min(6, (3 + conviction * 2 + maturity) * quietness);
+  // Centipawns of score freedom, available ONLY to candidates that support
+  // the remembered plan and have passed independent consequence searches.
+  // Even the maximum is a near-equal choice, not a deliberate blunder.
+  return Math.min(18, (8 + 6 * maturity + 4 * conviction) *
+    tacticalCalm * practicalCalm * setbackInProgress);
 }
 
 function isCentralPawnMove(board: Board, move: Move): boolean {
@@ -281,6 +294,28 @@ function styleValue(
   if (has("create-weakness") && profile.phase >= 0.25 && profile.phase < 0.9) {
     value += pawnBreaks * (2 + profile.complexity * 2);
   }
+
+  // The original reversal check notices a single A-B-A retreat, but misses
+  // longer, quiet circuits such as Ra1-a3-c3-c1-a1. The actual route belongs
+  // to this piece, not merely to any move with the same coordinates.
+  // Prefer forward-moving plans only when the current position is calm. The
+  // penalty is small, never a hard exclusion, and checks/captures/defensive
+  // necessity are exempt. The tactical verification layer remains authoritative.
+  const moving = board.pieceAt(candidate.move.from);
+  const circuitLength = moving && "nbrq".includes(moving[1])
+    ? recentPieceCircuitLength(candidate.move.uci(), options.history ?? [])
+    : null;
+  if (circuitLength !== null && circuitLength >= 2 &&
+      !board.isInCheck(board.turn()) && profile.tacticalPressure < 0.12 &&
+      (options.mind?.planProgress ?? 0) >= -0.025 &&
+      !has("tactical") && !has("defend") &&
+      !candidate.move.castle && !candidate.move.enPassant &&
+      !board.pieceAt(candidate.move.to)) {
+    const enemy = board.turn() === "w" ? "b" : "w";
+    const threatened = board.isSquareAttacked(candidate.move.from, enemy);
+    const givesCheck = board.makeMove(candidate.move).isInCheck(enemy);
+    if (!threatened && !givesCheck) value -= Math.min(7, 2 + circuitLength);
+  }
   return value;
 }
 
@@ -356,7 +391,6 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
     ),
   );
   const rng = options.seed === undefined ? Math.random : createSeededRandom(options.seed);
-  const temperature = 1 + randomness * 5 + profile.effectiveBudget * 7;
   const initiative = clamp(options.initiative ?? 0.5);
 
   const adjusted = eligible.map((candidate, index) => {
@@ -370,23 +404,44 @@ export function selectHumanMove(board: Board, options: HumanSelectionOptions = {
     const visionBonus = candidate.score >= topScore - 12
       ? Math.max(0, Math.min(5, options.planVisionBonus?.[candidate.move.uci()] ?? 0))
       : 0;
-    const value = candidate.score - rankPenalty + practicalRisk + styleValue(board, candidate, profile, options) + visionBonus;
-    return { candidate, value };
+    const progressBonus = activePlan && candidate.ideaKinds.includes(activePlan) &&
+      candidate.score >= topScore - 18
+      ? Math.max(-3, Math.min(6, options.planProgressBonus?.[candidate.move.uci()] ?? 0))
+      : 0;
+    const value = candidate.score - rankPenalty + practicalRisk +
+      styleValue(board, candidate, profile, options) + visionBonus + progressBonus;
+    return {
+      candidate, value, concreteScore: candidate.score,
+      supportsPlan: !!activePlan && candidate.ideaKinds.includes(activePlan),
+    };
   });
 
   const best = adjusted.reduce((a, b) => (a.value >= b.value ? a : b));
-  if (randomness === 0) {
-    return { move: best.candidate.move, candidates: ranked, selectedScore: best.candidate.score, profile };
+  // Deterministic choices need the SAME concrete-quality filter as variable
+  // choices. Otherwise randomness: 0 can pick a stylish but much weaker move.
+  // A human considers several plausible plans, but does not pick an unrelated
+  // move from the entire safety allowance. Let uncertainty choose only between
+  // genuinely comparable outcomes with comparable plan/position preferences.
+  const considered = deliberationShortlist(adjusted, randomness,
+    profile.tacticalPressure, planLatitude);
+  if (considered.length <= 1) {
+    // The most stylish move may have failed the concrete-score shortlist.
+    // Never fall back to that excluded candidate.
+    const chosen = considered[0]?.candidate ?? best.candidate;
+    return { move: chosen.move, candidates: ranked, selectedScore: chosen.score, profile };
   }
-
-  const weights = adjusted.map(({ value }) => Math.exp((value - best.value) / (10 * temperature)));
+  // Normalize only against the BEST REMAINING candidate; the original style
+  // leader might have been excluded for a large concrete evaluation loss.
+  const preferred = considered.reduce((a, b) => a.value >= b.value ? a : b);
+  const temperature = 1.5 + randomness * 2;
+  const weights = considered.map(({ value }) => Math.exp((value - preferred.value) / temperature));
   const total = weights.reduce((sum, weight) => sum + weight, 0);
   let roll = rng() * total;
-  let selected = adjusted[0].candidate;
-  for (let index = 0; index < adjusted.length; index += 1) {
+  let selected = considered[0].candidate;
+  for (let index = 0; index < considered.length; index += 1) {
     roll -= weights[index];
     if (roll <= 0) {
-      selected = adjusted[index].candidate;
+      selected = considered[index].candidate;
       break;
     }
   }
