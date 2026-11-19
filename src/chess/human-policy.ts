@@ -28,6 +28,10 @@ export interface HumanPolicyModel {
 }
 
 export const HUMAN_POLICY_FEATURES = 925;
+export const HUMAN_POLICY_HISTORY_PLIES = 8;
+export const HUMAN_POLICY_CONTEXT_FEATURES =
+  HUMAN_POLICY_FEATURES + HUMAN_POLICY_HISTORY_PLIES * 128;
+const UCI_MOVE = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 export const MAX_HUMAN_POLICY_CP = 4;
 const PIECES = "pnbrqk";
 const clamp = (value: number, lo: number, hi: number) =>
@@ -91,14 +95,49 @@ export function encodeHumanPolicyMove(board: Board, move: Move,
   return values;
 }
 
+/**
+ * Match the trained Python 1949-feature human policy exactly:
+ * 925 position/move features + eight past UCI plies, left zero-padded.
+ * The board's CURRENT side to move fixes orientation for ALL past plies.
+ * Never insert the current candidate move into the remembered history.
+ */
+export function encodeHumanPolicyContextMove(
+  board: Board, move: Move, rating = 2200,
+  moveHistory: readonly string[] = [],
+): Float32Array {
+  const features = new Float32Array(HUMAN_POLICY_CONTEXT_FEATURES);
+  features.set(encodeHumanPolicyMove(board, move, rating));
+  const recent = moveHistory.slice(-HUMAN_POLICY_HISTORY_PLIES);
+  const slotOffset = HUMAN_POLICY_HISTORY_PLIES - recent.length;
+  const mirror = board.turn() === "b";
+  for (let index = 0; index < recent.length; index++) {
+    const uci = recent[index];
+    if (!UCI_MOVE.test(uci)) throw new Error("Invalid prior chess move in neural history");
+    const square = (offset: number): number => (
+      (Number(uci[1 + offset]) - 1) * 8 + "abcdefgh".indexOf(uci[offset])
+    );
+    const from = mirrorForBlack(square(0), mirror);
+    const to = mirrorForBlack(square(2), mirror);
+    const slot = HUMAN_POLICY_FEATURES + (slotOffset + index) * 128;
+    features[slot + from] = 1;
+    features[slot + 64 + to] = 1;
+  }
+  return features;
+}
+
 export function validateHumanPolicyModel(model: HumanPolicyModel | undefined): boolean {
-  if (!model ||
-      model.schema !== "swift-human-policy-mlp-v1" ||
-      model.feature_schema !== "swift-human-policy-features-v1" ||
-      model.feature_size !== HUMAN_POLICY_FEATURES ||
+  if (!model) return false;
+  const legacy = model.schema === "swift-human-policy-mlp-v1" &&
+    model.feature_schema === "swift-human-policy-features-v1" &&
+    model.feature_size === HUMAN_POLICY_FEATURES;
+  const contextual = model.schema === "swift-human-policy-context-v1" &&
+    model.feature_schema === "swift-human-policy-features+history8-v1" &&
+    model.feature_size === HUMAN_POLICY_CONTEXT_FEATURES;
+  if ((!legacy && !contextual) ||
       model.enabled_by_default !== false ||
+      !Array.isArray(model.layers) ||
       model.layers.length < 1 || model.layers.length > 6) return false;
-  let input = HUMAN_POLICY_FEATURES;
+  let input = model.feature_size;
   for (let layerIndex = 0; layerIndex < model.layers.length; layerIndex += 1) {
     const layer = model.layers[layerIndex];
     if (layer.in !== input || layer.out < 1 || layer.out > 512 ||
@@ -123,7 +162,7 @@ export function validateHumanPolicyModel(model: HumanPolicyModel | undefined): b
 }
 
 export function humanPolicyLogit(model: HumanPolicyModel, features: Float32Array): number {
-  if (features.length !== HUMAN_POLICY_FEATURES) throw new Error("Policy feature mismatch");
+  if (features.length !== model.feature_size) throw new Error("Policy feature mismatch");
   let x: Float32Array = features;
   for (const layer of model.layers) {
     const y = new Float32Array(layer.out);
@@ -151,12 +190,18 @@ export function humanPolicyLogit(model: HumanPolicyModel, features: Float32Array
  */
 export function humanPolicyBonuses(board: Board, verifiedMoves: Move[],
                                   model: HumanPolicyModel | undefined,
-                                  rating = 2200): Record<string, number> {
+                                  rating = 2200,
+                                  moveHistory: readonly string[] = []): Record<string, number> {
   if (!validateHumanPolicyModel(model) || verifiedMoves.length < 2 || !model) return {};
+  const contextual = model.schema === "swift-human-policy-context-v1";
+  if (contextual && moveHistory.some((uci) => !UCI_MOVE.test(uci))) return {};
   const legalKeys = new Set(board.legalMoves().map((move) => move.uci()));
   if (verifiedMoves.some((move) => !legalKeys.has(move.uci()))) return {};
   const scores = verifiedMoves.map((move) =>
-    humanPolicyLogit(model, encodeHumanPolicyMove(board, move, rating)));
+    humanPolicyLogit(model,
+      contextual
+        ? encodeHumanPolicyContextMove(board, move, rating, moveHistory)
+        : encodeHumanPolicyMove(board, move, rating)));
   if (scores.some((score) => !Number.isFinite(score))) return {};
   const best = Math.max(...scores), worst = Math.min(...scores);
   if (best - worst < 0.00001) return {};

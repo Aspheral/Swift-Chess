@@ -452,7 +452,7 @@ export class HumanSwiftEngine {
     const humanPolicyBonus = options.enableHumanPolicy === true &&
       options.humanPolicyModel && !technicalEndgame
       ? humanPolicyBonuses(board, movementSafe.map((candidate) => candidate.move),
-          options.humanPolicyModel, options.humanPolicyRating ?? 2200)
+          options.humanPolicyModel, options.humanPolicyRating ?? 2200, history)
       : {};
 
     const selected = selectHumanMove(board, { humanPolicyBonus, planProgressBonus, planVisionBonus, candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length), randomness: technicalEndgame ? 0 : options.randomness, riskTolerance: technicalEndgame ? 0.2 : options.riskTolerance, errorBudget: baseErrorBudget, seed: options.seed === undefined ? undefined : deriveSeed(options.seed, history.length), initiative: options.initiative, simplification: options.simplification, development: options.development, pawnBreaks: options.pawnBreaks, history, mind: observedMind, candidates: movementSafe, strictBestPlay: options.strictBestPlay });
