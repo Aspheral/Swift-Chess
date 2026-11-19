@@ -1,5 +1,7 @@
 name: Context human policy runtime research
 
+# Exact trained-checkpoint export gate, with no release or deployment.
+
 on:
   push:
     branches: [experiment/context-policy-runtime-bridge]
