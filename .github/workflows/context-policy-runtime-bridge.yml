@@ -22,17 +22,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.15.1
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test
-      - run: pnpm typecheck
-      - run: pnpm build
+      # No pnpm-lock.yaml in this research branch; avoid assuming one exists.
+      - run: npm install --no-package-lock --no-audit --no-fund
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
 
   python:
     runs-on: ubuntu-latest
