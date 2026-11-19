@@ -1,0 +1,92 @@
+name: Context human policy runtime research
+
+on:
+  push:
+    branches: [experiment/context-policy-runtime-bridge]
+    paths:
+      - "src/chess/human-policy.ts"
+      - "src/chess/human-engine.ts"
+      - "scripts/human_policy/export_context.py"
+      - "tests/python/test_context_export.py"
+      - "tests/human-policy.test.ts"
+      - ".github/workflows/context-policy-runtime-bridge.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm typecheck
+      - run: pnpm build
+
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: python -m pip install -r scripts/human_policy/requirements.txt
+      - run: python -m pytest -q tests/python/test_human_policy.py tests/python/test_human_policy_context.py tests/python/test_context_export.py
+
+  export-real-checkpoint:
+    needs: [typescript, python]
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[export contextual]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: python -m pip install -r scripts/human_policy/requirements.txt
+      - name: Retrieve the exact trained 25.571% research checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p artifacts/context-runtime
+          gh run download 44421100676 -R Aspheral/Swift-Chess \
+            --name swift-human-policy-rating-balanced-experiment \
+            --dir artifacts/context-runtime
+      - name: Export actual checkpoint as safe browser inference JSON
+        run: |
+          python -m scripts.human_policy.export_context \
+            --checkpoint artifacts/context-runtime/rating-balanced-weights.pt \
+            --output artifacts/context-runtime/contextual-research-model.json
+      - name: Check exported network metadata
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=Path('artifacts/context-runtime')
+          model=json.loads((d/'contextual-research-model.json').read_text())
+          metrics=json.loads((d/'rating-balanced-metrics.json').read_text())
+          assert model['schema']=='swift-human-policy-context-v1'
+          assert model['feature_size']==1949
+          assert model['enabled_by_default'] is False
+          assert model['training']['games_sha256']==metrics['dataset']['games_sha256']
+          print('Research contextual weights exported, DISABLED by default.')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swift-human-policy-runtime-contextual-disabled
+          path: artifacts/context-runtime/contextual-research-model.json
+          retention-days: 30
