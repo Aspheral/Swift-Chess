@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Board, type CandidateScore, selectHumanMove } from "../src";
 import {
   encodeHumanPolicyMove,
+  encodeHumanPolicyContextMove,
   humanPolicyBonuses,
   validateHumanPolicyModel,
   type HumanPolicyModel,
@@ -54,6 +55,59 @@ describe("Human-policy neural network, disabled-by-default", () => {
     expect(y[12]).toBe(1);         // black e7 pawn mirrored to e2
     expect(y[768 + 12]).toBe(1);
     expect(y[913 + 5]).toBe(1);
+  });
+
+  it("encodes eight real previous plies in the trained model's exact coordinate schema", () => {
+    const board = Board.start();
+    const e4 = board.legalMoves().find((m) => m.uci() === "e2e4");
+    if (!e4) throw Error("Missing e4");
+    const afterE4 = board.makeMove(e4);
+    const e5 = afterE4.legalMoves().find((m) => m.uci() === "e7e5");
+    if (!e5) throw Error("Missing e5");
+    const afterE5 = afterE4.makeMove(e5);
+    const nf3 = afterE5.legalMoves().find((m) => m.uci() === "g1f3");
+    if (!nf3) throw Error("Missing Nf3");
+    const x = encodeHumanPolicyContextMove(afterE5, nf3, 2200, ["e2e4", "e7e5"]);
+    expect(x.length).toBe(1949);
+    expect(Array.from(x.slice(0, 925))).toEqual(
+      Array.from(encodeHumanPolicyMove(afterE5, nf3, 2200)),
+    );
+    // Black's e7-e5 is the most recent move, at slot 7.
+    expect(x[925 + 7 * 128 + 52]).toBe(1);
+    expect(x[925 + 7 * 128 + 64 + 36]).toBe(1);
+    // White's e2-e4 is previous slot 6.
+    expect(x[925 + 6 * 128 + 12]).toBe(1);
+    expect(x[925 + 6 * 128 + 64 + 28]).toBe(1);
+    expect(x.slice(925).filter((value) => value !== 0).length).toBe(4);
+    const black = encodeHumanPolicyContextMove(afterE4, e5, 2200, ["e2e4"]);
+    // Black perspective mirrors ranks (e2->e7 and e4->e5).
+    expect(black[925 + 7 * 128 + 52]).toBe(1);
+    expect(black[925 + 7 * 128 + 64 + 36]).toBe(1);
+    expect(black.slice(925).filter((value) => value !== 0).length).toBe(2);
+  });
+
+  it("rejects the wrong checkpoint schema and does not fabricate history", () => {
+    const board = Board.start();
+    const e4 = board.legalMoves().find((m) => m.uci() === "e2e4");
+    const d4 = board.legalMoves().find((m) => m.uci() === "d2d4");
+    if (!e4 || !d4) throw Error("Missing legal fixture");
+    const row = new Array<number>(1949).fill(0);
+    row[925 + 7 * 128 + 12] = 100;
+    const contextual: HumanPolicyModel = {
+      schema: "swift-human-policy-context-v1",
+      feature_schema: "swift-human-policy-features+history8-v1",
+      feature_size: 1949,
+      enabled_by_default: false,
+      layers: [{ in: 1949, out: 1, qweight: [row],
+        scale: [0.01], bias: [0], activation: "identity" }],
+    };
+    expect(validateHumanPolicyModel(contextual)).toBe(true);
+    expect(validateHumanPolicyModel({ ...contextual, feature_size: 925 })).toBe(false);
+    expect(validateHumanPolicyModel({ ...contextual, schema: "swift-human-policy-mlp-v1" })).toBe(false);
+    const withHistory = encodeHumanPolicyContextMove(board, e4, 2200, ["e2e4"]);
+    const withoutHistory = encodeHumanPolicyContextMove(board, e4, 2200, []);
+    expect(withHistory).not.toEqual(withoutHistory);
+    expect(humanPolicyBonuses(board, [d4, e4], contextual, 2200, ["not-a-move"])).toEqual({});
   });
 
   it("never runs an unconfigured, invalid or disabled model", () => {
