@@ -260,6 +260,9 @@ export class SwiftMind {
   private observedHistory: string[] = [];
   private lastPlanMetric: number | null = null;
   private lastMetricPlan: IdeaKind | null = null;
+  // A newly verified choice outside the plan pauses earned plan maturity.
+  // It must never advance confidence merely because the game continued.
+  private pendingPracticalDetour = false;
   private readonly opponentHistory = new OpponentHistoryTracker();
 
   observe(board: Board, generation: IdeaGeneration, profile: MindPositionProfile, history: string[] = []): SwiftMindSnapshot {
@@ -277,6 +280,7 @@ export class SwiftMind {
       return this.snapshot();
     }
 
+    const detouredSinceLastObservation = this.pendingPracticalDetour;
     const ideas = strategicIdeas(generation.ideas);
     const best = ideas[0];
     const current = this.state.plan;
@@ -318,11 +322,13 @@ export class SwiftMind {
       this.state.confidence = clamp(0.42 + bestPriority / 180);
     } else if (best.kind === current) {
       const currentIdea = bestIdeaForPlan(ideas, current);
-      this.state.planAge += 1;
+      // Only a followed plan ages. A verified detour is not another turn
+      // invested in executing that plan, even if it remains the best idea.
+      if (!detouredSinceLastObservation) this.state.planAge += 1;
       this.state.planReason = currentIdea?.reason ?? this.state.planReason;
-      // A plan earns confidence from progress, not just from surviving a turn.
       this.state.confidence = clamp(this.state.confidence +
-        confidenceGain(currentPriority, this.state.setbacks) * momentum.confidenceGrowthScale);
+        confidenceGain(currentPriority, this.state.setbacks) *
+          (detouredSinceLastObservation ? 0 : momentum.confidenceGrowthScale));
     } else {
       // Repeated failure to advance a plan makes a genuinely better rival more
       // persuasive, but NEVER switches plans without independent idea evidence.
@@ -335,10 +341,11 @@ export class SwiftMind {
         this.state.setbacks = 0;
         this.state.confidence = clamp(0.38 + bestPriority / 190);
       } else {
-        this.state.planAge += 1;
+        if (!detouredSinceLastObservation) this.state.planAge += 1;
         this.state.planReason = bestIdeaForPlan(ideas, current)?.reason ?? this.state.planReason;
         this.state.confidence = clamp(this.state.confidence +
-          confidenceGain(currentPriority, this.state.setbacks) * 0.55 * momentum.confidenceGrowthScale);
+          confidenceGain(currentPriority, this.state.setbacks) * 0.55 *
+            (detouredSinceLastObservation ? 0 : momentum.confidenceGrowthScale));
       }
     }
     this.state.planStallCycles = this.state.plan && this.state.plan === current ? momentum.stalledCycles : 0;
@@ -365,6 +372,7 @@ export class SwiftMind {
     this.state.observedHistoryLength = history.length;
     this.observedHistory = [...history];
     this.lastObservedPositionKey = positionKey;
+    this.pendingPracticalDetour = false;
     this.lastMetricPlan = this.state.plan;
     this.lastPlanMetric = this.state.plan ? planProgressMetric(board, generation, this.state.plan) : null;
     return this.snapshot();
@@ -373,6 +381,31 @@ export class SwiftMind {
   recordDecision(move: string, reason: string): SwiftMindSnapshot {
     this.state.lastMove = move;
     this.state.lastReason = reason;
+    return this.snapshot();
+  }
+
+  /**
+   * A timeout or inconclusive verifier is not evidence of an actual chess
+   * setback. The plan and confidence still belong to the current game line.
+   */
+  recordSearchUncertainty(reason: string): SwiftMindSnapshot {
+    this.state.lastReason = reason;
+    return this.snapshot();
+  }
+
+  /**
+   * A concretely verified move may address a problem outside the remembered
+   * strategy. One such detour is not proof the plan was wrong. Keep its
+   * confidence and let the next observed board and real plan progress decide
+   * whether to continue or switch.
+   */
+  recordPracticalDetour(reason: string): SwiftMindSnapshot {
+    this.state.lastReason = reason;
+    if (this.state.plan) {
+      this.pendingPracticalDetour = true;
+      this.state.planProgressNote =
+        "Swift took a verified practical detour and will reassess this plan after the response.";
+    }
     return this.snapshot();
   }
 
@@ -419,6 +452,7 @@ export class SwiftMind {
     this.observedHistory = [];
     this.lastPlanMetric = null;
     this.lastMetricPlan = null;
+    this.pendingPracticalDetour = false;
     this.opponentHistory.reset();
   }
 }

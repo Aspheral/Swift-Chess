@@ -15,6 +15,7 @@ import { avoidImmediateMajorBlunder, avoidImmediateCheckmate } from "./blunder-g
 import { avoidShortCheckingMate } from "./mate-threat";
 import { defensiveThinkingNeed } from "./play-profile";
 import { soloPlanTieBreaks, SoloPlanVision, visualizeSoloPlans } from "./plan-vision";
+import { contextualChoiceUncertainty } from "./contextual-choice";
 
 export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions {
   safetyMargin?: number;
@@ -42,6 +43,8 @@ export interface HumanEngineOptions extends SearchOptions, HumanSelectionOptions
   onInitialMove?: (move: Move, completedDepth: number) => void;
   /** Disable hypothetical own-move planning for ablation or faster baselines. */
   planVision?: boolean;
+  /** Seeded, reasoned variation ONLY among closely verified, distinct calm plans. */
+  contextualVariation?: boolean;
 }
 
 export type SwiftDecisionSource = "tactical" | "opening-book" | "human-plan" | "engine-fallback" | "strict";
@@ -335,7 +338,7 @@ export class HumanSwiftEngine {
     // When even a two-ply baseline cannot complete, preserve the stronger
     // root search instead of allowing an unverified human plan to override it.
     if (baselineProbe.depth < 2) {
-      this.mind.recordSetback("Safety verification was incomplete.");
+      this.mind.recordSearchUncertainty("Safety verification was incomplete.");
       return decision(principalMove, "engine-fallback", ["Safety search was incomplete; preserving the principal move."], []);
     }
     const verifiedDepth = baselineProbe.depth;
@@ -376,7 +379,7 @@ export class HumanSwiftEngine {
       return [verified];
     });
     if (!safe.length) {
-      this.mind.recordSetback("The current plan produced no candidate that survived concrete verification.");
+      this.mind.recordSearchUncertainty("No human-plan candidate was fully verified within this decision.");
       return decision(principalMove, "engine-fallback", ["No human-plan candidate survived the concrete safety check."], candidateScores.slice(0, options.candidateLimit ?? 6));
     }
 
@@ -429,11 +432,20 @@ export class HumanSwiftEngine {
       }
     }
 
-    const selected = selectHumanMove(board, { planProgressBonus, planVisionBonus, candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length), randomness: technicalEndgame ? 0 : options.randomness, riskTolerance: technicalEndgame ? 0.2 : options.riskTolerance, errorBudget: baseErrorBudget, seed: options.seed === undefined ? undefined : deriveSeed(options.seed, history.length), initiative: options.initiative, simplification: options.simplification, development: options.development, pawnBreaks: options.pawnBreaks, history, mind: observedMind, candidates: movementSafe, strictBestPlay: options.strictBestPlay });
+    // The live game seed is fixed for the game and derived per ply. A rerun
+    // of the same decision keeps the same random stream, while new games can
+    // weigh genuinely equal strategic alternatives differently.
+    // Do not turn on uncertainty without an explicit opt-in AND a stable seed.
+    const contextualUncertainty = options.contextualVariation && options.seed !== undefined &&
+      !technicalEndgame && !options.strictBestPlay
+      ? contextualChoiceUncertainty(movementSafe, profile, observedMind) : 0;
+    const decisionUncertainty = technicalEndgame ? 0
+      : Math.max(options.randomness ?? 0, contextualUncertainty);
+    const selected = selectHumanMove(board, { planProgressBonus, planVisionBonus, candidateLimit: Math.min(options.candidateLimit ?? 6, movementSafe.length), randomness: decisionUncertainty, riskTolerance: technicalEndgame ? 0.2 : options.riskTolerance, errorBudget: baseErrorBudget, seed: options.seed === undefined ? undefined : deriveSeed(options.seed, history.length), initiative: options.initiative, simplification: options.simplification, development: options.development, pawnBreaks: options.pawnBreaks, history, mind: observedMind, candidates: movementSafe, strictBestPlay: options.strictBestPlay });
     const selectedMove = selected.move;
     const safeKeys = new Set(movementSafe.map((candidate) => candidate.move.uci()));
     if (!selectedMove || !safeKeys.has(selectedMove.uci())) {
-      this.mind.recordSetback("The human decision layer could not produce a verified continuation.");
+      this.mind.recordSearchUncertainty("The human decision layer could not produce a verified continuation.");
       return decision(principalMove, "engine-fallback", ["Human selection did not return a verified candidate."], movementSafe);
     }
 
@@ -445,14 +457,22 @@ export class HumanSwiftEngine {
         !(remainingMs() >= 170 &&
           this.verifyPlanOverride(board, principalMove, selectedMove, result.depth,
             tacticalMargin, cappedTime(options.timeMs)))) {
-      this.mind.recordSetback("A deeper matched search did not confirm the human-plan deviation.");
+      this.mind.recordSearchUncertainty("A deeper matched search did not confirm the human-plan deviation.");
       return decision(principalMove, "engine-fallback",
         ["Deeper verification rejected an unproven human-plan move; retaining the principal search choice."],
         movementSafe);
     }
 
     const selectedCandidate = movementSafe.find((candidate) => candidate.move.uci() === selectedMove.uci());
-    if (observedMind.plan && selectedCandidate && !selectedCandidate.ideaKinds.includes(observedMind.plan)) this.mind.recordSetback("The current plan had no convincing continuation, so Swift changed course for this move.");
+    // A verified non-plan move can be a tempo, defensive adjustment, or
+    // practical detour. Choosing it does not prove that a longer-term plan was
+    // refuted. Actual board progress and newly generated ideas will reassess
+    // the plan on the following turn.
+    if (observedMind.plan && selectedCandidate &&
+        !selectedCandidate.ideaKinds.includes(observedMind.plan)) {
+      this.mind.recordPracticalDetour(
+        "A verified alternative meets the current position; preserve the plan until the next review.");
+    }
     const reasons = selectedCandidate?.reasons.length ? [...selectedCandidate.reasons] : [`This move supports Swift's continuing plan to ${this.mind.planDescription()}.`];
     if ((planProgressBonus[selectedMove.uci()] ?? 0) > 0.5) {
       reasons.push("This concretely safe move also improved a measurable aspect of Swift's continuing plan.");

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Game, Move, Piece, SwiftOpening } from "../src";
 import type { SwiftMindSnapshot, SoloPlanVision } from "../src";
 import type { SwiftWorkerResponse } from "../src/chess/worker-protocol";
 import { safeEmergencyProvisional } from "../src/chess/provisional-safety";
 import { isDarkSquare, squareAtVisualIndex, visualIndexForSquare } from "../src/chess/board-view";
+import { criticalityCornerSide, positionCriticality } from "../src/chess/position-criticality";
 
 const files = "abcdefgh";
 const pieceNames: Record<Piece, string> = {
@@ -128,6 +129,10 @@ export default function Playground() {
   const terminal = result !== "ongoing";
   const turn = board.toFEN().split(/\s+/)[1] as Side;
   const inCheck = board.isInCheck(turn);
+  // Both counters use the same immutable board that renders the pieces.
+  const criticality = useMemo(() => positionCriticality(board), [board]);
+  const topCriticalSide = criticalityCornerSide(flipped, "top-right");
+  const bottomCriticalSide = criticalityCornerSide(flipped, "bottom-left");
   const analysisMode = mode === "analyze";
   const canUndoPlayerMove = analysisMode ? history.length > 0 : history.some((_, index) =>
     (index % 2 === 0 ? "w" : "b") === playerSide,
@@ -493,9 +498,22 @@ export default function Playground() {
                 </button>;
               })}
               <ThoughtArrows arrows={thoughtArrows} flipped={flipped} />
+              <div className={"criticality-badge criticality-top " + (topCriticalSide === "w" ? "criticality-white" : "criticality-black") + (criticality[topCriticalSide] >= 70 ? " criticality-high" : "")}
+                role="note" aria-label={(topCriticalSide === "w" ? "White" : "Black") + " position criticality: " + criticality[topCriticalSide] + " percent"}
+                title="Position criticality: urgency for this side, not its chance of winning.">
+                <span className="criticality-side">{topCriticalSide === "w" ? "WHITE" : "BLACK"} · CRITICAL</span>
+                <span className="criticality-value">{criticality[topCriticalSide]}%</span>
+              </div>
+              <div className={"criticality-badge criticality-bottom " + (bottomCriticalSide === "w" ? "criticality-white" : "criticality-black") + (criticality[bottomCriticalSide] >= 70 ? " criticality-high" : "")}
+                role="note" aria-label={(bottomCriticalSide === "w" ? "White" : "Black") + " position criticality: " + criticality[bottomCriticalSide] + " percent"}
+                title="Position criticality: urgency for this side, not its chance of winning.">
+                <span className="criticality-side">{bottomCriticalSide === "w" ? "WHITE" : "BLACK"} · CRITICAL</span>
+                <span className="criticality-value">{criticality[bottomCriticalSide]}%</span>
+              </div>
             </div>
             <div className="file-labels" aria-hidden="true">{(flipped ? files.split("").reverse() : files.split("")).map((file) => <span key={file}>{file}</span>)}</div>
           </div>
+          <p className="criticality-note">Position criticality is immediate pressure for each side (0–100%), not its chance of winning.</p>
           {promotion && <div className="promotion" role="dialog" aria-label="Choose promotion piece"><span>Promote to</span>{promotionOptions.map(({ piece, label }) => <button key={piece} onClick={() => { const move = promotion.moves.find((candidate) => candidate.promotion === piece); if (move) applyHumanMove(move); }}><PieceArt piece={`${analysisMode ? turn : playerSide}${piece}` as Piece} /><small>{label}</small></button>)}</div>}
         </div>
         <aside className="game-info">

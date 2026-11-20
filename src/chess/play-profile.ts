@@ -173,11 +173,10 @@ export function defensiveThinkingNeed(
  * First-pass budgets stay responsive; difficult decisions can ask for one
  * additional bounded search only after Swift notices concrete uncertainty.
  *
- * Default play deliberately carries no sampling randomness. Variation should
- * come from Swift's position interpretation, continuing plan, opponent model,
- * game history, and style preferences. Seeded/random sampling remains available
- * to explicit experiments through HumanEngineOptions, but it is not what makes
- * normal Swift play look human.
+ * Tactical and opening decisions are deterministic by default. In a calm
+ * middlegame Swift may vary only between independently verified near-equal
+ * moves serving different plausible plans, using the game seed for stability.
+ * Position, persistent plan and opponent context remain the primary reasons.
  */
 export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPlayProfile {
   const profile = humanErrorProfile(board, 0.05);
@@ -281,6 +280,7 @@ export function swiftPlayProfile(board: Board, history: string[] = []): SwiftPla
       timeMs: calmSearchMs,
       adaptiveThinking: { maxExtraMs: 2100, extraDepth: 2 },
       randomness: 0,
+      contextualVariation: true,
       errorBudget: 0.025,
       strictBestPlay: false,
       safetyDepth: 4,

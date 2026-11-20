@@ -8,3 +8,16 @@
 .rapid-clock.flagged{border-color:#c84d65;background:#331d25}.rapid-clock.flagged strong{color:#ff92a9}
 
 .untimed-notice{display:flex;flex-direction:column;gap:5px;padding:15px 18px;border-bottom:1px solid #302c32;background:#1c181e}.untimed-notice strong{color:#f0eaee;font:500 17px/1.3 Georgia,serif}.untimed-notice small{color:#a9a0aa;font:11px/1.5 Georgia,serif}
+
+
+/* Side-aware criticality indicators never block dragging or clicking squares. */
+.criticality-badge{position:absolute;z-index:8;pointer-events:none;display:flex;flex-direction:column;gap:1px;min-width:88px;padding:6px 9px 5px;border:1px solid rgba(33,28,33,.17);border-radius:7px;box-shadow:0 3px 10px rgba(28,20,29,.22);font-variant-numeric:tabular-nums;line-height:1.1;user-select:none}
+.criticality-top{top:11px;right:11px;align-items:flex-end}
+.criticality-bottom{bottom:11px;left:11px;align-items:flex-start}
+.criticality-black{background:rgba(29,25,31,.92);color:#faf0f3;border-color:rgba(255,232,237,.25)}
+.criticality-white{background:rgba(255,249,251,.95);color:#2b2229;border-color:rgba(44,31,38,.20)}
+.criticality-side{font:700 8px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.06em;white-space:nowrap}
+.criticality-value{font:700 19px/1.15 ui-sans-serif,system-ui,sans-serif;letter-spacing:-.025em}
+.criticality-high{outline:2px solid #b83d55;outline-offset:0}
+.criticality-note{color:#b6a1ac;font:11px/1.5 Georgia,serif;margin:9px 2px 0 28px}
+@media(max-width:500px){.criticality-badge{min-width:68px;padding:4px 6px;gap:0}.criticality-top{top:7px;right:7px}.criticality-bottom{bottom:7px;left:7px}.criticality-side{font-size:7px}.criticality-value{font-size:16px}.criticality-note{font-size:10px;margin-left:22px}}

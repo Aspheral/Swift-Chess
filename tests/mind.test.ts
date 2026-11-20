@@ -267,3 +267,92 @@ describe("Swift persistent mind", () => {
   });
 
 });
+
+describe("Strategic uncertainty is not a setback", () => {
+  it("preserves the established plan through repeated incomplete calculations", () => {
+    const board = Board.start();
+    const mind = new SwiftMind();
+    const initial = mind.observe(board, ideas(board, [["develop", 75]]), quietProfile, []);
+    for (let n = 0; n < 6; n++) {
+      const later = mind.recordSearchUncertainty("The verifier timed out.");
+      expect(later.plan).toBe(initial.plan);
+      expect(later.confidence).toBe(initial.confidence);
+      expect(later.planAge).toBe(initial.planAge);
+      expect(later.setbacks).toBe(initial.setbacks);
+      expect(later.lastReason).toContain("timed out");
+    }
+    const genuineFailure = mind.recordSetback("A calculated plan is refuted.");
+    expect(genuineFailure.confidence).toBeLessThan(initial.confidence);
+    expect(genuineFailure.setbacks).toBe(1);
+  });
+});
+
+
+describe("Verified deviations are not strategically proven failures", () => {
+  it("remembers a developing plan despite a verified off-plan detour", () => {
+    const start = Board.start();
+    const mind = new SwiftMind();
+    const first = mind.observe(start, ideas(start, [["develop", 85], ["attack", 55]]), quietProfile, []);
+    const detour = mind.recordPracticalDetour("Resolve the pawn tension first.");
+    expect(detour.plan).toBe("develop");
+    expect(detour.planAge).toBe(first.planAge);
+    expect(detour.confidence).toBe(first.confidence);
+    expect(detour.setbacks).toBe(0);
+    expect(detour.planProgressNote).toContain("detour");
+
+    let board = start;
+    for (const uci of ["e2e4", "e7e5"]) {
+      const move = board.legalMoves().find(m => m.uci() === uci);
+      if (!move) throw new Error("Illegal detour fixture " + uci);
+      board = board.makeMove(move);
+    }
+    const next = mind.observe(board,
+      ideas(board, [["develop", 85], ["attack", 55]]), quietProfile,
+      ["e2e4", "e7e5"]);
+    expect(next.plan).toBe("develop");
+    expect(next.setbacks).toBe(0);
+    // Because the last chosen move was outside that plan, no extra maturity
+    // or unearned confidence may be recorded just for surviving the reply.
+    expect(next.planAge).toBe(first.planAge);
+    expect(next.confidence).toBeLessThanOrEqual(first.confidence + 0.03);
+  });
+
+  it("does not trap Swift inside a plan when stronger on-board evidence arrives", () => {
+    const start = Board.start();
+    const mind = new SwiftMind();
+    mind.observe(start, ideas(start, [["develop", 75], ["attack", 45]]), quietProfile, []);
+    mind.recordPracticalDetour("Address the center.");
+    const move = start.legalMoves().find(m => m.uci() === "e2e4");
+    if (!move) throw new Error("Expected legal e2e4");
+    const after = start.makeMove(move);
+    const choice = mind.observe(after,
+      ideas(after, [["attack", 105], ["develop", 38]]),
+      quietProfile, ["e2e4"]);
+    expect(choice.plan).toBe("attack");
+    expect(choice.planAge).toBe(1);
+  });
+
+  it("does not consume a pending detour during an identical-position re-search", () => {
+    const start = Board.start(), mind = new SwiftMind();
+    const first = mind.observe(start, ideas(start, [["develop", 80]]), quietProfile, []);
+    mind.recordPracticalDetour("A concrete adjustment.");
+    const duplicate = mind.observe(start, ideas(start, [["develop", 80]]), quietProfile, []);
+    expect(duplicate.planAge).toBe(first.planAge);
+    const move = start.legalMoves().find(m => m.uci() === "e2e4");
+    if (!move) throw new Error("Expected legal e2e4");
+    const next = mind.observe(start.makeMove(move),
+      ideas(start.makeMove(move), [["develop", 80]]),
+      quietProfile, ["e2e4"]);
+    expect(next.planAge).toBe(first.planAge);
+  });
+
+  it("records genuine failure separately from a temporary deviation", () => {
+    const board = Board.start(), mind = new SwiftMind();
+    const first = mind.observe(board, ideas(board, [["develop", 65]]), quietProfile, []);
+    const detour = mind.recordPracticalDetour("A safe pawn move was required.");
+    expect(detour.confidence).toBe(first.confidence);
+    const setback = mind.recordSetback("A verified tactical refutation.");
+    expect(setback.confidence).toBeLessThan(first.confidence);
+    expect(setback.setbacks).toBe(1);
+  });
+});

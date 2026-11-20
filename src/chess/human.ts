@@ -3,6 +3,7 @@ import { CandidateScore, scoreCandidates } from "./scoring";
 import { understandPosition } from "./understanding";
 import { createSeededRandom } from "./random";
 import { deliberationShortlist, recentPieceCircuitLength } from "./deliberation";
+import { quietKingShelterDebt } from "./king-shelter";
 import type { SwiftMindSnapshot } from "./mind";
 
 export interface HumanStyleOptions {
@@ -293,6 +294,16 @@ function styleValue(
   }
   if (has("create-weakness") && profile.phase >= 0.25 && profile.phase < 0.9) {
     value += pawnBreaks * (2 + profile.complexity * 2);
+  }
+
+  // Preserve a castled king's pawn cover when the tactical consequences
+  // are comparable. Never veto a forcing or defensive continuation.
+  if (profile.tacticalPressure < 0.12 && !board.isInCheck(board.turn()) &&
+      !has("tactical") && !has("defend")) {
+    const enemy = board.turn() === "w" ? "b" : "w";
+    if (!board.makeMove(candidate.move).isInCheck(enemy)) {
+      value -= quietKingShelterDebt(board, candidate.move);
+    }
   }
 
   // The original reversal check notices a single A-B-A retreat, but misses
